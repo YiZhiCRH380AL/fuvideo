@@ -33,3 +33,33 @@ fuvideo 把「简洁」和「动效」放在同等重要的位置：播放界面
 ## 状态
 
 早期开发阶段，正在搭建 MVP。
+
+## 运行与打包
+
+### 前提
+
+播放依赖 **mpv**，需要单独安装（安装包不包含它）：
+
+```
+winget install --id shinchiro.mpv -e
+```
+
+应用会依次在 PATH、`C:\Program Files\MPV Player\mpv.exe`、`C:\Program Files\mpv\mpv.exe`
+等常见位置查找，也可以用环境变量 `FUVIDEO_MPV_PATH` 直接指定。
+另外需要 Windows 10/11 自带的 WebView2 运行时。
+
+### 开发
+
+```
+npm install
+npm run tauri dev
+```
+
+### 打包
+
+```
+npm run tauri build
+```
+
+产物在 `src-tauri/target/release/` 下：`fuvideo.exe` 是主程序，
+`bundle/msi/` 与 `bundle/nsis/` 分别是 MSI 与 NSIS 安装包。
