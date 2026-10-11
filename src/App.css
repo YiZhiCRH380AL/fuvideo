@@ -3,6 +3,13 @@
   grid-template-rows: auto 1fr auto;
   height: 100%;
   min-height: 0;
+  /* 窗口本身是透明的，没播放视频时必须自己铺底色，否则会直接透出桌面 */
+  background: var(--bg);
+}
+
+/* 播放中整窗透明，mpv 渲染的画面从底层透出来 */
+.app[data-stage='video'] {
+  background: transparent;
 }
 
 .app__bar {
@@ -36,11 +43,6 @@
   display: grid;
   place-items: center;
   min-height: 0;
-}
-
-/* 只有浏览器里才需要自己铺底色，桌面端要露出 mpv 的画面 */
-html[data-shell='browser'] .stage {
-  background: var(--stage);
 }
 
 .stage__empty {

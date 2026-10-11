@@ -20,4 +20,10 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '选择视频文件' })).toBeDisabled()
     expect(document.documentElement.dataset.shell).toBe('browser')
   })
+
+  it('未播放视频时舞台标记为空闲，避免窗口透明透出桌面', () => {
+    const { container } = render(<App />)
+
+    expect(container.querySelector('.app')).toHaveAttribute('data-stage', 'empty')
+  })
 })

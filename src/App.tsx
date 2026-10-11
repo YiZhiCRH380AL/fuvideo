@@ -57,7 +57,7 @@ export default function App() {
   const canOpen = isTauri() && status?.mpvAvailable === true
 
   return (
-    <div className="app">
+    <div className="app" data-stage={currentFile ? 'video' : 'empty'}>
       <header className="app__bar">
         <span className="app__wordmark">futurevideo</span>
         <span className="app__backend" data-testid="backend-status">

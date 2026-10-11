@@ -13,3 +13,13 @@ test('浏览器环境下打开按钮不可用，避免误导用户', async ({ pa
 
   await expect(page.getByRole('button', { name: '选择视频文件' })).toBeDisabled()
 })
+
+test('未播放视频时窗口有不透明底色，不会透出桌面', async ({ page }) => {
+  await page.goto('/')
+
+  const appBackground = await page
+    .locator('.app')
+    .evaluate((element) => getComputedStyle(element).backgroundColor)
+
+  expect(appBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+})

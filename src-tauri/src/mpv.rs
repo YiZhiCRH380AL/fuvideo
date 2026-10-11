@@ -14,8 +14,8 @@ use serde::Serialize;
 /// 允许通过环境变量指定 mpv 可执行文件，便于开发时指向自备的解压版 mpv。
 pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
 
-/// PATH 里找不到时兜底的常见安装位置。
-const MPV_CANDIDATES: &[&str] = &[
+/// PATH 里找不到时兜底的常见安装位置。注意这里是**完整可执行文件路径**，不是目录。
+const MPV_FILE_CANDIDATES: &[&str] = &[
   r"C:\Program Files\MPV Player\mpv.exe",
   r"C:\Program Files\mpv\mpv.exe",
   r"C:\Program Files (x86)\mpv\mpv.exe",
@@ -86,6 +86,14 @@ where
     .find(|candidate| candidate.is_file())
 }
 
+/// 在给定的候选文件路径里挑出第一个真实存在的。
+pub fn find_first_file<I>(files: I) -> Option<PathBuf>
+where
+  I: IntoIterator<Item = PathBuf>,
+{
+  files.into_iter().find(|candidate| candidate.is_file())
+}
+
 /// 在 PATH 中查找 mpv。
 pub fn find_in_path(executable: &str) -> Option<PathBuf> {
   let path_var = std::env::var_os("PATH")?;
@@ -102,7 +110,7 @@ pub fn find_mpv() -> Option<PathBuf> {
     }
   }
 
-  find_in_path(MPV_EXECUTABLE).or_else(|| find_in_dirs(MPV_EXECUTABLE, MPV_CANDIDATES.iter().map(PathBuf::from)))
+  find_in_path(MPV_EXECUTABLE).or_else(|| find_first_file(MPV_FILE_CANDIDATES.iter().map(PathBuf::from)))
 }
 
 /// 探测指定路径的 mpv，`None` 表示没找到可执行文件。
@@ -338,22 +346,39 @@ mod tests {
   }
 
   #[test]
-  fn candidate_list_covers_shinchiro_installer_path() {
-    // shinchiro 的安装包装到 "C:\Program Files\MPV Player"，装完必须在候选里能被找到。
-    assert!(MPV_CANDIDATES.contains(&r"C:\Program Files\MPV Player\mpv.exe"));
+  fn candidate_list_holds_full_executable_paths() {
+    // 这里存的是完整 exe 路径。曾经把它当成目录再 join 一次文件名，
+    // 结果去找 "...\MPV Player\mpv.exe\mpv.exe"，导致探测永远失败。
+    assert!(MPV_FILE_CANDIDATES.contains(&r"C:\Program Files\MPV Player\mpv.exe"));
+    assert!(MPV_FILE_CANDIDATES.iter().all(|candidate| candidate.ends_with("mpv.exe")));
   }
 
   #[test]
-  fn probes_real_mpv_when_available() {
-    let Some(executable) = find_mpv() else {
-      eprintln!("本机未安装 mpv，跳过真实探测");
+  fn find_first_file_skips_missing_entries() {
+    let missing = std::env::temp_dir().join("fuvideo-definitely-missing").join("mpv.exe");
+    let existing = std::env::temp_dir().join("fuvideo-existing-mpv.exe");
+    std::fs::write(&existing, b"stub").expect("write stub");
+
+    assert_eq!(find_first_file(vec![missing, existing.clone()]), Some(existing.clone()));
+
+    let _ = std::fs::remove_file(&existing);
+  }
+
+  #[test]
+  fn finds_mpv_at_default_install_location() {
+    // 装有默认位置 mpv 时必须真正生效，不能静默跳过——
+    // 否则探测逻辑回归了也看不出来。
+    let known = PathBuf::from(r"C:\Program Files\MPV Player\mpv.exe");
+
+    if !known.is_file() {
+      eprintln!("本机没有默认安装位置的 mpv，跳过");
       return;
-    };
+    }
 
-    let probe = probe_at(Some(&executable));
+    assert_eq!(find_mpv().as_deref(), Some(known.as_path()));
 
+    let probe = probe_at(Some(&known));
     assert!(probe.available);
     assert!(probe.version.is_some(), "应能从 mpv --version 解析出版本号");
-    assert!(probe.path.is_some());
   }
 }
