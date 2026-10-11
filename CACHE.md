@@ -2,6 +2,50 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：P1 音频与字幕（已完成）
+
+把播放中最常用的两件事接了出来：换音轨、换输出设备、调声道，以及外挂字幕。
+控制条上只多了一个入口（音轨与字幕），面板里分「音频」「字幕」两页。
+
+- **入口**：[Island.tsx](src/components/Island.tsx) 新增 `.island__media`，复用 P0 的
+  [Popover.tsx](src/components/Popover.tsx)（这次给它加了 `role`：面板是 `dialog`，倍速菜单仍是 `menu`）。
+  内容在 [MediaPanel.tsx](src/components/MediaPanel.tsx)：打开时才挂载，关掉即卸载，不做常驻轮询。
+- **音频页**：音轨列表（`aid`）、外挂音轨（`audio-add`）、输出设备列表（`audio-device-list` +
+  `audio-device`）、独占模式（`audio-exclusive`）、声道（`audio-channels`）、音频延迟（`audio-delay`）。
+- **字幕页**：字幕轨与「关闭字幕」（`sid`）、第二字幕做双语（`secondary-sid`）、加载外挂字幕
+  （`sub-add`）、字幕延迟（`sub-delay`）、字号（`sub-font-size`）、位置（`sub-pos`）、
+  ASS 样式覆盖（`sub-ass-override`）。
+- **状态从哪来**：`player_details` 扩了字段（第二字幕、两个延迟、字号、位置、样式、声道、设备、独占），
+  面板每次改动都是「发命令 → 重新读一次 mpv 的真实状态」，不在前端自己推演结果——设备被独占、
+  轨道不存在这些情况 mpv 会直接拒绝，界面显示的必须是真正生效的值。设备列表走单独的 `audio_devices`。
+- **跨片保持**：全局偏好（输出设备、声道、独占、字号、位置、样式覆盖）落进 `settings.json`；
+  每片自己的选择（音轨、字幕、双语、两个延迟）交给 mpv 的 watch-later，并且**换片前会主动发
+  `write-watch-later-config`**——`loadfile` 会把上一个文件直接丢掉，不主动写就全没了。
+- **踩到的坑（记下来免得再踩）**：`aid` / `sid` / `secondary-sid` 是**整数**属性，mpv 收到 `1.0`
+  这种浮点会回 "error accessing property"。IPC 层因此单独加了 `select_track` 发整数，
+  `set_number` 只用于真正的浮点属性（音量、倍速、各种延迟与字号）。
+
+覆盖到的测试：
+
+- `src-tauri/src/mpv.rs`：设备列表解析、区间夹取、启动参数（独占与字幕位置按需注入）、详情序列化，
+  以及两条真实 mpv 的集成用例——挂外挂字幕之后轨道表里多出一条已选中的外挂字幕；挂外挂音轨之后
+  能按 id 选中、`aid=no` 关掉、再选回来（配套一个测试现场写出来的静音 WAV）。
+- `src-tauri/src/settings.rs`：新增项的类型与越界折回。
+- `src/lib/media.test.ts`：步进（含浮点尾巴）、延迟文本、语言名、轨道标题与副标题。
+- `src/components/MediaPanel.test.tsx`：两页的列表、选中态，以及每个控件发出的命令。
+- `src/App.controls.test.tsx`：控制条上能打开并收起这个面板。
+
+验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（149 个）、
+`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（53 个）全绿。
+
+**还没验证到的**：面板在真机上的视觉与手感（列表长度、面板高度、窄窗口下会不会挤），
+需要 `npm run tauri dev` 实际点一遍；切换输出设备时的断音与失败回退也只有真机能感受到。
+
+**下一步（P2）**：均衡器（18 段 `superequalizer`）、响度归一化（`loudnorm` / `dynaudnorm`）、
+变速不变调（`scaletempo2` + `audio-pitch-correction`）、立体声扩展与环绕上混、透传
+（`audio-spdif`）、采样率与位深。P2 全是音频滤镜链，动手前要先定滤镜链的界面形态
+（预设 + 高级展开，还是只给几个开关）。
+
 ## 上一阶段：P0 地基（已完成）
 
 这一阶段**不新增可见功能**，只把后面所有播放器能力都要踩的地基铺好。
@@ -167,7 +211,7 @@ npm run tauri build -- --bundles nsis
 `target/` 在 `.gitignore` 里，产物不进仓库；要发布得手动传到 Releases
 （本机没装 `gh`，走网页上传，或者装上 `gh` 之后 `gh release create`）。
 
-## 路线图：播放器能力扩展（P0 已完成，下一步 P1）
+## 路线图：播放器能力扩展（P0、P1 已完成，下一步 P2）
 
 目标：把 mpv 已经具备、但界面没有暴露出来的播放器能力分批接出来，功能面对标 PotPlayer；
 **但不改画面渲染链，也不改现有外观与动效**。这一节是路线图，动手前先看下面的调研结论和设计约束。
@@ -211,7 +255,7 @@ npm run tauri build -- --bundles nsis
 验收：`cargo test` 覆盖常驻内核的 loadfile / quit / watch-later；Vitest 覆盖设置读写与面板开关；
 e2e 覆盖「打开面板时界面不会隐去」。
 
-### P1 音频与字幕（最高频，全是 mpv 现成能力）
+### P1 音频与字幕（已完成，见上面「上一阶段：P1 音频与字幕」）
 
 - 音轨：`track-list` / `aid` / `alang`；外挂音轨 `audio-add` / `--audio-file-auto`。
 - 输出设备：`audio-device` + `audio-device-list`（显示 description，不是内部 name）；
