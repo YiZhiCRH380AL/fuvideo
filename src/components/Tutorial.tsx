@@ -7,6 +7,8 @@ interface Step {
   body: string
   /** 这一步要记住的按键，用键帽的样子排出来。 */
   keys?: string[]
+  /** 这一步要讲清的功能点。和 `keys` 分开：键帽是「按什么」，这里是「能做什么」。 */
+  points?: string[]
   art: ReactNode
 }
 
@@ -41,6 +43,23 @@ const STEPS: Step[] = [
         <rect x="3.5" y="11.5" width="25" height="10" rx="5" />
         <path d="M11 14.5l5 3.5-5 3.5z" />
         <path d="M20 16.5h5" />
+      </svg>
+    ),
+  },
+  {
+    title: '音轨、字幕在这里换',
+    body: '灵动岛上的「音轨与字幕」把播放中要调的东西收在一处，分音频、字幕两页。',
+    points: [
+      '音频页：换音轨、挑输出设备、切声道、调音频延迟，也能加载外挂音轨',
+      '字幕页：点「加载字幕文件…」挂外挂字幕，选中的那条立刻生效；第二字幕可以拿来放双语',
+      '字幕快了慢了用延迟调，字号和位置也在这一页',
+      '选过的音轨和字幕会跟着这个视频记住，下次打开还是它',
+    ],
+    art: (
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M6 10.5h20M6 21.5h20" />
+        <circle cx="12" cy="10.5" r="3" />
+        <circle cx="21" cy="21.5" r="3" />
       </svg>
     ),
   },
@@ -117,6 +136,16 @@ export default function Tutorial({ onClose }: TutorialProps) {
               {step.keys.map((key) => (
                 <li className="tutorial__key" key={key}>
                   {key}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {step.points === undefined ? null : (
+            <ul className="tutorial__points">
+              {step.points.map((point) => (
+                <li className="tutorial__point" key={point}>
+                  {point}
                 </li>
               ))}
             </ul>

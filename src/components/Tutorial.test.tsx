@@ -10,7 +10,8 @@ beforeEach(() => {
 
 /** 一路点到最后一屏。 */
 async function goToLastStep(): Promise<void> {
-  for (let step = 0; step < 3; step += 1) {
+  // 步数会随教程内容变，这里按按钮在不在来决定翻几页，不写死次数
+  while (screen.queryByRole('button', { name: '下一步' }) !== null) {
     await userEvent.click(screen.getByRole('button', { name: '下一步' }))
   }
 }
@@ -37,6 +38,18 @@ describe('首次进入的教程', () => {
     await userEvent.click(screen.getByRole('button', { name: '上一步' }))
 
     expect(screen.getByText('先把视频铺成方格')).toBeInTheDocument()
+  })
+
+  it('讲到音轨与外挂字幕怎么用', async () => {
+    render(<Tutorial onClose={vi.fn()} />)
+
+    // 最后一屏是快捷键，往前退一步就是音轨与字幕
+    await goToLastStep()
+    await userEvent.click(screen.getByRole('button', { name: '上一步' }))
+
+    expect(screen.getByText('音轨、字幕在这里换')).toBeInTheDocument()
+    expect(screen.getByText(/加载字幕文件/)).toBeInTheDocument()
+    expect(screen.getByText(/会跟着这个视频记住/)).toBeInTheDocument()
   })
 
   it('走完一遍会记下看过，并让父组件卸载它', async () => {

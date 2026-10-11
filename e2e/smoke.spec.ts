@@ -38,6 +38,12 @@ test('首次进入的教程会自动弹出，看过之后不再弹', async ({ pa
   await expect(tutorial).toContainText('点一下方格就放大播放')
 
   await page.getByRole('button', { name: '下一步' }).click()
+  await expect(tutorial).toContainText('底部的灵动岛')
+
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(tutorial).toContainText('音轨、字幕在这里换')
+  await expect(tutorial).toContainText('加载字幕文件')
+
   await page.getByRole('button', { name: '下一步' }).click()
   await expect(tutorial).toContainText('键盘也能用')
 
