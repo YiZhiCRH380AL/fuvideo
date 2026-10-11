@@ -1,18 +1,25 @@
+/* ============ 整体框架 ============ */
+
 .app {
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
   height: 100%;
   min-height: 0;
-  /* 窗口本身是透明的，没播放视频时必须自己铺底色，否则会直接透出桌面 */
-  background:
-    radial-gradient(120% 80% at 50% 0%, rgb(110 168 255 / 7%), transparent 62%),
-    var(--bg);
+  /* 窗口本身是透明的，没在看视频时必须自己铺底色，否则会直接透出桌面 */
+  /* 底色单列出来：只写渐变的话计算样式里的 background-color 是透明的 */
+  background-color: var(--bg);
+  background-image: radial-gradient(120% 80% at 50% 0%, rgb(110 168 255 / 7%), transparent 62%);
 }
 
-/* 缓慢漂移的环境光，只在没有视频的时候出现，
-   否则它会盖到 mpv 画面上把颜色带偏 */
-.app[data-stage='empty']::before {
+/* 画面展开时整窗透明，让底层 mpv 的画面透出来 */
+.app[data-video='true'] {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* 缓慢漂移的环境光，只在没有画面时出现，否则会把视频的颜色带偏 */
+.app[data-video='false']::before {
   position: absolute;
   top: -25%;
   left: 50%;
@@ -36,42 +43,14 @@
   }
 }
 
-/* 右侧主体：顶栏 / 舞台 / 控制栏 */
 .shell {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   min-width: 0;
   min-height: 0;
 }
 
-/* 播放中整窗透明，mpv 渲染的画面从底层透出来 */
-.app[data-stage='video'] {
-  background: transparent;
-}
-
-/* 播放中空闲一段时间后收起全部控件，连光标一起隐藏 */
-.app[data-controls='hidden'] {
-  cursor: none;
-}
-
-.app[data-controls='hidden'] .app__bar {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-8px);
-  /* 收起时不回弹，回弹只属于「出现」 */
-  transition:
-    opacity 180ms var(--ease),
-    transform 180ms var(--ease);
-}
-
-.app[data-controls='hidden'] .controls {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition:
-    opacity 180ms var(--ease),
-    transform 180ms var(--ease);
-}
+/* ============ 顶栏 ============ */
 
 .app__bar {
   display: flex;
@@ -80,15 +59,6 @@
   gap: 12px;
   padding: 12px 16px;
   background: var(--chrome);
-  transition:
-    opacity var(--dur-normal) var(--ease-spring),
-    transform var(--dur-normal) var(--ease-spring);
-}
-
-.app__wordmark {
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  color: var(--text);
 }
 
 .app__brand {
@@ -113,21 +83,18 @@
   cursor: pointer;
 }
 
-.app__toggle-label {
-  font-size: 12px;
-}
-
 .app__toggle:hover {
   background: var(--surface-hover);
 }
 
-.app__file {
-  overflow: hidden;
-  max-width: 46ch;
+.app__toggle-label {
   font-size: 12px;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.app__wordmark {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--text);
 }
 
 .app__backend {
@@ -141,47 +108,26 @@
 
 .app__error {
   position: absolute;
+  bottom: 96px;
   left: 16px;
-  bottom: 64px;
+  z-index: 4;
   margin: 0;
   padding: 8px 12px;
   border-radius: var(--radius);
-  background: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 78%);
   font-size: 12px;
   color: var(--danger);
 }
 
-.stage {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.stage__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-
-.stage__hint {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
 .button {
+  padding: 8px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  padding: 8px 16px;
-  font-size: 13px;
   font-family: inherit;
-  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  font-size: 13px;
+  transition: background var(--dur-fast) var(--ease);
 }
 
 .button:hover:not(:disabled) {
@@ -192,196 +138,7 @@
   opacity: 0.45;
 }
 
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px 16px;
-  background: var(--chrome);
-  transition:
-    opacity var(--dur-normal) var(--ease-spring),
-    transform var(--dur-normal) var(--ease-spring);
-}
-
-.controls__button {
-  border: none;
-  background: none;
-  color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
-  min-width: 32px;
-  min-height: 28px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  transition:
-    opacity var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease);
-}
-
-.controls__button:not(:disabled) {
-  cursor: pointer;
-}
-
-.controls__button:not(:disabled):hover {
-  background: var(--surface-hover);
-}
-
-.controls__button:disabled {
-  opacity: 0.45;
-}
-
-.controls__time {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/*
- * 滑块本体要比轨道高：视觉上轨道只有 4px，但可点区域必须够大，
- * 否则 12px 的圆点伸出输入框之外，点在圆点上根本落不到控件上。
- */
-.controls__progress,
-.controls__volume-slider {
-  height: 18px;
-  margin: 0;
-  appearance: none;
-  background: transparent;
-}
-
-.controls__progress-wrap {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-width: 80px;
-}
-
-.controls__progress {
-  flex: 1;
-  width: 100%;
-}
-
-.controls__progress:not(:disabled),
-.controls__volume-slider:not(:disabled) {
-  cursor: pointer;
-}
-
-.controls__progress:disabled,
-.controls__volume-slider:disabled {
-  opacity: 0.45;
-}
-
-/* 视觉轨道：填充比例由 --fill 控制 */
-.controls__progress::-webkit-slider-runnable-track,
-.controls__volume-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--accent) 0,
-    var(--accent) var(--fill, 0%),
-    var(--track) var(--fill, 0%),
-    var(--track) 100%
-  );
-}
-
-.controls__progress::-webkit-slider-thumb,
-.controls__volume-slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  /* 在 4px 高的轨道上垂直居中 */
-  margin-top: -4px;
-  border: none;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.controls__progress::-moz-range-track,
-.controls__volume-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--track);
-}
-
-.controls__progress::-moz-range-progress,
-.controls__volume-slider::-moz-range-progress {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
-.controls__progress::-moz-range-thumb,
-.controls__volume-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: none;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.controls__volume {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* 音量条平时收起，鼠标移上去或聚焦时才展开 */
-.controls__volume-slider {
-  width: 0;
-  opacity: 0;
-  transition:
-    width var(--dur-normal) var(--ease),
-    opacity var(--dur-normal) var(--ease);
-}
-
-.controls__volume:hover .controls__volume-slider,
-.controls__volume:focus-within .controls__volume-slider {
-  width: 88px;
-  opacity: 1;
-}
-
-.controls__speed {
-  position: relative;
-}
-
-.controls__button--text {
-  font-variant-numeric: tabular-nums;
-}
-
-.speed-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  display: flex;
-  flex-direction: column;
-  min-width: 84px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
-}
-
-.speed-menu__item {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  text-align: left;
-}
-
-.speed-menu__item:hover {
-  background: var(--surface-hover);
-}
-
-.speed-menu__item[aria-checked='true'] {
-  color: var(--accent);
-}
-
-/* ---- 侧边栏 ---- */
+/* ============ 侧边栏 ============ */
 
 .sidebar {
   width: 0;
@@ -435,17 +192,6 @@
   background: var(--surface-hover);
 }
 
-.sidebar__directory {
-  overflow: hidden;
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sidebar__path {
   display: flex;
   align-items: center;
@@ -472,6 +218,17 @@
 
 .sidebar__up:not(:disabled):hover {
   background: var(--surface-hover);
+}
+
+.sidebar__directory {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar__hint {
@@ -508,6 +265,15 @@
   cursor: pointer;
 }
 
+.sidebar__item:hover {
+  background: var(--surface-hover);
+}
+
+.sidebar__item[aria-current='true'] {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
 .sidebar__marker {
   flex: none;
   width: 10px;
@@ -520,54 +286,18 @@
   white-space: nowrap;
 }
 
-.sidebar__item:hover {
-  background: var(--surface-hover);
-}
-
-.sidebar__item[aria-current='true'] {
-  color: var(--accent);
-  background: var(--surface-hover);
-}
-
-/* ---- 进度条悬停预览 ---- */
-
-.preview {
-  position: absolute;
-  bottom: calc(100% + 12px);
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: rgb(0 0 0 / 78%);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.preview__image,
-.preview__placeholder {
-  width: 160px;
-  height: 90px;
-  border-radius: 4px;
-  background: #000;
-  object-fit: cover;
-}
-
-.preview__time {
-  font-size: 12px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- 目录页 ---- */
+/* ============ 方格墙 ============ */
 
 .library {
+  position: relative;
   min-height: 0;
   overflow: hidden;
   background: radial-gradient(100% 120% at 50% 0%, rgb(255 255 255 / 3%), transparent 55%);
+}
+
+/* 画面展开时这里必须透明，否则会盖住下面的视频 */
+.app[data-video='true'] .library {
+  background: transparent;
 }
 
 .library__empty {
@@ -595,6 +325,36 @@
   transform: translate(-50%, -50%);
 }
 
+.library__icon {
+  display: block;
+  width: 56px;
+  height: 56px;
+  color: var(--accent);
+  animation: guide-float 3.6s var(--ease) infinite;
+}
+
+.library__icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@keyframes guide-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.9;
+  }
+}
+
 .library__hint {
   margin: 0;
   font-size: 13px;
@@ -620,16 +380,17 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  grid-auto-flow: dense;
   gap: 0;
   height: 100%;
   overflow-y: auto;
   align-content: start;
 }
 
-/* 底部常驻条会盖住最后一行，给它让出位置 */
-.library[data-island='true'] .grid {
-  padding-bottom: 76px;
+/* 画面展开时不让滚动：其他方格已经整体让到下方，收起后再浏览 */
+.grid[data-expanded='true'] {
+  /* 首行占满可视高度，放大那格正好铺一屏，后面的方格被裁掉看不见 */
+  grid-template-rows: 100%;
+  overflow: hidden;
 }
 
 .tile {
@@ -656,28 +417,8 @@
   content: '';
 }
 
-/* 正在播放的那一个打个点 */
-.tile[data-current='true']::before {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgb(110 168 255 / 22%);
-  content: '';
-}
-
-/* 点开放大：占 2x2，周围格子自动让位 */
-.tile[data-focused='true'] {
-  grid-column: span 2;
-  grid-row: span 2;
-}
-
-.tile[data-focused='true']::after {
-  box-shadow: inset 0 0 0 2px var(--accent);
+.tile:hover .tile__image {
+  transform: scale(1.04);
 }
 
 .tile__image {
@@ -686,11 +427,6 @@
   height: 100%;
   object-fit: cover;
   transition: transform 420ms var(--ease);
-}
-
-.tile:hover .tile__image,
-.tile[data-focused='true'] .tile__image {
-  transform: scale(1.04);
 }
 
 /* 缩略图还没到时用流动的暗色占位，比一块死黑好看，也说明在加载 */
@@ -713,7 +449,7 @@
   }
 }
 
-/* 悬停或放大时浮出的播放符号 */
+/* 悬停时浮出的播放符号 */
 .tile__play {
   position: absolute;
   top: 50%;
@@ -734,8 +470,7 @@
     transform var(--dur-normal) var(--ease);
 }
 
-.tile:hover .tile__play,
-.tile[data-focused='true'] .tile__play {
+.tile:hover .tile__play {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
@@ -753,100 +488,50 @@
   white-space: nowrap;
 }
 
-/* 放大之后在方格内部完整显示名字 */
-.tile[data-focused='true'] .tile__label {
-  padding: 12px 14px;
-  font-size: 14px;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-/* ---- 底部常驻条（灵动岛样式） ---- */
-
-.island {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  overflow: hidden;
-  width: min(560px, calc(100% - 48px));
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgb(20 20 24 / 92%);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 50%);
-  transform: translateX(-50%);
-}
-
-.island__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px 6px;
-}
-
-.island__toggle {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 50%;
-  background: var(--surface-hover);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.island__main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow: hidden;
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: none;
-  color: var(--text);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.island__title {
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.island__time {
-  flex: none;
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.island__track {
-  height: 3px;
-  background: var(--track);
-}
-
-.island__fill {
+/*
+ * 放大成播放画面的那一格：铺满整行，并且用 order 挪到最前面，
+ * 于是其他方格整体向下让位。背景透明，视频从底层透出来。
+ */
+.tile--expanded {
+  order: -1;
+  grid-column: 1 / -1;
+  width: 100%;
   height: 100%;
-  background: var(--accent);
-  transition: width var(--dur-normal) var(--ease);
+  background: transparent;
 }
 
-/* ---- 图标 ---- */
-
-.icon {
-  display: block;
-  width: 18px;
-  height: 18px;
-  fill: currentColor;
+.tile--expanded::after {
+  box-shadow: none;
 }
 
-/* ---- 双击左右半屏：涟漪 + 中央提示 ---- */
+/* 缓冲时在画面中央放一个呼吸圈 */
+.buffering {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border: 2px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: buffering-breathe 1.4s var(--ease) infinite;
+}
+
+@keyframes buffering-breathe {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.3;
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+}
+
+/* ============ 双击提示 ============ */
 
 .flash {
   position: absolute;
@@ -909,27 +594,165 @@
   }
 }
 
-/* ---- 拖动进度条：轨道抬起 + 时间气泡跟随 ---- */
+/* ============ 底部常驻条（灵动岛） ============ */
 
-.controls__progress::-webkit-slider-runnable-track {
+.island {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100% - 48px));
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgb(20 20 24 / 92%);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+  transform: translateX(-50%);
+}
+
+.island__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 6px;
+}
+
+.island__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.island__button:hover {
+  background: var(--surface-hover);
+}
+
+.island__button--text {
+  font-variant-numeric: tabular-nums;
+}
+
+.island__title {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island__time {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.island__volume {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 音量条平时收起，鼠标移上去或聚焦时才展开 */
+.island__volume-slider {
+  width: 0;
+  opacity: 0;
+  transition:
+    width var(--dur-normal) var(--ease),
+    opacity var(--dur-normal) var(--ease);
+}
+
+.island__volume:hover .island__volume-slider,
+.island__volume:focus-within .island__volume-slider {
+  width: 72px;
+  opacity: 1;
+}
+
+.island__speed {
+  position: relative;
+  flex: none;
+}
+
+/*
+ * 滑块本体要比轨道高：视觉上轨道只有 4px，但可点区域必须够大，
+ * 否则 12px 的圆点伸出输入框之外，点在圆点上根本落不到控件上。
+ */
+.island__range {
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.island__range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) var(--fill, 0%),
+    var(--track) var(--fill, 0%),
+    var(--track) 100%
+  );
   transition:
     height var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease);
 }
 
-.controls__progress-wrap[data-scrubbing='true'] .controls__progress::-webkit-slider-runnable-track {
+.island__range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  appearance: none;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.island__progress {
+  position: relative;
+  display: flex;
+  padding: 0 14px 10px;
+}
+
+.island__progress-range {
+  flex: 1;
+}
+
+/* 拖动时轨道抬起 */
+.island__progress[data-scrubbing='true'] .island__progress-range::-webkit-slider-runnable-track {
   height: 6px;
   box-shadow:
     0 0 0 1px rgb(110 168 255 / 25%),
     0 0 14px rgb(110 168 255 / 45%);
 }
 
-.controls__bubble {
+/* 缓冲时进度轨道轻微发光（用静止的阴影，不做逐帧重绘） */
+.island__progress[data-buffering='true'] .island__progress-range::-webkit-slider-runnable-track {
+  box-shadow: 0 0 10px rgb(110 168 255 / 45%);
+}
+
+.island__bubble {
   position: absolute;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 6px);
   padding: 4px 8px;
   border-radius: 6px;
-  background: rgb(0 0 0 / 82%);
+  background: rgb(0 0 0 / 85%);
   color: var(--text);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -937,9 +760,20 @@
   transform: translateX(-50%);
 }
 
-/* ---- 倍速菜单：整体缩放弹出，条目逐项错开 ---- */
+/* ============ 倍速菜单 ============ */
 
 .speed-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   transform-origin: bottom right;
   animation: menu-in 190ms var(--ease-spring);
 }
@@ -957,7 +791,24 @@
 }
 
 .speed-menu__item {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
   animation: item-in 200ms var(--ease) backwards;
+}
+
+.speed-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.speed-menu__item[aria-checked='true'] {
+  color: var(--accent);
 }
 
 .speed-menu__item:nth-child(1) {
@@ -996,7 +847,47 @@
   }
 }
 
-/* ---- 从方格进播放页的幕布 ---- */
+/* ============ 进度条悬停预览 ============ */
+
+.preview {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 78%);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.preview__image,
+.preview__placeholder {
+  width: 160px;
+  height: 90px;
+  border-radius: 4px;
+  background: #000;
+  object-fit: cover;
+}
+
+.preview__time {
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============ 图标与转场幕布 ============ */
+
+.icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
 
 .curtain {
   position: absolute;
@@ -1006,101 +897,15 @@
   pointer-events: none;
 }
 
-/* ---- 缓冲：舞台中央的呼吸圈 + 进度条的脉动 ---- */
-
-.buffering {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 56px;
-  height: 56px;
-  margin: -28px 0 0 -28px;
-  border: 2px solid rgb(255 255 255 / 28%);
-  border-radius: 50%;
-  pointer-events: none;
-  animation: buffering-breathe 1.4s var(--ease) infinite;
-}
-
-@keyframes buffering-breathe {
-  0%,
-  100% {
-    transform: scale(0.85);
-    opacity: 0.3;
-  }
-
-  50% {
-    transform: scale(1.1);
-    opacity: 0.9;
-  }
-}
-
-/* ---- 全屏切换：一下淡出，暗示画面重新排布 ---- */
-
-.screen-pulse {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  background: #000;
-  pointer-events: none;
-  animation: screen-pulse 420ms var(--ease) forwards;
-}
-
-@keyframes screen-pulse {
-  from {
-    opacity: 0.5;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
-/* ---- 空状态的引导图标 ---- */
-
-.library__icon {
-  display: block;
-  width: 56px;
-  height: 56px;
-  color: var(--accent);
-  animation: guide-float 3.6s var(--ease) infinite;
-}
-
-.library__icon svg {
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-
-@keyframes guide-float {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.55;
-  }
-
-  50% {
-    transform: translateY(-6px);
-    opacity: 0.9;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .app[data-stage='empty']::before,
+  .app[data-video='false']::before,
   .tile__placeholder,
   .flash__ripple,
   .flash__badge,
   .speed-menu,
   .speed-menu__item,
   .buffering,
-  .library__icon,
-  .screen-pulse {
-    animation: none;
-  }
-
-  .controls__progress-wrap[data-buffering='true'] .controls__progress::-webkit-slider-runnable-track {
+  .library__icon {
     animation: none;
   }
 

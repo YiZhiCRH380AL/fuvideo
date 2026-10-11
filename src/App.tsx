@@ -5,16 +5,12 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import './App.css'
-import HoverPreview from './components/HoverPreview'
 import Island from './components/Island'
-import PlayPauseIcon from './components/PlayPauseIcon'
 import Sidebar from './components/Sidebar'
-import VideoGrid from './components/VideoGrid'
+import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
   getBackendStatus,
   getPlayerState,
@@ -37,34 +33,25 @@ import {
 } from './lib/backend'
 import { fileName } from './lib/path'
 import {
-  formatSpeed,
   JUMP_STEP,
   SEEK_STEP,
-  SPEED_OPTIONS,
   stepSpeed,
   stepVolume,
   VOLUME_STEP,
 } from './lib/playback'
 import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
-import { formatDuration } from './lib/time'
-import { useIdleVisibility } from './lib/use-idle-visibility'
 
 /** 播放状态的轮询间隔。 */
 const POLL_INTERVAL_MS = 300
-/** 空闲多久后收起控件。 */
-const CONTROLS_IDLE_MS = 2500
 /** 鼠标停留多久才真正去抓预览图。 */
 const PREVIEW_DEBOUNCE_MS = 120
 
-type View = 'library' | 'player'
-
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
-  const [view, setView] = useState<View>('library')
 
   const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
-  const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null)
@@ -73,9 +60,7 @@ export default function App() {
   const [pendingSeek, setPendingSeek] = useState<number | null>(null)
   const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
-  /** 双击左右半屏时浮出的涟漪与 ±10 秒提示。 */
-  const [flash, setFlash] = useState<{ id: number; x: number; y: number; offset: number } | null>(null)
-  /** 从方格进播放页时的幕布：从方格矩形展开到整屏。 */
+  const [flash, setFlash] = useState<GridFlash | null>(null)
   const [curtain, setCurtain] = useState<{ x: number; y: number; width: number; height: number } | null>(
     null,
   )
@@ -85,18 +70,32 @@ export default function App() {
   const [directoryBusy, setDirectoryBusy] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  /** 每次切换全屏递增，用来重放那一下过渡。 */
-  const [screenPulse, setScreenPulse] = useState(0)
 
   const scrubRef = useRef<number | null>(null)
-  const clickTimer = useRef<number | null>(null)
-  const curtainRef = useRef<HTMLDivElement>(null)
   const pendingTimer = useRef<number | null>(null)
   const previewTimer = useRef<number | null>(null)
-  const previewCache = useRef(new Map<string, string>())
-  const gridCache = useRef(new Map<string, string>())
   const previewFrame = useRef<number | null>(null)
   const hoveredPoint = useRef<{ fraction: number; seconds: number } | null>(null)
+  const previewCache = useRef(new Map<string, string>())
+  const gridCache = useRef(new Map<string, string>())
+  const curtainRef = useRef<HTMLDivElement>(null)
+
+  // 派生值放在最前面：后面的处理函数要用，不能等到渲染前才算
+  const hasMedia = currentFile !== null
+  const paused = player?.paused !== false
+  const duration = player?.duration ?? 0
+  const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
+  const volume = player?.volume ?? 100
+  const muted = player?.muted === true
+  const speed = player?.speed ?? 1
+  const buffering = player?.buffering === true
+
+  // 引用要稳定：VideoGrid 的 FLIP 依赖它，每次渲染都是新数组的话
+  // 会白白重测一遍所有方格的位置
+  const videos = useMemo(
+    () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
+    [listing],
+  )
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -124,7 +123,7 @@ export default function App() {
     }
   }, [reportError])
 
-  // 播放开始后持续拉取进度，供进度条、时间、音量与底部常驻条使用
+  // 播放开始后持续拉取进度，供底部常驻条使用
   useEffect(() => {
     if (!currentFile) {
       return
@@ -168,10 +167,10 @@ export default function App() {
     }
   }, [currentFile, reportError])
 
-  // 目录内容变了，方格页的缩略图逐个补上；换目录时中断上一轮。
-  // 进播放页就停下：抓帧是另一个 mpv 进程，会和播放抢 CPU/GPU，直接导致卡顿。
+  // 方格缩略图逐个补上。画面展开时停下：抓帧是另一个 mpv 进程，
+  // 会和正在播放的那个抢 CPU/GPU，直接导致播放卡顿。
   useEffect(() => {
-    if (listing === null || view !== 'library') {
+    if (listing === null || expanded) {
       return
     }
 
@@ -216,7 +215,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [listing, view])
+  }, [listing, expanded])
 
   const playPath = useCallback(
     async (path: string, from?: DOMRect) => {
@@ -228,12 +227,12 @@ export default function App() {
         setPendingSeek(null)
         previewCache.current.clear()
 
-        // 从方格进来时用幕布把方格撑满整屏，做个转场
+        // 用幕布把方格撑满整屏，做个转场
         if (from !== undefined) {
           setCurtain({ x: from.x, y: from.y, width: from.width, height: from.height })
         }
 
-        setView('player')
+        setExpanded(true)
       } catch (cause: unknown) {
         reportError(cause)
       }
@@ -248,8 +247,6 @@ export default function App() {
 
       try {
         setListing(await listDirectory(target))
-        // 换了目录，之前放大的那个方格就不存在了
-        setFocusedPath(null)
       } catch (cause: unknown) {
         reportError(cause)
       } finally {
@@ -305,55 +302,25 @@ export default function App() {
     }
   }, [reportError])
 
-  /** 单击切播放/暂停。等 220ms 是为了让双击有机会取消它。 */
-  const handleStageClick = useCallback(() => {
-    if (currentFile === null) {
-      return
-    }
-
-    if (clickTimer.current !== null) {
-      window.clearTimeout(clickTimer.current)
-      clickTimer.current = null
-      return
-    }
-
-    clickTimer.current = window.setTimeout(() => {
-      clickTimer.current = null
-      void handleTogglePause()
-    }, 220)
-  }, [currentFile, handleTogglePause])
-
-  /** 双击左右半屏：快退/快进 10 秒，并在点击处放一圈涟漪、中央浮出提示。 */
-  const handleStageDoubleClick = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      if (currentFile === null) {
+  const handleOpenFromTile = useCallback(
+    (path: string, from: DOMRect) => {
+      // 已经是当前视频就展开继续看，否则换片
+      if (path === currentFile) {
+        setExpanded(true)
+        if (player?.paused !== false) {
+          void handleTogglePause()
+        }
         return
       }
 
-      if (clickTimer.current !== null) {
-        window.clearTimeout(clickTimer.current)
-        clickTimer.current = null
-      }
-
-      const rect = event.currentTarget.getBoundingClientRect()
-      const localX = event.clientX - rect.left
-      const direction = localX < rect.width / 2 ? -1 : 1
-
-      seekBy(direction * JUMP_STEP).catch(reportError)
-
-      setFlash({
-        id: Date.now(),
-        x: rect.width > 0 ? (localX / rect.width) * 100 : 50,
-        y: rect.height > 0 ? ((event.clientY - rect.top) / rect.height) * 100 : 50,
-        offset: direction * JUMP_STEP,
-      })
+      void playPath(path, from)
     },
-    [currentFile, reportError],
+    [currentFile, handleTogglePause, playPath, player?.paused],
   )
 
-  /** 回到目录页：先把视频停下来，进度条改由底部常驻条接管。 */
-  const handleBackToLibrary = useCallback(async () => {
-    setView('library')
+  /** 收起画面：把视频停下来，方格墙恢复原样。 */
+  const handleCollapse = useCallback(async () => {
+    setExpanded(false)
 
     if (player?.paused === false) {
       try {
@@ -363,7 +330,14 @@ export default function App() {
         reportError(cause)
       }
     }
-  }, [player, reportError])
+  }, [player?.paused, reportError])
+
+  const handleSeekBy = useCallback(
+    (offset: number) => {
+      seekBy(offset).catch(reportError)
+    },
+    [reportError],
+  )
 
   const handleVolumeChange = useCallback(
     (next: number) => {
@@ -394,8 +368,6 @@ export default function App() {
   )
 
   const handleToggleFullscreen = useCallback(() => {
-    setScreenPulse((count) => count + 1)
-
     toggleFullscreen()
       .then(setFullscreen)
       .catch(reportError)
@@ -430,50 +402,24 @@ export default function App() {
     seekTo(pending).catch(reportError)
   }, [reportError])
 
-  const hasMedia = currentFile !== null
-  /** 方格点第二次时进播放页，并把方格矩形交给转场用。引用要稳定，方格才能 memo 住。 */
-  const handleOpenFromTile = useCallback(
-    (path: string, from: DOMRect) => {
-      void playPath(path, from)
-    },
-    [playPath],
-  )
-  const paused = player?.paused !== false
-  const duration = player?.duration ?? 0
-  const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
-  const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
-  const volume = player?.volume ?? 100
-  const muted = player?.muted === true
-  const speed = player?.speed ?? 1
-  const buffering = player?.buffering === true
-  // 引用要稳定：VideoGrid 的 FLIP 依赖它，每次渲染都是新数组的话
-  // 会白白重测一遍所有方格的位置
-  const videos = useMemo(
-    () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
-    [listing],
-  )
+  const loadPreview = useCallback(async (source: string, seconds: number) => {
+    const key = `${source}::${Math.round(seconds)}`
+    const cached = previewCache.current.get(key)
 
-  const loadPreview = useCallback(
-    async (source: string, seconds: number) => {
-      const key = `${source}::${Math.round(seconds)}`
-      const cached = previewCache.current.get(key)
+    if (cached !== undefined) {
+      setPreviewImage(cached)
+      return
+    }
 
-      if (cached !== undefined) {
-        setPreviewImage(cached)
-        return
-      }
-
-      try {
-        const image = await thumbnailAt(source, seconds)
-        previewCache.current.set(key, image)
-        setPreviewImage(image)
-      } catch {
-        // 预览拿不到就只是不显示画面，不打断播放
-        setPreviewImage(null)
-      }
-    },
-    [],
-  )
+    try {
+      const image = await thumbnailAt(source, seconds)
+      previewCache.current.set(key, image)
+      setPreviewImage(image)
+    } catch {
+      // 预览拿不到就只是不显示画面，不打断播放
+      setPreviewImage(null)
+    }
+  }, [])
 
   const handleProgressHover = useCallback(
     (event: ReactPointerEvent<HTMLInputElement>) => {
@@ -527,36 +473,6 @@ export default function App() {
     setPreviewImage(null)
   }, [])
 
-  // 空闲一会儿自动收起控件；只在播放页生效。
-  // 注意不把「鼠标停在控件上」当作保持显示：那会让控件永远关不掉，
-  // 而且和常见播放器（鼠标不动就连同控件一起隐去）不一致。
-  const controlsVisible = useIdleVisibility({
-    delayMs: CONTROLS_IDLE_MS,
-    enabled: view === 'player' && hasMedia && !paused && scrub === null && !speedOpen,
-    pinned: view === 'library' || !hasMedia || preview !== null,
-  })
-
-  useEffect(
-    () => () => {
-      if (pendingTimer.current !== null) {
-        window.clearTimeout(pendingTimer.current)
-      }
-
-      if (previewTimer.current !== null) {
-        window.clearTimeout(previewTimer.current)
-      }
-
-      if (clickTimer.current !== null) {
-        window.clearTimeout(clickTimer.current)
-      }
-
-      if (previewFrame.current !== null) {
-        window.cancelAnimationFrame(previewFrame.current)
-      }
-    },
-    [],
-  )
-
   // 涟漪与提示放完就收掉
   useEffect(() => {
     if (flash === null) {
@@ -567,7 +483,7 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [flash])
 
-  // 幕布：从方格矩形展开到整屏，再把透明度收掉，露出下面的播放页
+  // 幕布：从方格矩形展开到整屏，再把透明度收掉
   useEffect(() => {
     if (curtain === null) {
       return
@@ -598,8 +514,24 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [curtain])
 
+  useEffect(
+    () => () => {
+      for (const timer of [pendingTimer, previewTimer]) {
+        if (timer.current !== null) {
+          window.clearTimeout(timer.current)
+        }
+      }
+
+      if (previewFrame.current !== null) {
+        window.cancelAnimationFrame(previewFrame.current)
+      }
+    },
+    [],
+  )
+
+  // 快捷键在有视频时始终生效，不再区分页面
   useEffect(() => {
-    if (view !== 'player') {
+    if (!hasMedia) {
       return
     }
 
@@ -621,16 +553,16 @@ export default function App() {
           void handleTogglePause()
           break
         case 'seek-forward':
-          seekBy(SEEK_STEP).catch(reportError)
+          handleSeekBy(SEEK_STEP)
           break
         case 'seek-backward':
-          seekBy(-SEEK_STEP).catch(reportError)
+          handleSeekBy(-SEEK_STEP)
           break
         case 'jump-forward':
-          seekBy(JUMP_STEP).catch(reportError)
+          handleSeekBy(JUMP_STEP)
           break
         case 'jump-backward':
-          seekBy(-JUMP_STEP).catch(reportError)
+          handleSeekBy(-JUMP_STEP)
           break
         case 'volume-up':
           handleVolumeChange(stepVolume(volume, VOLUME_STEP))
@@ -656,14 +588,14 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [
+    handleSeekBy,
     handleSpeedChange,
     handleToggleFullscreen,
     handleToggleMute,
     handleTogglePause,
     handleVolumeChange,
-    reportError,
+    hasMedia,
     speed,
-    view,
     volume,
   ])
 
@@ -674,7 +606,7 @@ export default function App() {
     }
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!(event.target instanceof HTMLElement) || event.target.closest('.controls__speed') === null) {
+      if (!(event.target instanceof HTMLElement) || event.target.closest('.island__speed') === null) {
         setSpeedOpen(false)
       }
     }
@@ -708,11 +640,7 @@ export default function App() {
   const canOpen = isTauri() && status?.mpvAvailable === true
 
   return (
-    <div
-      className="app"
-      data-stage={view === 'player' && currentFile ? 'video' : 'empty'}
-      data-controls={controlsVisible ? 'visible' : 'hidden'}
-    >
+    <div className="app" data-video={expanded && currentFile ? 'true' : 'false'}>
       <Sidebar
         open={sidebarOpen}
         listing={listing}
@@ -724,21 +652,9 @@ export default function App() {
         onSelect={(path) => void playPath(path)}
       />
 
-      <div className="shell" data-view={view}>
+      <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
-            {view === 'player' ? (
-              <button
-                className="app__toggle"
-                type="button"
-                onClick={() => void handleBackToLibrary()}
-                aria-label="返回目录"
-              >
-                <span aria-hidden="true">←</span>
-              </button>
-            ) : null}
-
-            {/* 侧边栏开关在两种视图里都要在，否则从侧边栏进播放页后就关不掉了 */}
             <button
               className="app__toggle"
               type="button"
@@ -751,12 +667,6 @@ export default function App() {
             </button>
 
             <span className="app__wordmark">futurevideo</span>
-
-            {view === 'player' && currentFile ? (
-              <span className="app__file" data-testid="current-file">
-                {fileName(currentFile)}
-              </span>
-            ) : null}
           </div>
 
           <span
@@ -768,207 +678,87 @@ export default function App() {
           </span>
         </header>
 
-        {view === 'player' ? (
-          <>
-            <main className="stage" onClick={handleStageClick} onDoubleClick={handleStageDoubleClick}>
-              {buffering ? <span className="buffering" data-testid="buffering" /> : null}
-
-              {flash ? (
-                <div className="flash" key={flash.id}>
-                  <span
-                    className="flash__ripple"
-                    data-testid="flash-ripple"
-                    style={{ '--x': `${flash.x}%`, '--y': `${flash.y}%` } as CSSProperties}
-                  />
-                  <span className="flash__badge">
-                    {flash.offset > 0 ? `+${flash.offset}s` : `${flash.offset}s`}
-                  </span>
-                </div>
-              ) : null}
-
-              {currentFile ? null : (
-                <div className="stage__empty">
-                  <p className="stage__hint">还没有打开视频</p>
-                  <button className="button" type="button" onClick={() => void handleBackToLibrary()}>
-                    返回目录
-                  </button>
-                </div>
-              )}
-            </main>
-
-            <footer className="controls">
-              <button
-                className="controls__button"
-                type="button"
-                onClick={() => void handleTogglePause()}
-                disabled={!hasMedia}
-                aria-label={paused ? '播放' : '暂停'}
-              >
-                <PlayPauseIcon paused={paused} />
-              </button>
-
-              <span className="controls__time" data-testid="time-display">
-                {formatDuration(shownPosition)} / {formatDuration(duration)}
+        <main className="library" data-island={hasMedia ? 'true' : 'false'}>
+          {videos.length === 0 ? (
+            <div className="library__empty">
+              <span className="library__icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48">
+                  <rect x="7" y="13" width="34" height="26" rx="5" />
+                  <path d="M7 21h34" />
+                  <path d="M18 7h12" />
+                </svg>
               </span>
-
-              <div
-                className="controls__progress-wrap"
-                data-scrubbing={scrub !== null ? 'true' : 'false'}
-                data-buffering={buffering ? 'true' : 'false'}
-              >
-                <input
-                  className="controls__progress"
-                  type="range"
-                  min={0}
-                  max={Math.max(duration, 0.1)}
-                  step={0.1}
-                  value={shownPosition}
-                  disabled={!hasMedia}
-                  aria-label="播放进度"
-                  onChange={handleScrubChange}
-                  onPointerUp={handleScrubCommit}
-                  onKeyUp={handleScrubCommit}
-                  onBlur={handleScrubCommit}
-                  onPointerMove={handleProgressHover}
-                  onPointerLeave={handleProgressLeave}
-                  style={{ '--fill': `${fillPercent}%` } as CSSProperties}
-                />
-                {scrub !== null && duration > 0 ? (
-                  <span
-                    className="controls__bubble"
-                    data-testid="scrub-bubble"
-                    style={{ left: `${Math.min(97, Math.max(3, (scrub / duration) * 100))}%` }}
-                  >
-                    {formatDuration(scrub)}
-                  </span>
-                ) : null}
-                {preview && scrub === null ? (
-                  <HoverPreview image={previewImage} seconds={preview.seconds} fraction={preview.fraction} />
-                ) : null}
-              </div>
-
-              <div className="controls__volume">
-                <button
-                  className="controls__button"
-                  type="button"
-                  onClick={handleToggleMute}
-                  disabled={!hasMedia}
-                  aria-label={muted ? '取消静音' : '静音'}
-                  aria-pressed={muted}
-                >
-                  {muted || volume === 0 ? '🔇' : '🔊'}
-                </button>
-                <input
-                  className="controls__volume-slider"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={muted ? 0 : Math.round(volume)}
-                  disabled={!hasMedia}
-                  aria-label="音量"
-                  onChange={(event) => handleVolumeChange(Number(event.target.value))}
-                  style={{ '--fill': `${muted ? 0 : volume}%` } as CSSProperties}
-                />
-              </div>
-
-              <div className="controls__speed">
-                <button
-                  className="controls__button controls__button--text"
-                  type="button"
-                  onClick={() => setSpeedOpen((open) => !open)}
-                  disabled={!hasMedia}
-                  aria-haspopup="menu"
-                  aria-expanded={speedOpen}
-                  aria-label="播放倍速"
-                >
-                  {formatSpeed(speed)}
-                </button>
-                {speedOpen ? (
-                  <div className="speed-menu" role="menu" aria-label="播放倍速">
-                    {SPEED_OPTIONS.map((option) => (
-                      <button
-                        key={option}
-                        className="speed-menu__item"
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={Math.abs(option - speed) < 0.01}
-                        onClick={() => handleSpeedChange(option)}
-                      >
-                        {formatSpeed(option)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
+              <p className="library__hint">选一个目录，把里面的视频铺成方格</p>
               <button
-                className="controls__button"
+                className="button"
                 type="button"
-                onClick={handleToggleFullscreen}
-                aria-label={fullscreen ? '退出全屏' : '全屏'}
+                onClick={() => void handleChooseDirectory()}
+                disabled={!canOpen}
               >
-                ⛶
+                选择目录
               </button>
-            </footer>
-          </>
-        ) : (
-          <main className="library" data-island={currentFile ? 'true' : 'false'}>
-            {videos.length === 0 ? (
-              <div className="library__empty">
-                <span className="library__icon" aria-hidden="true">
-                  <svg viewBox="0 0 48 48">
-                    <rect x="7" y="13" width="34" height="26" rx="5" />
-                    <path d="M7 21h34" />
-                    <path d="M18 7h12" />
-                  </svg>
-                </span>
-                <p className="library__hint">选一个目录，把里面的视频铺成方格</p>
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => void handleChooseDirectory()}
-                  disabled={!canOpen}
-                >
-                  选择目录
-                </button>
-                <button
-                  className="library__single"
-                  type="button"
-                  onClick={() => void handleOpenFile()}
-                  disabled={!canOpen}
-                >
-                  或打开单个视频
-                </button>
-              </div>
-            ) : (
-              <VideoGrid
-                videos={videos}
-                thumbnails={thumbnails}
-                focusedPath={focusedPath}
-                currentPath={currentFile}
-                onFocus={setFocusedPath}
-                onOpen={handleOpenFromTile}
-              />
-            )}
-          </main>
-        )}
+              <button
+                className="library__single"
+                type="button"
+                onClick={() => void handleOpenFile()}
+                disabled={!canOpen}
+              >
+                或打开单个视频
+              </button>
+            </div>
+          ) : (
+            <VideoGrid
+              videos={videos}
+              thumbnails={thumbnails}
+              expandedPath={expanded ? currentFile : null}
+              flash={flash}
+              buffering={buffering}
+              onOpen={handleOpenFromTile}
+              onTogglePlay={() => void handleTogglePause()}
+              onSeekBy={(offset) => {
+                handleSeekBy(offset)
+                setFlash({
+                  id: Date.now(),
+                  x: offset > 0 ? 78 : 22,
+                  y: 50,
+                  offset,
+                })
+              }}
+            />
+          )}
+        </main>
       </div>
 
-      {view === 'library' && currentFile ? (
+      {currentFile ? (
         <Island
           title={fileName(currentFile)}
-          position={player?.position ?? 0}
-          duration={player?.duration ?? 0}
+          position={shownPosition}
+          duration={duration}
           paused={paused}
-          onOpen={() => setView('player')}
+          volume={volume}
+          muted={muted}
+          speed={speed}
+          buffering={buffering}
+          fullscreen={fullscreen}
+          scrub={scrub}
+          preview={preview}
+          previewImage={previewImage}
+          speedOpen={speedOpen}
           onTogglePause={() => void handleTogglePause()}
+          onScrubChange={handleScrubChange}
+          onScrubCommit={handleScrubCommit}
+          onProgressHover={handleProgressHover}
+          onProgressLeave={handleProgressLeave}
+          onVolumeChange={handleVolumeChange}
+          onToggleMute={handleToggleMute}
+          onToggleSpeedMenu={() => setSpeedOpen((open) => !open)}
+          onSelectSpeed={handleSpeedChange}
+          onToggleFullscreen={handleToggleFullscreen}
+          onCollapse={() => void handleCollapse()}
         />
       ) : null}
 
       {curtain ? <div className="curtain" ref={curtainRef} data-testid="curtain" /> : null}
-
-      {screenPulse > 0 ? <div className="screen-pulse" key={screenPulse} /> : null}
 
       {error ? (
         <p className="app__error" role="alert">

@@ -21,9 +21,9 @@ describe('App（浏览器环境，走真实后端模块）', () => {
     expect(document.documentElement.dataset.shell).toBe('browser')
   })
 
-  it('未播放视频时舞台标记为空闲，避免窗口透明透出桌面', () => {
+  it('没有画面时窗口保持不透明，避免透出桌面', () => {
     const { container } = render(<App />)
 
-    expect(container.querySelector('.app')).toHaveAttribute('data-stage', 'empty')
+    expect(container.querySelector('.app')).toHaveAttribute('data-video', 'false')
   })
 })

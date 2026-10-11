@@ -1,41 +1,103 @@
-import { memo, useLayoutEffect, useRef } from 'react'
+import {
+  memo,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import type { BrowseEntry } from '../lib/backend'
+
+export interface GridFlash {
+  id: number
+  x: number
+  y: number
+  offset: number
+}
 
 export interface VideoGridProps {
   videos: BrowseEntry[]
   thumbnails: Record<string, string>
-  /** 被点开放大（但还没播放）的那一个。 */
-  focusedPath: string | null
-  currentPath: string | null
-  onFocus: (path: string) => void
+  /** 正在播放、并且已经放大成画面的那一个；没有则为 null。 */
+  expandedPath: string | null
+  /** 双击放大画面时浮出的涟漪提示。 */
+  flash: GridFlash | null
+  buffering: boolean
   onOpen: (path: string, from: DOMRect) => void
+  onTogglePlay: () => void
+  onSeekBy: (offset: number) => void
 }
 
 interface TileProps {
   video: BrowseEntry
   thumbnail: string | undefined
-  focused: boolean
-  current: boolean
-  onFocus: (path: string) => void
+  expanded: boolean
+  flash: GridFlash | null
+  buffering: boolean
   onOpen: (path: string, from: DOMRect) => void
+  onTogglePlay: () => void
+  onSeekBy: (offset: number) => void
 }
 
-/**
- * 单个方格单独 memo：缩略图是逐个到达的，没必要每来一张就重画整面墙。
- */
-const Tile = memo(function Tile({ video, thumbnail, focused, current, onFocus, onOpen }: TileProps) {
+const Tile = memo(function Tile({
+  video,
+  thumbnail,
+  expanded,
+  flash,
+  buffering,
+  onOpen,
+  onTogglePlay,
+  onSeekBy,
+}: TileProps) {
+  /** 放大后的画面：单击切播放暂停，双击左右半屏快退快进。 */
+  const handleExpandedClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.detail > 1) {
+      return
+    }
+
+    onTogglePlay()
+  }
+
+  const handleExpandedDoubleClick = (event: ReactMouseEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const localX = event.clientX - rect.left
+
+    onSeekBy(localX < rect.width / 2 ? -10 : 10)
+  }
+
+  if (expanded) {
+    return (
+      <div
+        className="tile tile--expanded"
+        data-tile={video.path}
+        data-testid="expanded-tile"
+        onClick={handleExpandedClick}
+        onDoubleClick={handleExpandedDoubleClick}
+      >
+        {flash ? (
+          <div className="flash" key={flash.id}>
+            <span
+              className="flash__ripple"
+              data-testid="flash-ripple"
+              style={{ '--x': `${flash.x}%`, '--y': `${flash.y}%` } as CSSProperties}
+            />
+            <span className="flash__badge">
+              {flash.offset > 0 ? `+${flash.offset}s` : `${flash.offset}s`}
+            </span>
+          </div>
+        ) : null}
+
+        {buffering ? <span className="buffering" data-testid="buffering" /> : null}
+      </div>
+    )
+  }
+
   return (
     <button
       className="tile"
       data-tile={video.path}
-      data-focused={focused ? 'true' : 'false'}
-      data-current={current ? 'true' : 'false'}
       type="button"
       title={video.name}
-      aria-pressed={focused}
-      onClick={(event) =>
-        focused ? onOpen(video.path, event.currentTarget.getBoundingClientRect()) : onFocus(video.path)
-      }
+      onClick={(event) => onOpen(video.path, event.currentTarget.getBoundingClientRect())}
     >
       {thumbnail === undefined ? (
         <span className="tile__placeholder" />
@@ -51,19 +113,23 @@ const Tile = memo(function Tile({ video, thumbnail, focused, current, onFocus, o
 })
 
 /**
- * 视频方格墙。点一下放大让位，再点一下播放。
+ * 视频方格墙。
  *
- * 放大会改变相邻格子的位置和尺寸，这里用 FLIP：先记下变化前每个格子的
- * 外接矩形，DOM 更新后再把每个格子从旧位置「倒着」动画到新位置。
- * 尺寸变化靠 scale 补，标签在动画期间淡出，避免被拉伸变形。
+ * 点一个方格就把它放大成铺满视口的画面，并用 `order: -1` 挪到最前面，
+ * 于是其他方格整体向下让位。放大的那一格背景透明，让底层 mpv 的画面透出来。
+ *
+ * 放大会改变相邻格子的位置，这里用 FLIP：先记下变化前的外接矩形，
+ * DOM 更新后再把每个格子从旧位置动画到新位置。
  */
 export default function VideoGrid({
   videos,
   thumbnails,
-  focusedPath,
-  currentPath,
-  onFocus,
+  expandedPath,
+  flash,
+  buffering,
   onOpen,
+  onTogglePlay,
+  onSeekBy,
 }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const previousRects = useRef(new Map<string, DOMRect>())
@@ -100,6 +166,11 @@ export default function VideoGrid({
         continue
       }
 
+      // 放大那一下不做形变，直接换形态更干脆
+      if (tile.classList.contains('tile--expanded')) {
+        continue
+      }
+
       // 测试环境（jsdom）没有 Web Animations API，直接跳过动画，布局仍然正确
       if (typeof tile.animate !== 'function') {
         continue
@@ -120,26 +191,31 @@ export default function VideoGrid({
         ?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'linear' })
     }
 
-    previousRects.current = next
     // 注意依赖里没有 thumbnails：缩略图到达不改变任何格子的位置，
     // 把它放进来会让每张图到达都触发一次全网格测量，直接卡住
-  }, [videos, focusedPath])
+    previousRects.current = next
+  }, [videos, expandedPath])
 
   return (
-    <div className="grid" ref={containerRef} data-testid="video-grid">
-      {videos.map((video) => {
-        return (
-          <Tile
-            key={video.path}
-            video={video}
-            thumbnail={thumbnails[video.path]}
-            focused={focusedPath === video.path}
-            current={video.path === currentPath}
-            onFocus={onFocus}
-            onOpen={onOpen}
-          />
-        )
-      })}
+    <div
+      className="grid"
+      ref={containerRef}
+      data-testid="video-grid"
+      data-expanded={expandedPath !== null ? 'true' : 'false'}
+    >
+      {videos.map((video) => (
+        <Tile
+          key={video.path}
+          video={video}
+          thumbnail={thumbnails[video.path]}
+          expanded={video.path === expandedPath}
+          flash={video.path === expandedPath ? flash : null}
+          buffering={video.path === expandedPath && buffering}
+          onOpen={onOpen}
+          onTogglePlay={onTogglePlay}
+          onSeekBy={onSeekBy}
+        />
+      ))}
     </div>
   )
 }
