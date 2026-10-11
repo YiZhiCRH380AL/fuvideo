@@ -10,6 +10,14 @@ pub fn run() {
     .manage(mpv::PlayerState::default())
     .manage(thumbnail::ThumbnailState::default())
     .setup(|app| {
+      // 安装包里自带 mpv 的话优先用它，用户不用再单独装
+      if let Ok(bundled) = app
+        .path()
+        .resolve("binaries/mpv/mpv.exe", tauri::path::BaseDirectory::Resource)
+      {
+        mpv::set_bundled_mpv(bundled);
+      }
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

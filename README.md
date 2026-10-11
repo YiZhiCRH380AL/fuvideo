@@ -38,15 +38,19 @@ fuvideo 把「简洁」和「动效」放在同等重要的位置：播放界面
 
 ### 前提
 
-播放依赖 **mpv**，需要单独安装（安装包不包含它）：
+播放依赖 **mpv**。发布版安装包**已经内置**，装完即可用，不需要额外操作。
+
+从源码构建时得自己准备一份：把 mpv 的 `mpv.exe` 和 `d3dcompiler_43.dll`
+放进 `src-tauri/binaries/mpv/`（该目录体积过大，不进仓库）。用 winget 装一份
+再拷过去即可：
 
 ```
 winget install --id shinchiro.mpv -e
 ```
 
-应用会依次在 PATH、`C:\Program Files\MPV Player\mpv.exe`、`C:\Program Files\mpv\mpv.exe`
-等常见位置查找，也可以用环境变量 `FUVIDEO_MPV_PATH` 直接指定。
-另外需要 Windows 10/11 自带的 WebView2 运行时。
+运行时的查找顺序是：安装包自带的 > 环境变量 `FUVIDEO_MPV_PATH` > PATH >
+`C:\Program Files\MPV Player\mpv.exe` 等常见位置。另外需要 Windows 10/11
+自带的 WebView2 运行时。
 
 ### 开发
 

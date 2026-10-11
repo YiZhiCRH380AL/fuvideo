@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -39,6 +39,14 @@ const MPV_FILE_CANDIDATES: &[&str] = &[
 ];
 
 const MPV_EXECUTABLE: &str = "mpv.exe";
+
+/// 随安装包一起分发的 mpv。有它就用它，不必要求用户自己装。
+static BUNDLED_MPV: OnceLock<PathBuf> = OnceLock::new();
+
+/// 启动时登记安装包自带的 mpv 路径。
+pub fn set_bundled_mpv(path: PathBuf) {
+  let _ = BUNDLED_MPV.set(path);
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,7 +207,14 @@ pub fn find_in_path(executable: &str) -> Option<PathBuf> {
 }
 
 /// 定位 mpv 可执行文件：环境变量 > PATH > 常见安装目录。
-pub fn find_mpv() -> Option<PathBuf> {
+/// 定位 mpv：安装包自带 > 环境变量 > PATH > 常见安装目录。
+pub fn find_mpv_with(bundled: Option<&PathBuf>) -> Option<PathBuf> {
+  if let Some(path) = bundled {
+    if path.is_file() {
+      return Some(path.clone());
+    }
+  }
+
   if let Some(custom) = std::env::var_os(MPV_PATH_ENV) {
     let candidate = PathBuf::from(custom);
 
@@ -209,6 +224,10 @@ pub fn find_mpv() -> Option<PathBuf> {
   }
 
   find_in_path(MPV_EXECUTABLE).or_else(|| find_first_file(MPV_FILE_CANDIDATES.iter().map(PathBuf::from)))
+}
+
+pub fn find_mpv() -> Option<PathBuf> {
+  find_mpv_with(BUNDLED_MPV.get())
 }
 
 /// 探测指定路径的 mpv，`None` 表示没找到可执行文件。
@@ -693,6 +712,33 @@ mod tests {
     let probe = probe_at(Some(&known));
     assert!(probe.available);
     assert!(probe.version.is_some(), "应能从 mpv --version 解析出版本号");
+  }
+
+  #[test]
+  fn bundled_path_takes_precedence() {
+    let known = PathBuf::from(r"C:\Program Files\MPV Player\mpv.exe");
+
+    if !known.is_file() {
+      eprintln!("本机没有默认安装位置的 mpv，跳过");
+      return;
+    }
+
+    assert_eq!(find_mpv_with(Some(&known)), Some(known));
+  }
+
+  #[test]
+  fn missing_bundled_path_falls_back_to_system_mpv() {
+    let missing = std::env::temp_dir().join("fuvideo-no-such-mpv.exe");
+    let _ = std::fs::remove_file(&missing);
+
+    let resolved = find_mpv_with(Some(&missing));
+
+    // 自带的那份不存在时不能返回它，应该落到系统装的 mpv
+    assert_ne!(resolved, Some(missing));
+
+    if PathBuf::from(r"C:\Program Files\MPV Player\mpv.exe").is_file() {
+      assert!(resolved.is_some(), "本机装了 mpv，应该能落到它");
+    }
   }
 
   fn connect_until_ready(pipe: &str, timeout: Duration) -> ipc::MpvIpc {

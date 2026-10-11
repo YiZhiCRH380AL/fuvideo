@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>futurevideo</title>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1c24" />
+      <stop offset="100%" stop-color="#0a0a0c" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#9cc7ff" />
+      <stop offset="100%" stop-color="#5b8def" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.45" r="0.5">
+      <stop offset="0%" stop-color="#6ea8ff" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#6ea8ff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#surface)" />
+  <rect
+    x="10"
+    y="10"
+    width="1004"
+    height="1004"
+    rx="220"
+    fill="none"
+    stroke="#34343e"
+    stroke-width="12"
+  />
+  <circle cx="512" cy="486" r="340" fill="url(#glow)" />
+
+  <!--
+    播放三角形，中间留一道细缝。
+    这道缝呼应界面里播放/暂停图标裂开成两根竖条的那下形变。
+    大尺寸下看得见，缩到 16px 时会并成一个完整的三角形。
+  -->
+  <path d="M 378 296 L 506 399 L 506 625 L 378 728 Z" fill="url(#accent)" />
+  <path d="M 530 418 L 646 512 L 530 606 Z" fill="url(#accent)" />
+</svg>

@@ -55,6 +55,9 @@ blob-report/
 .playwright/
 
 # ---- 媒体大文件（如不需要可删除本段）----
+
+# ---- 随安装包分发的 mpv（体积过大，不进仓库）----
+src-tauri/binaries/
 *.mp4
 *.mov
 *.avi
