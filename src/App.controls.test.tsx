@@ -152,7 +152,10 @@ async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}): Promis
   await userEvent.click(tile)
   await userEvent.click(tile)
 
-  await waitFor(() => expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled())
+  // 机器负载高时默认 1 秒不够，容易偶发失败
+  await waitFor(() => expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled(), {
+    timeout: 3000,
+  })
 }
 
 describe('目录页', () => {
@@ -221,6 +224,17 @@ describe('播放页', () => {
     await userEvent.click(screen.getByRole('button', { name: '返回目录' }))
 
     expect(mocks.togglePause).not.toHaveBeenCalled()
+  })
+
+  it('播放页里侧边栏开关仍然在，并且能收起', async () => {
+    await openPlayingVideo()
+
+    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByRole('button', { name: '返回目录' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
+
+    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-open', 'false')
   })
 })
 

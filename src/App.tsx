@@ -577,18 +577,19 @@ export default function App() {
               >
                 <span aria-hidden="true">←</span>
               </button>
-            ) : (
-              <button
-                className="app__toggle"
-                type="button"
-                onClick={() => setSidebarOpen((open) => !open)}
-                aria-expanded={sidebarOpen}
-                aria-label="视频库"
-              >
-                <span aria-hidden="true">☰</span>
-                <span className="app__toggle-label">视频库</span>
-              </button>
-            )}
+            ) : null}
+
+            {/* 侧边栏开关在两种视图里都要在，否则从侧边栏进播放页后就关不掉了 */}
+            <button
+              className="app__toggle"
+              type="button"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-expanded={sidebarOpen}
+              aria-label="视频库"
+            >
+              <span aria-hidden="true">☰</span>
+              <span className="app__toggle-label">视频库</span>
+            </button>
 
             <span className="app__wordmark">futurevideo</span>
 
