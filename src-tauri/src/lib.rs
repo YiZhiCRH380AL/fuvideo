@@ -19,6 +19,9 @@ pub fn run() {
       mpv::pick_video_file,
       mpv::play_video,
       mpv::stop_video,
+      mpv::player_state,
+      mpv::toggle_pause,
+      mpv::seek_to,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

@@ -17,6 +17,22 @@ interface MpvProbe {
   path: string | null
 }
 
+export interface PlayerSnapshot {
+  hasMedia: boolean
+  path: string | null
+  position: number
+  duration: number
+  paused: boolean
+}
+
+const IDLE_SNAPSHOT: PlayerSnapshot = {
+  hasMedia: false,
+  path: null,
+  position: 0,
+  duration: 0,
+  paused: true,
+}
+
 /** 是否跑在 Tauri 外壳里。浏览器里打开时返回 false。 */
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -74,4 +90,31 @@ export async function playLocalVideo(path: string): Promise<void> {
   }
 
   await invoke('play_video', { path })
+}
+
+/** 读取播放位置、总时长与暂停状态。 */
+export async function getPlayerState(): Promise<PlayerSnapshot> {
+  if (!isTauri()) {
+    return IDLE_SNAPSHOT
+  }
+
+  return invoke<PlayerSnapshot>('player_state')
+}
+
+/** 在播放与暂停之间切换，返回切换后的暂停状态。 */
+export async function togglePause(): Promise<boolean> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  return invoke<boolean>('toggle_pause')
+}
+
+/** 跳转到指定秒数。 */
+export async function seekTo(position: number): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  await invoke('seek_to', { position })
 }

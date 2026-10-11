@@ -11,8 +11,13 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+mod ipc;
+
 /// 允许通过环境变量指定 mpv 可执行文件，便于开发时指向自备的解压版 mpv。
 pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
+
+/// 与 mpv 通信用的命名管道。
+pub const IPC_PIPE: &str = r"\\.\pipe\fuvideo-mpv";
 
 /// PATH 里找不到时兜底的常见安装位置。注意这里是**完整可执行文件路径**，不是目录。
 const MPV_FILE_CANDIDATES: &[&str] = &[
@@ -35,19 +40,27 @@ pub struct MpvProbe {
 #[derive(Default)]
 pub struct PlayerState {
   child: Mutex<Option<Child>>,
+  ipc: Mutex<Option<ipc::MpvIpc>>,
+  current_path: Mutex<Option<String>>,
 }
 
 impl PlayerState {
   /// 换上一个新的播放进程，同时结束上一个，保证同一时间只跑一个 mpv。
-  fn replace(&self, child: Child) {
-    let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+  fn replace(&self, child: Child, path: String) {
+    {
+      let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    if let Some(mut previous) = slot.take() {
-      let _ = previous.kill();
-      let _ = previous.wait();
+      if let Some(mut previous) = slot.take() {
+        let _ = previous.kill();
+        let _ = previous.wait();
+      }
+
+      *slot = Some(child);
     }
 
-    *slot = Some(child);
+    // 换了进程，旧连接就作废了，交给 ensure_ipc 重新建立
+    *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
   }
 
   /// 停止当前播放。没有在播放时是空操作。
@@ -57,6 +70,51 @@ impl PlayerState {
     if let Some(mut child) = slot.take() {
       let _ = child.kill();
       let _ = child.wait();
+    }
+
+    *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+  }
+
+  fn current_path(&self) -> Option<String> {
+    self
+      .current_path
+      .lock()
+      .unwrap_or_else(|poisoned| poisoned.into_inner())
+      .clone()
+  }
+
+  /// 确保 IPC 已连接。mpv 刚启动时管道可能还没建好，失败就等下一次再试。
+  fn ensure_ipc(&self) {
+    let mut slot = self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if slot.is_none() {
+      if let Ok(client) = ipc::MpvIpc::connect(IPC_PIPE) {
+        *slot = Some(client);
+      }
+    }
+  }
+
+  /// 借出 IPC 连接执行一次操作。连接层面出错时丢弃连接，下次自动重连。
+  fn with_ipc<T>(&self, action: impl FnOnce(&ipc::MpvIpc) -> Result<T, ipc::IpcError>) -> Result<T, String> {
+    self.ensure_ipc();
+
+    let outcome = {
+      let guard = self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+      match guard.as_ref() {
+        Some(client) => action(client),
+        None => return Err("播放内核尚未就绪".to_string()),
+      }
+    };
+
+    match outcome {
+      Ok(value) => Ok(value),
+      Err(ipc::IpcError::Rejected(reason)) => Err(reason),
+      Err(other) => {
+        *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        Err(other.to_string())
+      }
     }
   }
 }
@@ -145,9 +203,10 @@ fn read_version(executable: &Path) -> Option<String> {
 }
 
 /// 组装启动 mpv 的命令行参数。嵌进 `window_handle` 指定的窗口，并关掉 mpv 自己的界面。
-pub fn build_play_args(window_handle: isize, path: &str) -> Vec<String> {
+pub fn build_play_args(window_handle: isize, pipe_path: &str, path: &str) -> Vec<String> {
   vec![
     format!("--wid={window_handle}"),
+    format!("--input-ipc-server={pipe_path}"),
     "--no-border".to_string(),
     "--force-window=yes".to_string(),
     "--keep-open=no".to_string(),
@@ -259,7 +318,7 @@ pub fn play_video(
   let before = win::child_windows(window_handle);
 
   let mut command = Command::new(&executable);
-  command.args(build_play_args(window_handle, &path));
+  command.args(build_play_args(window_handle, IPC_PIPE, &path));
 
   #[cfg(windows)]
   {
@@ -274,7 +333,7 @@ pub fn play_video(
     .spawn()
     .map_err(|error| format!("启动 mpv 失败: {error}"))?;
 
-  state.replace(child);
+  state.replace(child, path);
 
   std::thread::sleep(Duration::from_millis(500));
 
@@ -293,8 +352,64 @@ pub fn stop_video(state: tauri::State<'_, PlayerState>) {
   state.stop();
 }
 
+/// 送回给前端的播放状态快照。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PlayerSnapshot {
+  pub has_media: bool,
+  pub path: Option<String>,
+  pub position: f64,
+  pub duration: f64,
+  pub paused: bool,
+}
+
+fn idle_snapshot() -> PlayerSnapshot {
+  PlayerSnapshot {
+    has_media: false,
+    path: None,
+    position: 0.0,
+    duration: 0.0,
+    paused: true,
+  }
+}
+
+/// 读取当前播放位置、总时长与暂停状态，供界面轮询。
+#[tauri::command(async)]
+pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
+  let Some(path) = state.current_path() else {
+    return idle_snapshot();
+  };
+
+  PlayerSnapshot {
+    has_media: true,
+    path: Some(path),
+    position: state.with_ipc(|client| client.get_number("time-pos")).ok().flatten().unwrap_or(0.0),
+    duration: state.with_ipc(|client| client.get_number("duration")).ok().flatten().unwrap_or(0.0),
+    paused: state.with_ipc(|client| client.get_bool("pause")).ok().flatten().unwrap_or(false),
+  }
+}
+
+/// 在播放与暂停之间切换，返回切换后的状态。
+#[tauri::command(async)]
+pub fn toggle_pause(state: tauri::State<'_, PlayerState>) -> Result<bool, String> {
+  let paused = state.with_ipc(|client| client.get_bool("pause"))?.unwrap_or(false);
+  let next = !paused;
+
+  state.with_ipc(|client| client.set_pause(next))?;
+
+  Ok(next)
+}
+
+/// 跳转到指定秒数。
+#[tauri::command(async)]
+pub fn seek_to(state: tauri::State<'_, PlayerState>, position: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.seek_absolute(position))
+}
+
 #[cfg(test)]
 mod tests {
+  use std::thread;
+  use std::time::Instant;
+
   use super::*;
 
   #[test]
@@ -337,9 +452,10 @@ mod tests {
 
   #[test]
   fn build_play_args_embeds_window_and_disables_mpv_ui() {
-    let args = build_play_args(4242, r"E:\clips\sample.mkv");
+    let args = build_play_args(4242, IPC_PIPE, r"E:\clips\sample.mkv");
 
     assert!(args.contains(&"--wid=4242".to_string()));
+    assert!(args.contains(&format!("--input-ipc-server={IPC_PIPE}")));
     assert!(args.contains(&"--osc=no".to_string()));
     assert!(args.contains(&"--hwdec=auto-safe".to_string()));
     assert_eq!(args.last(), Some(&r"E:\clips\sample.mkv".to_string()));
@@ -380,5 +496,90 @@ mod tests {
     let probe = probe_at(Some(&known));
     assert!(probe.available);
     assert!(probe.version.is_some(), "应能从 mpv --version 解析出版本号");
+  }
+
+  fn connect_until_ready(pipe: &str, timeout: Duration) -> ipc::MpvIpc {
+    let deadline = Instant::now() + timeout;
+    let mut last_error = String::new();
+
+    while Instant::now() < deadline {
+      match ipc::MpvIpc::connect(pipe) {
+        Ok(client) => return client,
+        Err(error) => last_error = error,
+      }
+
+      thread::sleep(Duration::from_millis(200));
+    }
+
+    panic!("等不到 mpv 的 IPC 管道 {pipe}: {last_error}");
+  }
+
+  fn wait_for_number(client: &ipc::MpvIpc, name: &str, timeout: Duration) -> Option<f64> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+      if let Ok(Some(value)) = client.get_number(name) {
+        return Some(value);
+      }
+
+      if Instant::now() >= deadline {
+        return None;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+  }
+
+  /// 无界面地跑一遍真实 mpv，验证 IPC 能读状态、能暂停、能跳转。
+  /// 这条链路是界面控件的地基，坏了必须立刻发现。
+  #[test]
+  fn ipc_controls_headless_playback() {
+    let Some(executable) = find_mpv() else {
+      eprintln!("本机未安装 mpv，跳过 IPC 集成测试");
+      return;
+    };
+
+    let pipe = format!(r"\\.\pipe\fuvideo-test-{}", std::process::id());
+    let mut child = Command::new(&executable)
+      .args([
+        format!("--input-ipc-server={pipe}"),
+        "--vo=null".to_string(),
+        "--ao=null".to_string(),
+        "--no-terminal".to_string(),
+        "--no-config".to_string(),
+        // 先暂停，避免无渲染时播放速度快到测试读数不稳定
+        "--pause=yes".to_string(),
+        "av://lavfi:testsrc=duration=4:size=320x240:rate=30".to_string(),
+      ])
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("启动 mpv 失败");
+
+    let client = connect_until_ready(&pipe, Duration::from_secs(20));
+
+    let duration = wait_for_number(&client, "duration", Duration::from_secs(20)).expect("应能读到总时长");
+    assert!(duration > 0.0 && duration.is_finite(), "总时长应当是正数，实际 {duration}");
+
+    assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(true), "启动时应当是暂停的");
+
+    client.set_pause(false).expect("恢复播放");
+    assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(false));
+
+    client.set_pause(true).expect("再次暂停");
+    assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(true));
+
+    // 暂停状态下跳转，读数才是确定的。目标取时长的一半，避免依赖具体素材长度。
+    let target = (duration / 2.0).max(0.1);
+    client.seek_absolute(target).expect("跳转");
+    let position = wait_for_number(&client, "time-pos", Duration::from_secs(10)).expect("应能读到播放位置");
+    assert!(
+      (position - target).abs() < 0.3,
+      "跳转后位置应约为 {target} 秒，实际 {position}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
   }
 }
