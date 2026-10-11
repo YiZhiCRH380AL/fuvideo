@@ -205,11 +205,11 @@ export async function listDirectory(directory: string): Promise<DirectoryListing
   return invoke<DirectoryListing>('list_directory', { directory })
 }
 
-/** 抓取指定时间点的画面，返回可直接显示的 data URL。 */
-export async function thumbnailAt(position: number): Promise<string> {
+/** 抓取指定视频在指定时间点的画面，返回可直接显示的 data URL。 */
+export async function thumbnailAt(source: string, position: number): Promise<string> {
   if (!isTauri()) {
     throw new Error('画面预览需要在桌面应用中运行')
   }
 
-  return invoke<string>('thumbnail_at', { position })
+  return invoke<string>('thumbnail_at', { source, position })
 }

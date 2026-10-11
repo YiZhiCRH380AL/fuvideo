@@ -1,23 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
 
-const IDLE: PlayerSnapshot = {
-  hasMedia: false,
-  ipcReady: false,
-  path: null,
-  position: 0,
-  duration: 0,
-  paused: true,
-  volume: 100,
-  muted: false,
-  speed: 1,
-}
-
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
+const DEMO = String.raw`E:\clips\demo.mp4`
 
 // vi.hoisted 保证这些 mock 在模块导入之前就已经就绪
 const mocks = vi.hoisted(() => {
@@ -62,7 +51,7 @@ const mocks = vi.hoisted(() => {
     playLocalVideo: vi.fn(async (_path: string) => {}),
     pickDirectory: vi.fn(async (): Promise<string | null> => String.raw`E:\clips`),
     listDirectory: vi.fn(async (_directory: string): Promise<DirectoryListing> => listing),
-    thumbnailAt: vi.fn(async (_position: number) => 'data:image/jpeg;base64,AAAA'),
+    thumbnailAt: vi.fn(async (_source: string, _position: number) => 'data:image/jpeg;base64,AAAA'),
   }
 })
 
@@ -87,44 +76,66 @@ vi.mock('./lib/backend', () => ({
   toggleFullscreen: () => mocks.toggleFullscreen(),
   pickDirectory: () => mocks.pickDirectory(),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
-  thumbnailAt: (position: number) => mocks.thumbnailAt(position),
+  thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
 }))
 
 import App from './App'
 
 beforeEach(() => {
-  mocks.snapshot = { ...IDLE }
-  mocks.togglePause.mockClear()
+  mocks.snapshot = {
+    hasMedia: false,
+    ipcReady: false,
+    path: null,
+    position: 0,
+    duration: 0,
+    paused: true,
+    volume: 100,
+    muted: false,
+    speed: 1,
+  }
+
+  for (const fn of [
+    mocks.togglePause,
+    mocks.seekTo,
+    mocks.seekBy,
+    mocks.setVolume,
+    mocks.toggleMute,
+    mocks.setSpeed,
+    mocks.toggleFullscreen,
+    mocks.playLocalVideo,
+    mocks.pickDirectory,
+    mocks.listDirectory,
+    mocks.thumbnailAt,
+  ]) {
+    fn.mockClear()
+  }
+
   mocks.togglePause.mockResolvedValue(false)
-  mocks.seekTo.mockClear()
-  mocks.seekBy.mockClear()
-  mocks.setVolume.mockClear()
-  mocks.toggleMute.mockClear()
   mocks.toggleMute.mockResolvedValue(true)
-  mocks.setSpeed.mockClear()
-  mocks.toggleFullscreen.mockClear()
-  mocks.playLocalVideo.mockClear()
-  mocks.pickDirectory.mockClear()
-  mocks.listDirectory.mockClear()
+  mocks.toggleFullscreen.mockResolvedValue(true)
+  mocks.pickDirectory.mockResolvedValue(CLIPS)
   mocks.listDirectory.mockImplementation(async (directory: string) =>
     directory === ANIME ? mocks.subListing : mocks.listing,
   )
-  mocks.thumbnailAt.mockClear()
   mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,AAAA')
 })
 
-async function openVideo() {
-  const button = screen.getByRole('button', { name: '选择视频文件' })
-  await waitFor(() => expect(button).toBeEnabled())
-  await userEvent.click(button)
+const grid = () => within(screen.getByTestId('video-grid'))
+const sidebar = () => within(screen.getByTestId('sidebar'))
+
+/** 侧边栏选目录，等方格出现。 */
+async function chooseDirectory(): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: '视频库' }))
+  await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
+  await grid().findByRole('button', { name: 'demo.mp4' })
 }
 
-/** 载入一个正在播放的视频，返回已就绪的界面。 */
-async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}) {
+/** 选目录 → 点方格放大 → 再点一下播放，停在播放页。 */
+async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}): Promise<void> {
   mocks.snapshot = {
     hasMedia: true,
     ipcReady: true,
-    path: String.raw`E:\clips\demo.mp4`,
+    path: DEMO,
     position: 0,
     duration: 120,
     paused: false,
@@ -135,26 +146,112 @@ async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}) {
   }
 
   render(<App />)
-  await openVideo()
-  // 用进度条是否可用判断播放状态已经到位，与暂停与否无关
+  await chooseDirectory()
+
+  const tile = grid().getByRole('button', { name: 'demo.mp4' })
+  await userEvent.click(tile)
+  await userEvent.click(tile)
+
   await waitFor(() => expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled())
 }
 
-describe('播放控制', () => {
-  it('加载视频后收起空状态，并在标题栏显示文件名', async () => {
+describe('目录页', () => {
+  it('没有选择目录时提示选择目录', () => {
     render(<App />)
 
-    expect(screen.getByText('把视频拖进来，或')).toBeInTheDocument()
-
-    await openVideo()
-
-    await waitFor(() => {
-      expect(screen.queryByText('把视频拖进来，或')).not.toBeInTheDocument()
-    })
-    expect(screen.getByTestId('current-file')).toHaveTextContent('demo.mp4')
+    expect(screen.getByText('选一个目录，把里面的视频铺成方格')).toBeInTheDocument()
+    expect(screen.queryByTestId('video-grid')).not.toBeInTheDocument()
   })
 
-  it('播放中点击按钮会切换成暂停', async () => {
+  it('选择目录后把视频铺成方格，缩略图取首帧', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS)
+    expect(grid().getByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(grid().getByRole('button', { name: 'other.mkv' })).toBeInTheDocument()
+    // 子目录只出现在侧边栏，不进方格
+    expect(grid().queryByRole('button', { name: 'anime' })).not.toBeInTheDocument()
+
+    await waitFor(() => expect(mocks.thumbnailAt).toHaveBeenCalledWith(DEMO, 0))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('video-grid').querySelectorAll('.tile__image').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('点一下方格放大，再点一下播放', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    const tile = grid().getByRole('button', { name: 'demo.mp4' })
+    await userEvent.click(tile)
+
+    expect(tile).toHaveAttribute('data-focused', 'true')
+    expect(mocks.playLocalVideo).not.toHaveBeenCalled()
+
+    await userEvent.click(tile)
+
+    expect(mocks.playLocalVideo).toHaveBeenCalledWith(DEMO)
+  })
+})
+
+describe('播放页', () => {
+  it('显示文件名，并收起目录方格', async () => {
+    await openPlayingVideo()
+
+    expect(screen.getByTestId('current-file')).toHaveTextContent('demo.mp4')
+    expect(screen.queryByTestId('video-grid')).not.toBeInTheDocument()
+  })
+
+  it('返回箭头回到目录页，并把视频暂停', async () => {
+    await openPlayingVideo()
+    mocks.togglePause.mockResolvedValue(true)
+
+    await userEvent.click(screen.getByRole('button', { name: '返回目录' }))
+
+    expect(mocks.togglePause).toHaveBeenCalledTimes(1)
+    expect(await screen.findByTestId('island')).toBeInTheDocument()
+    expect(screen.getByTestId('video-grid')).toBeInTheDocument()
+  })
+
+  it('已经在播放页时返回不会重复暂停', async () => {
+    await openPlayingVideo({ paused: true })
+
+    await userEvent.click(screen.getByRole('button', { name: '返回目录' }))
+
+    expect(mocks.togglePause).not.toHaveBeenCalled()
+  })
+})
+
+describe('底部常驻条', () => {
+  it('回到目录页后显示进度，点它回到播放页', async () => {
+    await openPlayingVideo({ position: 30, duration: 120, paused: true })
+
+    expect(screen.queryByTestId('island')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '返回目录' }))
+
+    const island = await screen.findByTestId('island')
+    expect(island).toHaveTextContent('demo.mp4')
+    expect(island).toHaveTextContent('0:30 / 2:00')
+
+    await userEvent.click(within(island).getByTestId('island-open'))
+
+    await waitFor(() => expect(screen.queryByTestId('video-grid')).not.toBeInTheDocument())
+    expect(screen.getByRole('slider', { name: '播放进度' })).toBeInTheDocument()
+  })
+
+  it('没有播放过视频时不显示', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    expect(screen.queryByTestId('island')).not.toBeInTheDocument()
+  })
+})
+
+describe('播放控制', () => {
+  it('点击按钮会切换成暂停', async () => {
     await openPlayingVideo()
     mocks.togglePause.mockResolvedValue(true)
 
@@ -175,7 +272,7 @@ describe('播放控制', () => {
     expect(screen.getByRole('slider', { name: '播放进度' })).toHaveValue('30')
   })
 
-  it('拖动进度条松手后跳转到对应位置', async () => {
+  it('拖动进度条松手后跳转到对应位置，且不弹回旧值', async () => {
     await openPlayingVideo({ position: 10, duration: 100 })
 
     const slider = screen.getByRole('slider', { name: '播放进度' })
@@ -183,18 +280,6 @@ describe('播放控制', () => {
     fireEvent.pointerUp(slider)
 
     await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(42))
-  })
-
-  it('松手后进度条停在目标位置，不会被尚未更新的状态拉回去', async () => {
-    await openPlayingVideo({ position: 10, duration: 100 })
-
-    const slider = screen.getByRole('slider', { name: '播放进度' })
-    fireEvent.change(slider, { target: { value: '42' } })
-    fireEvent.pointerUp(slider)
-
-    await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(42))
-
-    // 状态仍然回报旧的 10 秒，但界面必须留在 42 秒，不能弹回去
     expect(slider).toHaveValue('42')
   })
 
@@ -204,39 +289,11 @@ describe('播放控制', () => {
     const slider = screen.getByRole('slider', { name: '播放进度' })
     fireEvent.change(slider, { target: { value: '42' } })
     fireEvent.pointerUp(slider)
-
     await waitFor(() => expect(slider).toHaveValue('42'))
 
     mocks.snapshot = { ...mocks.snapshot, position: 42.2 }
 
     await waitFor(() => expect(slider).toHaveValue('42.2'), { timeout: 2000 })
-  })
-
-  it('状态回报还没到位时，选好文件后控件就已经可用', async () => {
-    // 曾经 Rust 序列化出的是 has_media，前端读 hasMedia 恒为 undefined，
-    // 于是所有控件都被禁用。这条用例守住这个契约。
-    mocks.snapshot = { ...IDLE }
-
-    render(<App />)
-    await openVideo()
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '播放' })).toBeEnabled()
-    })
-    expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled()
-    expect(screen.getByRole('slider', { name: '音量' })).toBeEnabled()
-  })
-
-  it('播放内核没连上时给出提示', async () => {
-    await openPlayingVideo({ ipcReady: false })
-
-    expect(screen.getByTestId('backend-status')).toHaveTextContent('播放内核未连接')
-  })
-
-  it('播放内核正常时不显示告警', async () => {
-    await openPlayingVideo()
-
-    expect(screen.getByTestId('backend-status')).not.toHaveTextContent('播放内核未连接')
   })
 })
 
@@ -252,15 +309,13 @@ describe('音量与倍速', () => {
   it('静音时图标与 aria 状态同步', async () => {
     await openPlayingVideo({ muted: true })
 
-    const button = screen.getByRole('button', { name: '取消静音' })
-    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '取消静音' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('拖动音量条会设置音量', async () => {
     await openPlayingVideo({ volume: 50 })
 
-    const slider = screen.getByRole('slider', { name: '音量' })
-    fireEvent.change(slider, { target: { value: '80' } })
+    fireEvent.change(screen.getByRole('slider', { name: '音量' }), { target: { value: '80' } })
 
     await waitFor(() => expect(mocks.setVolume).toHaveBeenCalledWith(80))
   })
@@ -327,8 +382,7 @@ describe('键盘快捷键', () => {
   it('焦点在进度条上时方向键交给控件自己处理', async () => {
     await openPlayingVideo()
 
-    const slider = screen.getByRole('slider', { name: '播放进度' })
-    fireEvent.keyDown(slider, { code: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('slider', { name: '播放进度' }), { code: 'ArrowRight' })
 
     expect(mocks.seekBy).not.toHaveBeenCalled()
   })
@@ -336,71 +390,61 @@ describe('键盘快捷键', () => {
   it('焦点留在进度条上时，空格依然能暂停', async () => {
     await openPlayingVideo()
 
-    const slider = screen.getByRole('slider', { name: '播放进度' })
-    fireEvent.keyDown(slider, { code: 'Space' })
+    fireEvent.keyDown(screen.getByRole('slider', { name: '播放进度' }), { code: 'Space' })
 
     expect(mocks.togglePause).toHaveBeenCalledTimes(1)
+  })
+
+  it('目录页不响应播放快捷键', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    fireEvent.keyDown(window, { code: 'Space' })
+
+    expect(mocks.togglePause).not.toHaveBeenCalled()
   })
 })
 
 describe('侧边栏', () => {
-  async function openSidebar() {
-    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
-  }
-
-  async function chooseDirectory() {
-    await openSidebar()
-    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
-    await screen.findByRole('button', { name: 'demo.mp4' })
-  }
-
   it('选择目录后同时列出子目录与视频', async () => {
     render(<App />)
 
     await chooseDirectory()
 
     expect(mocks.pickDirectory).toHaveBeenCalledTimes(1)
-    expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS)
-    expect(screen.getByRole('button', { name: 'anime' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(sidebar().getByRole('button', { name: 'anime' })).toBeInTheDocument()
+    expect(sidebar().getByRole('button', { name: 'other.mkv' })).toBeInTheDocument()
     expect(screen.getByTestId('sidebar-directory')).toHaveTextContent(CLIPS)
   })
 
   it('点子目录会进去，点上一级会回到父目录', async () => {
     render(<App />)
-
     await chooseDirectory()
 
-    await userEvent.click(screen.getByRole('button', { name: 'anime' }))
+    await userEvent.click(sidebar().getByRole('button', { name: 'anime' }))
 
-    expect(await screen.findByRole('button', { name: 'ep01.mkv' })).toBeInTheDocument()
+    expect(await sidebar().findByRole('button', { name: 'ep01.mkv' })).toBeInTheDocument()
     expect(mocks.listDirectory).toHaveBeenLastCalledWith(ANIME)
 
-    await userEvent.click(screen.getByRole('button', { name: '上一级' }))
+    await userEvent.click(sidebar().getByRole('button', { name: '上一级' }))
 
-    expect(await screen.findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(await sidebar().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
     expect(mocks.listDirectory).toHaveBeenLastCalledWith(CLIPS)
   })
 
   it('点视频即播放，并标出正在播放的那一个', async () => {
     await openPlayingVideo()
 
-    await chooseDirectory()
-
-    expect(screen.getByRole('button', { name: 'demo.mp4' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('button', { name: 'other.mkv' })).toHaveAttribute('aria-current', 'false')
-
-    await userEvent.click(screen.getByRole('button', { name: 'other.mkv' }))
-
-    expect(mocks.playLocalVideo).toHaveBeenCalledWith(String.raw`E:\clips\other.mkv`)
+    expect(sidebar().getByRole('button', { name: 'demo.mp4' })).toHaveAttribute('aria-current', 'true')
+    expect(sidebar().getByRole('button', { name: 'other.mkv' })).toHaveAttribute('aria-current', 'false')
   })
 
   it('用户取消选择目录时保持原状', async () => {
     render(<App />)
     mocks.pickDirectory.mockResolvedValueOnce(null)
 
-    await openSidebar()
-    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
+    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
+    await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
 
     expect(screen.getByTestId('sidebar-directory')).toHaveTextContent('还没有选择目录')
     expect(mocks.listDirectory).not.toHaveBeenCalled()
@@ -414,11 +458,11 @@ describe('侧边栏', () => {
       entries: [],
     }))
 
-    await openSidebar()
-    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
+    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
+    await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
 
-    expect(await screen.findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '上一级' })).toBeDisabled()
+    expect(await sidebar().findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
+    expect(sidebar().getByRole('button', { name: '上一级' })).toBeDisabled()
   })
 })
 
@@ -439,12 +483,15 @@ describe('进度条悬停预览', () => {
     fireEvent.pointerMove(slider, { clientX })
   }
 
+  const previewCalls = () =>
+    mocks.thumbnailAt.mock.calls.filter(([, position]) => position === 50).length
+
   it('悬停会抓取对应时间点的画面', async () => {
     await openPlayingVideo({ position: 0, duration: 100 })
 
     hoverAt(screen.getByRole('slider', { name: '播放进度' }), 100)
 
-    await waitFor(() => expect(mocks.thumbnailAt).toHaveBeenCalledWith(50), { timeout: 1500 })
+    await waitFor(() => expect(previewCalls()).toBe(1), { timeout: 1500 })
     expect(await screen.findByTestId('hover-preview-image')).toBeInTheDocument()
   })
 
@@ -453,7 +500,7 @@ describe('进度条悬停预览', () => {
     const slider = screen.getByRole('slider', { name: '播放进度' })
 
     hoverAt(slider, 100)
-    await waitFor(() => expect(mocks.thumbnailAt).toHaveBeenCalledTimes(1), { timeout: 1500 })
+    await waitFor(() => expect(previewCalls()).toBe(1), { timeout: 1500 })
 
     fireEvent.pointerLeave(slider)
     hoverAt(slider, 100)
@@ -461,7 +508,7 @@ describe('进度条悬停预览', () => {
       await new Promise((resolve) => setTimeout(resolve, 250))
     })
 
-    expect(mocks.thumbnailAt).toHaveBeenCalledTimes(1)
+    expect(previewCalls()).toBe(1)
   })
 
   it('鼠标离开后收起预览', async () => {

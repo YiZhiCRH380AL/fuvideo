@@ -133,6 +133,15 @@ impl MpvIpc {
     }
   }
 
+  /// 读取字符串属性；属性尚未就绪时返回 `Ok(None)`。
+  pub fn get_string(&self, name: &str) -> Result<Option<String>, IpcError> {
+    match self.request(json!(["get_property", name])) {
+      Ok(value) => Ok(value.as_str().map(str::to_string)),
+      Err(IpcError::Rejected(_)) => Ok(None),
+      Err(other) => Err(other),
+    }
+  }
+
   /// 写入数值属性。
   pub fn set_number(&self, name: &str, value: f64) -> Result<(), IpcError> {
     self.request(json!(["set_property", name, value])).map(|_| ())

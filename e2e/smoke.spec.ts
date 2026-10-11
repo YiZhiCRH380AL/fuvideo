@@ -5,13 +5,13 @@ test('播放器外壳能加载并显示运行环境', async ({ page }) => {
 
   await expect(page.getByText('futurevideo')).toBeVisible()
   await expect(page.getByTestId('backend-status')).toContainText('浏览器')
-  await expect(page.getByTestId('time-display')).toHaveText('0:00 / 0:00')
+  await expect(page.getByText('选一个目录，把里面的视频铺成方格')).toBeVisible()
 })
 
-test('浏览器环境下打开按钮不可用，避免误导用户', async ({ page }) => {
+test('浏览器环境下选择目录不可用，避免误导用户', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('button', { name: '选择视频文件' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '选择目录' })).toBeDisabled()
 })
 
 test('未播放视频时窗口有不透明底色，不会透出桌面', async ({ page }) => {

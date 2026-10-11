@@ -373,7 +373,6 @@ pub fn pick_video_file() -> Result<Option<String>, String> {
 pub fn play_video(
   window: tauri::WebviewWindow,
   state: tauri::State<'_, PlayerState>,
-  thumbnails: tauri::State<'_, crate::thumbnail::ThumbnailState>,
   path: String,
 ) -> Result<(), String> {
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
@@ -399,8 +398,6 @@ pub fn play_video(
     .spawn()
     .map_err(|error| format!("启动 mpv 失败: {error}"))?;
 
-  // 换了片源，预览进程要跟着换
-  thumbnails.set_source(Some(path.clone()));
   state.replace(child, path, pipe);
 
   // mpv 建窗是异步的，轮询找出它新建的那个子窗口。
@@ -436,10 +433,8 @@ pub fn play_video(
 #[tauri::command(async)]
 pub fn stop_video(
   state: tauri::State<'_, PlayerState>,
-  thumbnails: tauri::State<'_, crate::thumbnail::ThumbnailState>,
 ) {
   state.stop();
-  thumbnails.set_source(None);
 }
 
 /// 送回给前端的播放状态快照。

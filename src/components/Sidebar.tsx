@@ -28,6 +28,7 @@ export default function Sidebar({
     <aside
       className="sidebar"
       data-open={open ? 'true' : 'false'}
+      data-testid="sidebar"
       aria-label="视频库"
       aria-hidden={!open}
     >
@@ -70,6 +71,7 @@ export default function Sidebar({
                 <button
                   className="sidebar__item"
                   data-kind={entry.kind}
+                  data-testid="sidebar-item"
                   type="button"
                   title={entry.name}
                   aria-current={entry.kind === 'video' ? entry.path === currentPath : undefined}

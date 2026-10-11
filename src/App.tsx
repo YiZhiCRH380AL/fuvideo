@@ -9,7 +9,9 @@ import {
 } from 'react'
 import './App.css'
 import HoverPreview from './components/HoverPreview'
+import Island from './components/Island'
 import Sidebar from './components/Sidebar'
+import VideoGrid from './components/VideoGrid'
 import {
   getBackendStatus,
   getPlayerState,
@@ -48,26 +50,39 @@ import { useIdleVisibility } from './lib/use-idle-visibility'
 const POLL_INTERVAL_MS = 300
 /** 空闲多久后收起控件。 */
 const CONTROLS_IDLE_MS = 2500
+/** 鼠标停留多久才真正去抓预览图。 */
+const PREVIEW_DEBOUNCE_MS = 120
+
+type View = 'library' | 'player'
 
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
+  const [view, setView] = useState<View>('library')
+
+  const [listing, setListing] = useState<DirectoryListing | null>(null)
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const [focusedPath, setFocusedPath] = useState<string | null>(null)
+
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null)
+
   const [scrub, setScrub] = useState<number | null>(null)
   const [pendingSeek, setPendingSeek] = useState<number | null>(null)
+  const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+
   const [error, setError] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [directoryBusy, setDirectoryBusy] = useState(false)
   const [overControls, setOverControls] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [listing, setListing] = useState<DirectoryListing | null>(null)
-  const [directoryBusy, setDirectoryBusy] = useState(false)
-  const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
+
   const scrubRef = useRef<number | null>(null)
   const pendingTimer = useRef<number | null>(null)
   const previewTimer = useRef<number | null>(null)
-  const thumbnailCache = useRef(new Map<string, string>())
+  const previewCache = useRef(new Map<string, string>())
+  const gridCache = useRef(new Map<string, string>())
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -95,7 +110,7 @@ export default function App() {
     }
   }, [reportError])
 
-  // 播放开始后持续拉取进度，供进度条、时间与音量显示使用
+  // 播放开始后持续拉取进度，供进度条、时间、音量与底部常驻条使用
   useEffect(() => {
     if (!currentFile) {
       return
@@ -116,8 +131,7 @@ export default function App() {
 
         if (!cancelled) {
           setPlayer(snapshot)
-          // 跳转目标已经被真实位置追上时，把显示权交还给播放状态，
-          // 否则进度条会一直停在目标点上不动
+          // 跳转目标已经被真实位置追上时，把显示权交还给播放状态
           setPendingSeek((pending) =>
             pending !== null && Math.abs(snapshot.position - pending) < 0.75 ? null : pending,
           )
@@ -140,7 +154,55 @@ export default function App() {
     }
   }, [currentFile, reportError])
 
-  /** 播放一个具体路径。打开文件与侧边栏点选都走这里。 */
+  // 目录内容变了，方格页的缩略图逐个补上；换目录时中断上一轮
+  useEffect(() => {
+    if (listing === null) {
+      return
+    }
+
+    let cancelled = false
+
+    const run = async () => {
+      for (const entry of listing.entries) {
+        if (cancelled) {
+          return
+        }
+
+        if (entry.kind !== 'video') {
+          continue
+        }
+
+        const cached = gridCache.current.get(entry.path)
+
+        if (cached !== undefined) {
+          setThumbnails((previous) =>
+            previous[entry.path] === cached ? previous : { ...previous, [entry.path]: cached },
+          )
+          continue
+        }
+
+        try {
+          const image = await thumbnailAt(entry.path, 0)
+
+          if (cancelled) {
+            return
+          }
+
+          gridCache.current.set(entry.path, image)
+          setThumbnails((previous) => ({ ...previous, [entry.path]: image }))
+        } catch {
+          // 单个文件抓不到就让它空着，不影响其他方格
+        }
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [listing])
+
   const playPath = useCallback(
     async (path: string) => {
       setError(null)
@@ -149,8 +211,8 @@ export default function App() {
         await playLocalVideo(path)
         setCurrentFile(path)
         setPendingSeek(null)
-        // 换了片源，预览缓存作废
-        thumbnailCache.current.clear()
+        previewCache.current.clear()
+        setView('player')
       } catch (cause: unknown) {
         reportError(cause)
       }
@@ -158,21 +220,6 @@ export default function App() {
     [reportError],
   )
 
-  const handleOpen = useCallback(async () => {
-    setError(null)
-
-    try {
-      const path = await pickVideoFile()
-
-      if (path) {
-        await playPath(path)
-      }
-    } catch (cause: unknown) {
-      reportError(cause)
-    }
-  }, [playPath, reportError])
-
-  /** 读取并展示一个目录，进入子目录与返回上一级都走这里。 */
   const loadDirectory = useCallback(
     async (target: string) => {
       setError(null)
@@ -180,6 +227,8 @@ export default function App() {
 
       try {
         setListing(await listDirectory(target))
+        // 换了目录，之前放大的那个方格就不存在了
+        setFocusedPath(null)
       } catch (cause: unknown) {
         reportError(cause)
       } finally {
@@ -203,6 +252,21 @@ export default function App() {
     }
   }, [loadDirectory, reportError])
 
+  /** 直接打开单个视频，不走目录。 */
+  const handleOpenFile = useCallback(async () => {
+    setError(null)
+
+    try {
+      const path = await pickVideoFile()
+
+      if (path) {
+        await playPath(path)
+      }
+    } catch (cause: unknown) {
+      reportError(cause)
+    }
+  }, [playPath, reportError])
+
   const handleGoUp = useCallback(() => {
     if (listing?.parent) {
       void loadDirectory(listing.parent)
@@ -220,33 +284,37 @@ export default function App() {
     }
   }, [reportError])
 
-  // 以「是否已选中文件」为准，而不是等播放状态回报，
-  // 否则状态一来一回之间控件会有一段点不动的空窗
-  const hasMedia = currentFile !== null
-  const paused = player?.paused !== false
-  const duration = player?.duration ?? 0
-  // 松手后先停在目标位置，避免轮询把滑块拉回旧位置造成跳动
-  const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
-  const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
-  const volume = player?.volume ?? 100
-  const muted = player?.muted === true
-  const speed = player?.speed ?? 1
+  /** 回到目录页：先把视频停下来，进度条改由底部常驻条接管。 */
+  const handleBackToLibrary = useCallback(async () => {
+    setView('library')
+
+    if (player?.paused === false) {
+      try {
+        const paused = await togglePause()
+        setPlayer((previous) => (previous ? { ...previous, paused } : previous))
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    }
+  }, [player, reportError])
 
   const handleVolumeChange = useCallback(
     (next: number) => {
       setVolume(next).catch(reportError)
 
       // 拖着音量条就等于要听声音，顺手解除静音
-      if (muted && next > 0) {
-        toggleMute().catch(reportError)
+      if (player?.muted === true && next > 0) {
+        toggleMute()
+          .then((muted) => setPlayer((previous) => (previous ? { ...previous, muted } : previous)))
+          .catch(reportError)
       }
     },
-    [muted, reportError],
+    [player?.muted, reportError],
   )
 
   const handleToggleMute = useCallback(() => {
     toggleMute()
-      .then((next) => setPlayer((previous) => (previous ? { ...previous, muted: next } : previous)))
+      .then((muted) => setPlayer((previous) => (previous ? { ...previous, muted } : previous)))
       .catch(reportError)
   }, [reportError])
 
@@ -269,7 +337,7 @@ export default function App() {
     setScrub(scrubRef.current)
   }, [])
 
-  // 拖动过程中只更新显示，松手时才真正跳转，避免每移动一像素就发一次请求
+  // 拖动过程中只更新显示，松手时才真正跳转
   const handleScrubCommit = useCallback(() => {
     const pending = scrubRef.current
     scrubRef.current = null
@@ -281,7 +349,6 @@ export default function App() {
 
     setPendingSeek(pending)
 
-    // 兜底：万一跳转没生效，两秒后也要把显示权还给真实位置
     if (pendingTimer.current !== null) {
       window.clearTimeout(pendingTimer.current)
     }
@@ -294,44 +361,49 @@ export default function App() {
     seekTo(pending).catch(reportError)
   }, [reportError])
 
-  useEffect(
-    () => () => {
-      if (pendingTimer.current !== null) {
-        window.clearTimeout(pendingTimer.current)
+  const hasMedia = currentFile !== null
+  const paused = player?.paused !== false
+  const duration = player?.duration ?? 0
+  const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
+  const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
+  const volume = player?.volume ?? 100
+  const muted = player?.muted === true
+  const speed = player?.speed ?? 1
+  const videos = listing?.entries.filter((entry) => entry.kind === 'video') ?? []
+
+  const loadPreview = useCallback(
+    async (source: string, seconds: number) => {
+      const key = `${source}::${Math.round(seconds)}`
+      const cached = previewCache.current.get(key)
+
+      if (cached !== undefined) {
+        setPreviewImage(cached)
+        return
+      }
+
+      try {
+        const image = await thumbnailAt(source, seconds)
+        previewCache.current.set(key, image)
+        setPreviewImage(image)
+      } catch {
+        // 预览拿不到就只是不显示画面，不打断播放
+        setPreviewImage(null)
       }
     },
     [],
   )
 
-  const loadPreview = useCallback(async (seconds: number) => {
-    const key = String(Math.round(seconds))
-    const cached = thumbnailCache.current.get(key)
-
-    if (cached !== undefined) {
-      setPreviewImage(cached)
-      return
-    }
-
-    try {
-      const image = await thumbnailAt(seconds)
-      thumbnailCache.current.set(key, image)
-      setPreviewImage(image)
-    } catch {
-      // 预览拿不到就只是不显示画面，不打断播放
-      setPreviewImage(null)
-    }
-  }, [])
-
   const handleProgressHover = useCallback(
     (event: ReactPointerEvent<HTMLInputElement>) => {
-      if (!hasMedia || duration <= 0) {
+      if (!currentFile || duration <= 0) {
         return
       }
 
       const rect = event.currentTarget.getBoundingClientRect()
       const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+      const seconds = fraction * duration
 
-      setPreview({ fraction, seconds: fraction * duration })
+      setPreview({ fraction, seconds })
 
       // 鼠标快速扫过时不值得每一帧都去截图
       if (previewTimer.current !== null) {
@@ -340,10 +412,10 @@ export default function App() {
 
       previewTimer.current = window.setTimeout(() => {
         previewTimer.current = null
-        void loadPreview(fraction * duration)
-      }, 120)
+        void loadPreview(currentFile, seconds)
+      }, PREVIEW_DEBOUNCE_MS)
     },
-    [duration, hasMedia, loadPreview],
+    [currentFile, duration, loadPreview],
   )
 
   const handleProgressLeave = useCallback(() => {
@@ -356,14 +428,31 @@ export default function App() {
     setPreviewImage(null)
   }, [])
 
-  // 空闲一会儿自动收起控件；暂停、拖动进度、开着倍速菜单或正在预览时保持显示
+  // 空闲一会儿自动收起控件；只在播放页生效
   const controlsVisible = useIdleVisibility({
     delayMs: CONTROLS_IDLE_MS,
-    enabled: hasMedia && !paused && scrub === null && !speedOpen,
-    pinned: overControls || !hasMedia || preview !== null,
+    enabled: view === 'player' && hasMedia && !paused && scrub === null && !speedOpen,
+    pinned: view === 'library' || overControls || !hasMedia || preview !== null,
   })
 
+  useEffect(
+    () => () => {
+      if (pendingTimer.current !== null) {
+        window.clearTimeout(pendingTimer.current)
+      }
+
+      if (previewTimer.current !== null) {
+        window.clearTimeout(previewTimer.current)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
+    if (view !== 'player') {
+      return
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (shouldIgnoreShortcut(event.code, event.target)) {
         return
@@ -416,7 +505,17 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleSpeedChange, handleToggleFullscreen, handleToggleMute, handleTogglePause, handleVolumeChange, reportError, speed, volume])
+  }, [
+    handleSpeedChange,
+    handleToggleFullscreen,
+    handleToggleMute,
+    handleTogglePause,
+    handleVolumeChange,
+    reportError,
+    speed,
+    view,
+    volume,
+  ])
 
   // 倍速菜单开着时，点别处或按 Esc 收起
   useEffect(() => {
@@ -452,7 +551,7 @@ export default function App() {
   return (
     <div
       className="app"
-      data-stage={currentFile ? 'video' : 'empty'}
+      data-stage={view === 'player' && currentFile ? 'video' : 'empty'}
       data-controls={controlsVisible ? 'visible' : 'hidden'}
     >
       <Sidebar
@@ -466,153 +565,215 @@ export default function App() {
         onSelect={(path) => void playPath(path)}
       />
 
-      <div className="shell">
-      <header className="app__bar">
-        <div className="app__brand">
-          <button
-            className="app__toggle"
-            type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
-            aria-expanded={sidebarOpen}
-            aria-label="视频库"
-          >
-            <span aria-hidden="true">☰</span>
-            <span className="app__toggle-label">视频库</span>
-          </button>
-          <span className="app__wordmark">futurevideo</span>
-          {currentFile ? (
-            <span className="app__file" data-testid="current-file">
-              {fileName(currentFile)}
-            </span>
-          ) : null}
-        </div>
-        <span
-          className="app__backend"
-          data-testid="backend-status"
-          data-warning={kernelWarning ? 'true' : undefined}
-        >
-          {kernelWarning ?? backendLabel}
-        </span>
-      </header>
+      <div className="shell" data-view={view}>
+        <header className="app__bar">
+          <div className="app__brand">
+            {view === 'player' ? (
+              <button
+                className="app__toggle"
+                type="button"
+                onClick={() => void handleBackToLibrary()}
+                aria-label="返回目录"
+              >
+                <span aria-hidden="true">←</span>
+              </button>
+            ) : (
+              <button
+                className="app__toggle"
+                type="button"
+                onClick={() => setSidebarOpen((open) => !open)}
+                aria-expanded={sidebarOpen}
+                aria-label="视频库"
+              >
+                <span aria-hidden="true">☰</span>
+                <span className="app__toggle-label">视频库</span>
+              </button>
+            )}
 
-      <main className="stage" onClick={hasMedia ? () => void handleTogglePause() : undefined}>
-        {currentFile ? null : (
-          <div className="stage__empty">
-            <p className="stage__hint">把视频拖进来，或</p>
-            <button className="button" type="button" onClick={handleOpen} disabled={!canOpen}>
-              选择视频文件
-            </button>
+            <span className="app__wordmark">futurevideo</span>
+
+            {view === 'player' && currentFile ? (
+              <span className="app__file" data-testid="current-file">
+                {fileName(currentFile)}
+              </span>
+            ) : null}
           </div>
-        )}
-      </main>
 
-      <footer
-        className="controls"
-        onMouseEnter={() => setOverControls(true)}
-        onMouseLeave={() => setOverControls(false)}
-      >
-        <button
-          className="controls__button"
-          type="button"
-          onClick={() => void handleTogglePause()}
-          disabled={!hasMedia}
-          aria-label={paused ? '播放' : '暂停'}
-        >
-          {paused ? '▶' : '❚❚'}
-        </button>
-
-        <span className="controls__time" data-testid="time-display">
-          {formatDuration(shownPosition)} / {formatDuration(duration)}
-        </span>
-
-        <div className="controls__progress-wrap">
-          <input
-            className="controls__progress"
-            type="range"
-            min={0}
-            max={Math.max(duration, 0.1)}
-            step={0.1}
-            value={shownPosition}
-            disabled={!hasMedia}
-            aria-label="播放进度"
-            onChange={handleScrubChange}
-            onPointerUp={handleScrubCommit}
-            onKeyUp={handleScrubCommit}
-            onBlur={handleScrubCommit}
-            onPointerMove={handleProgressHover}
-            onPointerLeave={handleProgressLeave}
-            style={{ '--fill': `${fillPercent}%` } as CSSProperties}
-          />
-          {preview ? (
-            <HoverPreview image={previewImage} seconds={preview.seconds} fraction={preview.fraction} />
-          ) : null}
-        </div>
-
-        <div className="controls__volume">
-          <button
-            className="controls__button"
-            type="button"
-            onClick={handleToggleMute}
-            disabled={!hasMedia}
-            aria-label={muted ? '取消静音' : '静音'}
-            aria-pressed={muted}
+          <span
+            className="app__backend"
+            data-testid="backend-status"
+            data-warning={kernelWarning ? 'true' : undefined}
           >
-            {muted || volume === 0 ? '🔇' : '🔊'}
-          </button>
-          <input
-            className="controls__volume-slider"
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={muted ? 0 : Math.round(volume)}
-            disabled={!hasMedia}
-            aria-label="音量"
-            onChange={(event) => handleVolumeChange(Number(event.target.value))}
-            style={{ '--fill': `${muted ? 0 : volume}%` } as CSSProperties}
-          />
-        </div>
+            {kernelWarning ?? backendLabel}
+          </span>
+        </header>
 
-        <div className="controls__speed">
-          <button
-            className="controls__button controls__button--text"
-            type="button"
-            onClick={() => setSpeedOpen((open) => !open)}
-            disabled={!hasMedia}
-            aria-haspopup="menu"
-            aria-expanded={speedOpen}
-            aria-label="播放倍速"
-          >
-            {formatSpeed(speed)}
-          </button>
-          {speedOpen ? (
-            <div className="speed-menu" role="menu" aria-label="播放倍速">
-              {SPEED_OPTIONS.map((option) => (
+        {view === 'player' ? (
+          <>
+            <main className="stage" onClick={hasMedia ? () => void handleTogglePause() : undefined}>
+              {currentFile ? null : (
+                <div className="stage__empty">
+                  <p className="stage__hint">还没有打开视频</p>
+                  <button className="button" type="button" onClick={() => void handleBackToLibrary()}>
+                    返回目录
+                  </button>
+                </div>
+              )}
+            </main>
+
+            <footer
+              className="controls"
+              onMouseEnter={() => setOverControls(true)}
+              onMouseLeave={() => setOverControls(false)}
+            >
+              <button
+                className="controls__button"
+                type="button"
+                onClick={() => void handleTogglePause()}
+                disabled={!hasMedia}
+                aria-label={paused ? '播放' : '暂停'}
+              >
+                {paused ? '▶' : '❚❚'}
+              </button>
+
+              <span className="controls__time" data-testid="time-display">
+                {formatDuration(shownPosition)} / {formatDuration(duration)}
+              </span>
+
+              <div className="controls__progress-wrap">
+                <input
+                  className="controls__progress"
+                  type="range"
+                  min={0}
+                  max={Math.max(duration, 0.1)}
+                  step={0.1}
+                  value={shownPosition}
+                  disabled={!hasMedia}
+                  aria-label="播放进度"
+                  onChange={handleScrubChange}
+                  onPointerUp={handleScrubCommit}
+                  onKeyUp={handleScrubCommit}
+                  onBlur={handleScrubCommit}
+                  onPointerMove={handleProgressHover}
+                  onPointerLeave={handleProgressLeave}
+                  style={{ '--fill': `${fillPercent}%` } as CSSProperties}
+                />
+                {preview ? (
+                  <HoverPreview image={previewImage} seconds={preview.seconds} fraction={preview.fraction} />
+                ) : null}
+              </div>
+
+              <div className="controls__volume">
                 <button
-                  key={option}
-                  className="speed-menu__item"
+                  className="controls__button"
                   type="button"
-                  role="menuitemradio"
-                  aria-checked={Math.abs(option - speed) < 0.01}
-                  onClick={() => handleSpeedChange(option)}
+                  onClick={handleToggleMute}
+                  disabled={!hasMedia}
+                  aria-label={muted ? '取消静音' : '静音'}
+                  aria-pressed={muted}
                 >
-                  {formatSpeed(option)}
+                  {muted || volume === 0 ? '🔇' : '🔊'}
                 </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+                <input
+                  className="controls__volume-slider"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={muted ? 0 : Math.round(volume)}
+                  disabled={!hasMedia}
+                  aria-label="音量"
+                  onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                  style={{ '--fill': `${muted ? 0 : volume}%` } as CSSProperties}
+                />
+              </div>
 
-        <button
-          className="controls__button"
-          type="button"
-          onClick={handleToggleFullscreen}
-          aria-label={fullscreen ? '退出全屏' : '全屏'}
-        >
-          ⛶
-        </button>
-      </footer>
+              <div className="controls__speed">
+                <button
+                  className="controls__button controls__button--text"
+                  type="button"
+                  onClick={() => setSpeedOpen((open) => !open)}
+                  disabled={!hasMedia}
+                  aria-haspopup="menu"
+                  aria-expanded={speedOpen}
+                  aria-label="播放倍速"
+                >
+                  {formatSpeed(speed)}
+                </button>
+                {speedOpen ? (
+                  <div className="speed-menu" role="menu" aria-label="播放倍速">
+                    {SPEED_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        className="speed-menu__item"
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={Math.abs(option - speed) < 0.01}
+                        onClick={() => handleSpeedChange(option)}
+                      >
+                        {formatSpeed(option)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                className="controls__button"
+                type="button"
+                onClick={handleToggleFullscreen}
+                aria-label={fullscreen ? '退出全屏' : '全屏'}
+              >
+                ⛶
+              </button>
+            </footer>
+          </>
+        ) : (
+          <main className="library" data-island={currentFile ? 'true' : 'false'}>
+            {videos.length === 0 ? (
+              <div className="library__empty">
+                <p className="library__hint">选一个目录，把里面的视频铺成方格</p>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void handleChooseDirectory()}
+                  disabled={!canOpen}
+                >
+                  选择目录
+                </button>
+                <button
+                  className="library__single"
+                  type="button"
+                  onClick={() => void handleOpenFile()}
+                  disabled={!canOpen}
+                >
+                  或打开单个视频
+                </button>
+              </div>
+            ) : (
+              <VideoGrid
+                videos={videos}
+                thumbnails={thumbnails}
+                focusedPath={focusedPath}
+                currentPath={currentFile}
+                onFocus={setFocusedPath}
+                onOpen={(path) => void playPath(path)}
+              />
+            )}
+          </main>
+        )}
       </div>
+
+      {view === 'library' && currentFile ? (
+        <Island
+          title={fileName(currentFile)}
+          position={player?.position ?? 0}
+          duration={player?.duration ?? 0}
+          paused={paused}
+          onOpen={() => setView('player')}
+          onTogglePause={() => void handleTogglePause()}
+        />
+      ) : null}
 
       {error ? (
         <p className="app__error" role="alert">
