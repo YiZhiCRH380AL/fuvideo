@@ -2,6 +2,53 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：P0 地基（已完成）
+
+这一阶段**不新增可见功能**，只把后面所有播放器能力都要踩的地基铺好。
+
+- **常驻播放内核**：[mpv.rs](src-tauri/src/mpv.rs) 不再每播一个文件就 kill 再重启。
+  第一次播放启动进程（`--idle=yes`），之后换片一律走 IPC 的 `loadfile`。音频设备、字幕、
+  画面这些偏好因此天然跨片保留，换片也不用重新等启动、重新找窗口。
+  子窗口的对齐与「压到底层」收在 `sync_embedded_window`：mpv 建窗是异步的，首次可能还没
+  建出来，载入文件之后会再补一次。
+- **优雅退出**：应用退出时先发 `quit` 再回收进程（超时 3 秒才强杀），mpv 才有机会把
+  watch-later 落盘。watch-later 目录指向应用配置目录，不去动用户自己那份 `%APPDATA%\mpv`。
+  由此开启了「退出时记住播放位置」：同一个文件下次打开会从上次的位置接着播。
+- **设置存储**：[settings.rs](src-tauri/src/settings.rs)。应用配置目录下的 `settings.json`，
+  目前覆盖硬解、是否记住位置、字幕自动加载、字幕字号、声道布局、音频设备。
+  约定是**默认值等于 mpv 默认行为的项写成 `Option`，`None` 就完全不传这个参数**，
+  所以开箱行为和加设置之前一模一样；坏 JSON、缺字段、越界取值一律折回默认，不报错。
+  面板还没做，但这些值已经会注入 mpv 的启动参数。
+- **浮层面板骨架**：[Popover.tsx](src/components/Popover.tsx)。点外面收、Esc 收，锚点容器
+  由调用方给。第一个使用者就是原来的倍速菜单，样式改名成 `.popover` / `.popover__item`，
+  属性一字未改，所以外观与动画不变。App 里的面板状态由 `speedOpen` 改成 `openPanel`，
+  空闲隐藏只看「有没有面板开着」，后面加音轨/字幕面板不必各接一遍。
+- **低频详情通道**：`player_details` 命令返回轨道表（`track-list`）与当前真正生效的硬解后端
+  （`hwdec-current`）。轨道表是数组，不塞进 300ms 一次的高频快照。界面侧客户端已就位，
+  P1 的音轨/字幕面板直接用它。
+
+覆盖到的测试：
+
+- `src-tauri/src/settings.rs`：默认值、文件缺失、坏 JSON、往返、缺字段、白名单折回、
+  字号区间、空设备名、camelCase 字段名。
+- `src-tauri/src/mpv.rs`：启动参数（不带文件名、`--idle`、设置项按需注入、watch-later 路径）、
+  `track-list` 解析、详情序列化，以及两条真实 mpv 的集成用例——同一进程连续 `loadfile` 换片、
+  退出时写出 watch-later。
+- `src-tauri/src/mpv/ipc.rs`：连接重试到点即放弃。
+- `src/components/Popover.test.tsx`：开关、点外面、点锚点、点内容、Esc、关着时不监听。
+- `src/App.controls.test.tsx`：倍速菜单按 Esc 收起。
+- `src/lib/backend.test.ts`：浏览器环境下详情与设置的兜底。
+
+验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（119 个）、
+`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（44 个）全绿。
+
+**还没验证到的**：窗口嵌入属于原生子窗口那一层，自动化测试覆盖不到。这次改的是「什么时候
+去找那个窗口」，需要真机 `npm run tauri dev` 点开一个视频确认画面正常。
+
+**下一步（P1）**：音轨切换、外挂音轨、音频输出设备与独占模式、声道、音频延迟，以及外挂字幕
+（手动挂载、轨道选择、双语、延迟与字号）。这一批全是 mpv 现成属性，界面复用这一阶段做好的
+浮层骨架与 `player_details` 通道。
+
 ## 上一阶段：开屏动画（已完成）
 
 开屏改成「窗口一露面就已经画好的浮层」，不再先闪一个空白窗口。
@@ -119,7 +166,7 @@ npm run tauri build -- --bundles nsis
 `target/` 在 `.gitignore` 里，产物不进仓库；要发布得手动传到 Releases
 （本机没装 `gh`，走网页上传，或者装上 `gh` 之后 `gh release create`）。
 
-## 下一阶段：播放器能力扩展（规划中，尚未开工）
+## 路线图：播放器能力扩展（P0 已完成，下一步 P1）
 
 目标：把 mpv 已经具备、但界面没有暴露出来的播放器能力分批接出来，功能面对标 PotPlayer；
 **但不改画面渲染链，也不改现有外观与动效**。这一节是路线图，动手前先看下面的调研结论和设计约束。
@@ -150,7 +197,7 @@ npm run tauri build -- --bundles nsis
 - 新面板必须接进 `useIdleVisibility` 的判据（现在只有 `!speedOpen`），否则鼠标停在面板上界面会自己隐去。
 - 高频快照 `player_state` 不再加字段；轨道表、设备表这类列表数据走独立的低频通道。
 
-### P0 地基（不新增可见功能，先做）
+### P0 地基（已完成，见上面「上一阶段：P0 地基」）
 
 1. 常驻 mpv + `loadfile`，替掉「每片 kill + 重启」。收益：设备/字幕/画面偏好天然跨片保留，
    换片不再重启内核，也不用每次重新找子窗口。
