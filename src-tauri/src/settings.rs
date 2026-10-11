@@ -24,11 +24,17 @@ pub const SUB_AUTO_MODES: &[&str] = &["no", "exact", "fuzzy", "all"];
 /// 允许的声道布局，对应 mpv 的 `--audio-channels`。
 pub const AUDIO_CHANNELS: &[&str] = &["auto-safe", "auto", "mono", "stereo", "2.1", "5.1", "7.1"];
 
+/// 允许的 ASS 字幕样式覆盖模式，对应 mpv 的 `--sub-ass-override`。
+pub const SUB_ASS_OVERRIDE_MODES: &[&str] = &["no", "yes", "scale", "force", "strip"];
+
 /// 默认硬解模式。和加设置之前写死在启动参数里的那个保持一致。
 pub const DEFAULT_HWDEC: &str = "auto-safe";
 
 /// `--sub-font-size` 的合法区间，跟 mpv 对齐。
 const SUB_FONT_SIZE_RANGE: (f64, f64) = (1.0, 9000.0);
+
+/// `--sub-pos` 的合法区间，跟 mpv 对齐：0 在顶部，100 是底部。
+const SUB_POSITION_RANGE: (f64, f64) = (0.0, 150.0);
 
 fn default_hwdec() -> String {
   DEFAULT_HWDEC.to_string()
@@ -54,6 +60,12 @@ pub struct Settings {
   pub audio_channels: Option<String>,
   /// 音频输出设备；`None` 表示不传，交给 mpv 自己的默认值（`auto`）。
   pub audio_device: Option<String>,
+  /// 音频独占模式。开着会独占设备，别的程序就出不了声，所以默认关。
+  pub audio_exclusive: bool,
+  /// 字幕垂直位置；`None` 表示不传，交给 mpv 自己的默认值。
+  pub sub_position: Option<f64>,
+  /// ASS 字幕的样式覆盖模式；`None` 表示不传，交给 mpv 自己的默认值（`scale`）。
+  pub sub_ass_override: Option<String>,
 }
 
 impl Default for Settings {
@@ -65,6 +77,9 @@ impl Default for Settings {
       sub_font_size: None,
       audio_channels: None,
       audio_device: None,
+      audio_exclusive: false,
+      sub_position: None,
+      sub_ass_override: None,
     }
   }
 }
@@ -87,10 +102,17 @@ impl Settings {
       .filter(|size| size.is_finite())
       .map(|size| size.clamp(SUB_FONT_SIZE_RANGE.0, SUB_FONT_SIZE_RANGE.1));
 
+    self.sub_position = self
+      .sub_position
+      .filter(|position| position.is_finite())
+      .map(|position| position.clamp(SUB_POSITION_RANGE.0, SUB_POSITION_RANGE.1));
+
     self.audio_device = self
       .audio_device
       .map(|name| name.trim().to_string())
       .filter(|name| !name.is_empty());
+
+    self.sub_ass_override = keep_choice(self.sub_ass_override, SUB_ASS_OVERRIDE_MODES);
 
     self
   }
@@ -173,6 +195,8 @@ mod tests {
     assert_eq!(settings.sub_font_size, None);
     assert_eq!(settings.audio_channels, None);
     assert_eq!(settings.audio_device, None);
+    assert!(!settings.audio_exclusive, "独占模式默认关：开着会抢占设备");
+    assert_eq!(settings.sub_position, None);
   }
 
   #[test]
@@ -201,6 +225,9 @@ mod tests {
       sub_font_size: Some(48.0),
       audio_channels: Some("stereo".to_string()),
       audio_device: Some("wasapi/{device}".to_string()),
+      audio_exclusive: true,
+      sub_position: Some(92.0),
+      sub_ass_override: Some("force".to_string()),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -278,6 +305,23 @@ mod tests {
     assert_eq!(not_a_number.sub_font_size, None);
   }
 
+  #[test]
+  fn subtitle_position_is_clamped_to_the_mpv_range() {
+    let below = Settings {
+      sub_position: Some(-20.0),
+      ..Settings::default()
+    }
+    .normalized();
+    let above = Settings {
+      sub_position: Some(999.0),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(below.sub_position, Some(SUB_POSITION_RANGE.0));
+    assert_eq!(above.sub_position, Some(SUB_POSITION_RANGE.1));
+  }
+
   /// 前端按 camelCase 读字段，名字一旦对不上，界面会静默拿到 undefined。
   #[test]
   fn settings_serialize_camel_case_fields() {
@@ -290,6 +334,9 @@ mod tests {
       "subFontSize",
       "audioChannels",
       "audioDevice",
+      "audioExclusive",
+      "subPosition",
+      "subAssOverride",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }

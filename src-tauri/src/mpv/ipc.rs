@@ -164,6 +164,22 @@ impl MpvIpc {
     self.request(json!(["set_property", name, value])).map(|_| ())
   }
 
+  /// 写入字符串属性。
+  ///
+  /// 轨道选择也走这里：mpv 的 `aid` / `sid` 要么是数字，要么是字面量 `no`，
+  /// 用 `set_number` 传不了后者。
+  pub fn set_string(&self, name: &str, value: &str) -> Result<(), IpcError> {
+    self.request(json!(["set_property", name, value])).map(|_| ())
+  }
+
+  /// 选中某条轨道。
+  ///
+  /// `aid` / `sid` / `secondary-sid` 都是**整数**属性：mpv 收到 `1.0` 这种
+  /// 浮点会直接回一个 "error accessing property"。这里必须走整数。
+  pub fn select_track(&self, property: &str, id: i64) -> Result<(), IpcError> {
+    self.request(json!(["set_property", property, id])).map(|_| ())
+  }
+
   pub fn seek_absolute(&self, seconds: f64) -> Result<(), IpcError> {
     self.request(json!(["seek", seconds, "absolute"])).map(|_| ())
   }
@@ -194,6 +210,24 @@ impl MpvIpc {
   /// 所以收尾时要发这条命令，而不是直接 kill。
   pub fn quit(&self) -> Result<(), IpcError> {
     self.request(json!(["quit"])).map(|_| ())
+  }
+
+  /// 立刻把当前状态写进 watch-later，不等退出。
+  ///
+  /// 换片前必须先来一发：`loadfile` 会把上一个文件直接扔掉，mpv 只会在
+  /// 退出时自动落盘，不主动写的话这片选的音轨、字幕、进度就丢了。
+  pub fn write_watch_later(&self) -> Result<(), IpcError> {
+    self.request(json!(["write-watch-later-config"])).map(|_| ())
+  }
+
+  /// 挂一条外挂字幕并选中它。
+  pub fn add_subtitle(&self, path: &str) -> Result<(), IpcError> {
+    self.request(json!(["sub-add", path, "select"])).map(|_| ())
+  }
+
+  /// 挂一条外挂音轨并选中它。
+  pub fn add_audio(&self, path: &str) -> Result<(), IpcError> {
+    self.request(json!(["audio-add", path, "select"])).map(|_| ())
   }
 }
 

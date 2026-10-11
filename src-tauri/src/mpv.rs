@@ -451,6 +451,18 @@ pub fn build_player_args(
     args.push(format!("--audio-device={device}"));
   }
 
+  if settings.audio_exclusive {
+    args.push("--audio-exclusive=yes".to_string());
+  }
+
+  if let Some(position) = settings.sub_position {
+    args.push(format!("--sub-pos={position}"));
+  }
+
+  if let Some(mode) = &settings.sub_ass_override {
+    args.push(format!("--sub-ass-override={mode}"));
+  }
+
   args
 }
 
@@ -650,6 +662,12 @@ pub fn play_video(
     &config_dir,
   )?;
 
+  // 换片之前先把上一个文件的进度和轨道选择写进 watch-later：
+  // loadfile 会直接把它丢掉，而 mpv 只在自己退出时才自动写。
+  if state.current_path().is_some() {
+    let _ = state.with_ipc(|client| client.write_watch_later());
+  }
+
   state.with_ipc(|client| client.load_file(&path))?;
   state.set_current_path(Some(path));
 
@@ -818,14 +836,58 @@ pub struct PlayerDetails {
   pub path: Option<String>,
   pub tracks: Vec<TrackInfo>,
   pub hwdec_current: Option<String>,
+  /// 第二字幕（双语字幕的第二条）；`None` 表示没开。
+  pub secondary_subtitle_id: Option<i64>,
+  pub audio_delay: f64,
+  pub subtitle_delay: f64,
+  pub subtitle_font_size: f64,
+  pub subtitle_position: f64,
+  /// ASS 字幕的样式覆盖模式：`scale` 跟着文件走，`force` 才会用播放器的字号和位置。
+  pub subtitle_style: String,
+  pub audio_channels: String,
+  pub audio_device: String,
+  pub audio_exclusive: bool,
 }
+
+/// 这些属性 mpv 有可能读不出来，兜底值取 mpv 自己的默认值。
+const DEFAULT_SUB_FONT_SIZE: f64 = 38.0;
+const DEFAULT_SUB_POSITION: f64 = 100.0;
+const DEFAULT_SUB_STYLE: &str = "scale";
+const DEFAULT_AUDIO_CHANNELS: &str = "auto-safe";
+const DEFAULT_AUDIO_DEVICE: &str = "auto";
 
 fn idle_details() -> PlayerDetails {
   PlayerDetails {
     path: None,
     tracks: Vec::new(),
     hwdec_current: None,
+    secondary_subtitle_id: None,
+    audio_delay: 0.0,
+    subtitle_delay: 0.0,
+    subtitle_font_size: DEFAULT_SUB_FONT_SIZE,
+    subtitle_position: DEFAULT_SUB_POSITION,
+    subtitle_style: DEFAULT_SUB_STYLE.to_string(),
+    audio_channels: DEFAULT_AUDIO_CHANNELS.to_string(),
+    audio_device: DEFAULT_AUDIO_DEVICE.to_string(),
+    audio_exclusive: false,
   }
+}
+
+/// 读一个数值属性；读不到就用兜底值，别把界面卡在 NaN 上。
+fn number_or(state: &PlayerState, name: &str, fallback: f64) -> f64 {
+  state
+    .with_ipc(|client| client.get_number(name))
+    .ok()
+    .flatten()
+    .unwrap_or(fallback)
+}
+
+fn text_or(state: &PlayerState, name: &str, fallback: &str) -> String {
+  state
+    .with_ipc(|client| client.get_string(name))
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| fallback.to_string())
 }
 
 /// 把 mpv 的 `track-list` 数组解析成界面用的轨道表。
@@ -881,7 +943,288 @@ pub fn player_details(state: tauri::State<'_, PlayerState>) -> PlayerDetails {
       .map(|value| parse_tracks(&value))
       .unwrap_or_default(),
     hwdec_current: state.with_ipc(|client| client.get_string("hwdec-current")).ok().flatten(),
+    secondary_subtitle_id: state
+      .with_ipc(|client| client.get_number("secondary-sid"))
+      .ok()
+      .flatten()
+      .map(|id| id as i64),
+    audio_delay: number_or(&state, "audio-delay", 0.0),
+    subtitle_delay: number_or(&state, "sub-delay", 0.0),
+    subtitle_font_size: number_or(&state, "sub-font-size", DEFAULT_SUB_FONT_SIZE),
+    subtitle_position: number_or(&state, "sub-pos", DEFAULT_SUB_POSITION),
+    subtitle_style: text_or(&state, "sub-ass-override", DEFAULT_SUB_STYLE),
+    audio_channels: text_or(&state, "audio-channels", DEFAULT_AUDIO_CHANNELS),
+    audio_device: text_or(&state, "audio-device", DEFAULT_AUDIO_DEVICE),
+    audio_exclusive: state
+      .with_ipc(|client| client.get_bool("audio-exclusive"))
+      .ok()
+      .flatten()
+      .unwrap_or(false),
   }
+}
+
+/* ---------------- 音频输出设备 ---------------- */
+
+/// 一个音频输出设备。展示用 `description`，切换时用 `name`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDevice {
+  pub name: String,
+  pub description: String,
+}
+
+/// 解析 mpv 的 `audio-device-list`。
+///
+/// 少了名字的那条只能丢掉——切换时没有名字可用。描述缺失就拿名字顶上，
+/// 列表里宁可有条丑的，也不要少一条能用的设备。
+pub fn parse_audio_devices(value: &Value) -> Vec<AudioDevice> {
+  let Some(items) = value.as_array() else {
+    return Vec::new();
+  };
+
+  items
+    .iter()
+    .filter_map(|item| {
+      let name = item.get("name").and_then(Value::as_str)?.to_string();
+      let description = item
+        .get("description")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .unwrap_or(&name)
+        .to_string();
+
+      Some(AudioDevice { name, description })
+    })
+    .collect()
+}
+
+/// 列出所有音频输出设备。面板展开时拉一次。
+#[tauri::command(async)]
+pub fn audio_devices(state: tauri::State<'_, PlayerState>) -> Vec<AudioDevice> {
+  state
+    .with_ipc(|client| client.get_value("audio-device-list"))
+    .ok()
+    .flatten()
+    .map(|value| parse_audio_devices(&value))
+    .unwrap_or_default()
+}
+
+/* ---------------- 播放中的音轨、音频输出与字幕 ---------------- */
+
+/// 延迟的允许范围。够用就行，免得手滑传进来的极端值把声音推走。
+const DELAY_LIMIT: f64 = 10.0;
+
+/// `--sub-font-size` 的区间，和设置模块保持一致。
+const SUB_FONT_SIZE_RANGE: (f64, f64) = (1.0, 9000.0);
+/// `--sub-pos` 的区间：0 在顶部，100 是底部。
+const SUB_POSITION_RANGE: (f64, f64) = (0.0, 150.0);
+
+/// 把取值夹进区间。NaN 折到最接近 0 的那一端——坏值总比把声音推走 10 秒好。
+fn clamp_range(value: f64, min: f64, max: f64) -> f64 {
+  if value.is_nan() {
+    return min.max(0.0).min(max);
+  }
+
+  value.clamp(min, max)
+}
+
+fn clamp_delay(seconds: f64) -> f64 {
+  clamp_range(seconds, -DELAY_LIMIT, DELAY_LIMIT)
+}
+
+/// 改一个设置项并立刻落盘。
+///
+/// 播放中的改动（输出设备、声道、字号）既要对当前这片生效，也要留给下次启动，
+/// 所以是「改 mpv 属性 + 存设置」两步，这里收口第二步。
+fn update_settings(
+  app: &tauri::AppHandle,
+  change: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
+  let directory = settings::config_dir(app);
+  let mut current = settings::load(&directory);
+  change(&mut current);
+  settings::save(&directory, current)
+}
+
+/// 切换音轨。`None` 表示关掉音频。
+#[tauri::command(async)]
+pub fn set_audio_track(state: tauri::State<'_, PlayerState>, id: Option<i64>) -> Result<(), String> {
+  state.with_ipc(|client| match id {
+    Some(id) => client.select_track("aid", id),
+    None => client.set_string("aid", "no"),
+  })
+}
+
+/// 切换字幕轨道。`None` 表示关闭字幕。
+#[tauri::command(async)]
+pub fn set_subtitle_track(
+  state: tauri::State<'_, PlayerState>,
+  id: Option<i64>,
+) -> Result<(), String> {
+  state.with_ipc(|client| match id {
+    Some(id) => client.select_track("sid", id),
+    None => client.set_string("sid", "no"),
+  })
+}
+
+/// 选第二字幕，用来做双语。`None` 表示关掉。
+#[tauri::command(async)]
+pub fn set_secondary_subtitle(
+  state: tauri::State<'_, PlayerState>,
+  id: Option<i64>,
+) -> Result<(), String> {
+  state.with_ipc(|client| match id {
+    Some(id) => client.select_track("secondary-sid", id),
+    None => client.set_string("secondary-sid", "no"),
+  })
+}
+
+/// ASS 字幕的样式覆盖。
+///
+/// 默认的 `scale` 是跟着字幕文件走的：字号、位置这些播放器设置会被 ASS 里写死的
+/// 样式盖掉。想让自己调的字号真的生效，得切到 `force`。
+#[tauri::command(async)]
+pub fn set_subtitle_style_override(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  mode: String,
+) -> Result<(), String> {
+  if !settings::SUB_ASS_OVERRIDE_MODES.contains(&mode.as_str()) {
+    return Err(format!("不支持的字幕样式模式: {mode}"));
+  }
+
+  state.with_ipc(|client| client.set_string("sub-ass-override", &mode))?;
+  update_settings(&app, |settings| settings.sub_ass_override = Some(mode.clone()))?;
+
+  Ok(())
+}
+
+/// 选一个字幕文件挂上去。用户取消时返回 `None`。
+#[tauri::command(async)]
+pub fn add_subtitle_file(state: tauri::State<'_, PlayerState>) -> Result<Option<String>, String> {
+  let picked = rfd::FileDialog::new()
+    .set_title("选择字幕")
+    .add_filter(
+      "字幕文件",
+      &["srt", "ass", "ssa", "sub", "vtt", "smi", "idx", "sup", "mks", "lrc", "ttml"],
+    )
+    .add_filter("全部文件", &["*"])
+    .pick_file();
+
+  let Some(path) = picked else {
+    return Ok(None);
+  };
+
+  let path = path.to_string_lossy().to_string();
+  state.with_ipc(|client| client.add_subtitle(&path))?;
+
+  Ok(Some(path))
+}
+
+/// 选一个音频文件当外挂音轨。用户取消时返回 `None`。
+#[tauri::command(async)]
+pub fn add_audio_file(state: tauri::State<'_, PlayerState>) -> Result<Option<String>, String> {
+  let picked = rfd::FileDialog::new()
+    .set_title("选择音轨")
+    .add_filter(
+      "音频文件",
+      &["aac", "ac3", "eac3", "dts", "flac", "m4a", "mp3", "ogg", "opus", "wav", "wma", "thd"],
+    )
+    .add_filter("全部文件", &["*"])
+    .pick_file();
+
+  let Some(path) = picked else {
+    return Ok(None);
+  };
+
+  let path = path.to_string_lossy().to_string();
+  state.with_ipc(|client| client.add_audio(&path))?;
+
+  Ok(Some(path))
+}
+
+/// 音频延迟，正数表示让声音晚一点出来。
+#[tauri::command(async)]
+pub fn set_audio_delay(state: tauri::State<'_, PlayerState>, seconds: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.set_number("audio-delay", clamp_delay(seconds)))
+}
+
+/// 字幕延迟，正数表示让字幕晚一点出来。
+#[tauri::command(async)]
+pub fn set_subtitle_delay(state: tauri::State<'_, PlayerState>, seconds: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.set_number("sub-delay", clamp_delay(seconds)))
+}
+
+/// 字幕字号。这是全局偏好，下次启动也用它。
+#[tauri::command(async)]
+pub fn set_subtitle_font_size(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  size: f64,
+) -> Result<(), String> {
+  let size = clamp_range(size, SUB_FONT_SIZE_RANGE.0, SUB_FONT_SIZE_RANGE.1);
+
+  state.with_ipc(|client| client.set_number("sub-font-size", size))?;
+  update_settings(&app, |settings| settings.sub_font_size = Some(size))?;
+
+  Ok(())
+}
+
+/// 字幕垂直位置：0 在顶部，100 在底部。同样是全局偏好。
+#[tauri::command(async)]
+pub fn set_subtitle_position(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  position: f64,
+) -> Result<(), String> {
+  let position = clamp_range(position, SUB_POSITION_RANGE.0, SUB_POSITION_RANGE.1);
+
+  state.with_ipc(|client| client.set_number("sub-pos", position))?;
+  update_settings(&app, |settings| settings.sub_position = Some(position))?;
+
+  Ok(())
+}
+
+/// 声道布局。`auto-safe` 是 mpv 的默认值：按文件里的声道来。
+#[tauri::command(async)]
+pub fn set_audio_channels(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  channels: String,
+) -> Result<(), String> {
+  state.with_ipc(|client| client.set_string("audio-channels", &channels))?;
+  update_settings(&app, |settings| settings.audio_channels = Some(channels.clone()))?;
+
+  Ok(())
+}
+
+/// 切换音频输出设备。设备名来自 `audio-device-list`。
+///
+/// 切换会让 mpv 重建音频管线，中间有一小段断音；设备被独占或被拔掉时
+/// mpv 会直接报错，这时错误会原样冒到界面上，而不是静默失败。
+#[tauri::command(async)]
+pub fn set_audio_device(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  device: String,
+) -> Result<(), String> {
+  state.with_ipc(|client| client.set_string("audio-device", &device))?;
+  update_settings(&app, |settings| settings.audio_device = Some(device.clone()))?;
+
+  Ok(())
+}
+
+/// 独占模式。开着会独占设备，别的程序就出不了声，所以界面上要提示清楚。
+#[tauri::command(async)]
+pub fn set_audio_exclusive(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  enabled: bool,
+) -> Result<(), String> {
+  state.with_ipc(|client| client.set_flag("audio-exclusive", enabled))?;
+  update_settings(&app, |settings| settings.audio_exclusive = enabled)?;
+
+  Ok(())
 }
 
 #[cfg(test)]
@@ -956,7 +1299,15 @@ mod tests {
   fn build_player_args_omits_unset_options() {
     let args = build_player_args(1, r"\\.\pipe\p", &Settings::default(), Path::new(r"E:\config"));
 
-    for option in ["--sub-auto=", "--sub-font-size=", "--audio-channels=", "--audio-device="] {
+    for option in [
+      "--sub-auto=",
+      "--sub-font-size=",
+      "--sub-pos=",
+      "--audio-channels=",
+      "--audio-device=",
+      "--audio-exclusive=",
+      "--sub-ass-override=",
+    ] {
       assert!(
         !args.iter().any(|arg| arg.starts_with(option)),
         "没设置过的 {option} 不该出现在启动参数里"
@@ -975,6 +1326,9 @@ mod tests {
       sub_font_size: Some(48.0),
       audio_channels: Some("stereo".to_string()),
       audio_device: Some("wasapi/{dev}".to_string()),
+      audio_exclusive: true,
+      sub_position: Some(88.0),
+      sub_ass_override: Some("force".to_string()),
     };
     let args = build_player_args(1, r"\\.\pipe\p", &settings, Path::new(r"E:\config"));
 
@@ -984,6 +1338,61 @@ mod tests {
     assert!(args.contains(&"--sub-font-size=48".to_string()));
     assert!(args.contains(&"--audio-channels=stereo".to_string()));
     assert!(args.contains(&"--audio-device=wasapi/{dev}".to_string()));
+    assert!(args.contains(&"--audio-exclusive=yes".to_string()));
+    assert!(args.contains(&"--sub-pos=88".to_string()));
+    assert!(args.contains(&"--sub-ass-override=force".to_string()));
+  }
+
+  #[test]
+  fn parse_audio_devices_reads_name_and_description() {
+    let value = serde_json::json!([
+      { "name": "auto", "description": "Autoselect device", "default": true },
+      { "name": "wasapi/{dev}", "description": "耳机 (USB)" },
+      { "description": "没有名字，只能丢掉" }
+    ]);
+
+    let devices = parse_audio_devices(&value);
+
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0].name, "auto");
+    assert_eq!(devices[0].description, "Autoselect device");
+    assert_eq!(devices[1].description, "耳机 (USB)");
+  }
+
+  /// 描述缺失时拿名字顶上去：列表里宁可有条丑的，也别少一条能用的设备。
+  #[test]
+  fn parse_audio_devices_falls_back_to_the_name() {
+    let value = serde_json::json!([{ "name": "wasapi/{dev}", "description": "" }]);
+
+    let devices = parse_audio_devices(&value);
+
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].description, "wasapi/{dev}");
+  }
+
+  #[test]
+  fn parse_audio_devices_tolerates_a_missing_property() {
+    assert!(parse_audio_devices(&serde_json::Value::Null).is_empty());
+  }
+
+  #[test]
+  fn delays_are_clamped_to_a_usable_range() {
+    assert_eq!(clamp_delay(0.5), 0.5);
+    assert_eq!(clamp_delay(999.0), DELAY_LIMIT);
+    assert_eq!(clamp_delay(-999.0), -DELAY_LIMIT);
+    // 坏值折到「跟没调一样」，而不是推到区间边缘
+    assert_eq!(clamp_delay(f64::NAN), 0.0);
+  }
+
+  #[test]
+  fn subtitle_ranges_match_mpv() {
+    assert_eq!(clamp_range(0.0, SUB_FONT_SIZE_RANGE.0, SUB_FONT_SIZE_RANGE.1), 1.0);
+    assert_eq!(
+      clamp_range(99999.0, SUB_FONT_SIZE_RANGE.0, SUB_FONT_SIZE_RANGE.1),
+      9000.0
+    );
+    assert_eq!(clamp_range(-5.0, SUB_POSITION_RANGE.0, SUB_POSITION_RANGE.1), 0.0);
+    assert_eq!(clamp_range(300.0, SUB_POSITION_RANGE.0, SUB_POSITION_RANGE.1), 150.0);
   }
 
   /// watch-later 必须落在应用自己的配置目录里，不能去动用户手装 mpv 的那份。
@@ -1067,12 +1476,35 @@ mod tests {
         is_default: false,
       }],
       hwdec_current: Some("d3d11va".to_string()),
+      secondary_subtitle_id: Some(5),
+      audio_delay: -0.5,
+      subtitle_delay: 1.25,
+      subtitle_font_size: 44.0,
+      subtitle_position: 88.0,
+      audio_channels: "stereo".to_string(),
+      audio_device: "wasapi/{dev}".to_string(),
+      audio_exclusive: true,
+      subtitle_style: "force".to_string(),
     };
 
     let value = serde_json::to_value(details).expect("序列化播放详情");
 
-    assert!(value.get("hwdecCurrent").is_some());
-    assert!(value.get("path").is_some());
+    for key in [
+      "path",
+      "tracks",
+      "hwdecCurrent",
+      "secondarySubtitleId",
+      "audioDelay",
+      "subtitleDelay",
+      "subtitleFontSize",
+      "subtitlePosition",
+      "subtitleStyle",
+      "audioChannels",
+      "audioDevice",
+      "audioExclusive",
+    ] {
+      assert!(value.get(key).is_some(), "详情里缺少字段 {key}");
+    }
 
     let track = &value["tracks"][0];
 
@@ -1082,8 +1514,16 @@ mod tests {
   }
 
   #[test]
-  fn idle_details_have_no_tracks() {
-    assert_eq!(idle_details(), PlayerDetails { path: None, tracks: Vec::new(), hwdec_current: None });
+  fn idle_details_fall_back_to_mpv_defaults() {
+    let details = idle_details();
+
+    assert_eq!(details.path, None);
+    assert!(details.tracks.is_empty());
+    assert_eq!(details.subtitle_font_size, DEFAULT_SUB_FONT_SIZE);
+    assert_eq!(details.subtitle_position, DEFAULT_SUB_POSITION);
+    assert_eq!(details.audio_channels, DEFAULT_AUDIO_CHANNELS);
+    assert_eq!(details.audio_device, DEFAULT_AUDIO_DEVICE);
+    assert!(!details.audio_exclusive);
   }
 
   #[test]
@@ -1187,6 +1627,30 @@ mod tests {
 
     if PathBuf::from(r"C:\Program Files\MPV Player\mpv.exe").is_file() {
       assert!(resolved.is_some(), "本机装了 mpv，应该能落到它");
+    }
+  }
+
+  /// 轮询轨道表，直到满足条件或者超时，返回最后读到的轨道表。
+  fn wait_for_tracks(
+    client: &ipc::MpvIpc,
+    predicate: impl Fn(&[TrackInfo]) -> bool,
+    timeout: Duration,
+  ) -> Vec<TrackInfo> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+      let tracks = client
+        .get_value("track-list")
+        .ok()
+        .flatten()
+        .map(|value| parse_tracks(&value))
+        .unwrap_or_default();
+
+      if predicate(&tracks) || Instant::now() >= deadline {
+        return tracks;
+      }
+
+      thread::sleep(Duration::from_millis(100));
     }
   }
 
@@ -1468,5 +1932,187 @@ mod tests {
     assert!(!written.is_empty(), "退出时应该写出 watch-later 记录");
 
     let _ = std::fs::remove_dir_all(&config_dir);
+  }
+
+  /// 起一个无界面的 mpv 并连上 IPC，测试里反复要用的那一段。
+  fn spawn_headless(label: &str, extra: &[String]) -> (ChildGuard, ipc::MpvIpc) {
+    let executable = find_mpv().expect("调用方先确认本机有 mpv");
+    let pipe = next_pipe_name(label);
+
+    let mut args = vec![
+      format!("--input-ipc-server={pipe}"),
+      "--vo=null".to_string(),
+      "--ao=null".to_string(),
+      "--no-terminal".to_string(),
+      "--no-config".to_string(),
+      "--idle=yes".to_string(),
+      "--pause=yes".to_string(),
+    ];
+    args.extend_from_slice(extra);
+
+    let child = Command::new(&executable)
+      .args(&args)
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("启动 mpv 失败");
+
+    let client = ipc::connect_with_retry(&pipe, Duration::from_secs(20)).expect("连上 mpv 的 IPC 管道");
+
+    (ChildGuard(child), client)
+  }
+
+  /// 挂外挂字幕是 P1 的主功能：从选文件到 mpv 真的多出一条已选中的外挂字幕轨。
+  #[test]
+  fn adding_a_subtitle_file_shows_up_as_a_selected_external_track() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过外挂字幕集成测试");
+      return;
+    }
+
+    let directory = std::env::temp_dir().join(format!("fuvideo-subtitle-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("建目录");
+
+    let subtitle = directory.join("sample.srt");
+    std::fs::write(
+      &subtitle,
+      "1\n00:00:00,000 --> 00:00:02,000\n第一句\n\n2\n00:00:02,000 --> 00:00:04,000\n第二句\n",
+    )
+    .expect("写测试字幕");
+
+    let (_guard, client) = spawn_headless("test-sub", &[]);
+
+    client
+      .load_file("av://lavfi:testsrc=duration=5:size=320x240:rate=30")
+      .expect("载入视频");
+
+    let before = wait_for_tracks(&client, |tracks| !tracks.is_empty(), Duration::from_secs(20));
+    assert!(
+      !before.iter().any(|track| track.kind == "sub"),
+      "这个源本身不该带字幕轨"
+    );
+
+    client
+      .add_subtitle(&subtitle.to_string_lossy())
+      .expect("挂上外挂字幕");
+
+    let tracks = wait_for_tracks(
+      &client,
+      |tracks| tracks.iter().any(|track| track.kind == "sub" && track.external),
+      Duration::from_secs(20),
+    );
+
+    let track = tracks
+      .iter()
+      .find(|track| track.kind == "sub" && track.external)
+      .expect("挂上去的字幕应该出现在轨道表里");
+
+    assert!(track.selected, "带 select 标记挂上去之后应当直接选中");
+
+    let _ = std::fs::remove_dir_all(&directory);
+  }
+
+  /// 写一个最小的 16bit 单声道 WAV 当外挂音轨。
+  ///
+  /// 内容是静音：测试只关心「多出一条能选中的音轨」，不需要真的响。
+  fn write_test_wav(path: &Path) -> Result<(), String> {
+    const SAMPLE_RATE: u32 = 8000;
+    const SAMPLE_COUNT: u32 = SAMPLE_RATE; // 1 秒
+    const DATA_BYTES: u32 = SAMPLE_COUNT * 2;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + DATA_BYTES).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes()); // fmt 块长度
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // 单声道
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // 字节率
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // 块对齐
+    bytes.extend_from_slice(&16u16.to_le_bytes()); // 位深
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&DATA_BYTES.to_le_bytes());
+    bytes.resize(bytes.len() + DATA_BYTES as usize, 0);
+
+    std::fs::write(path, bytes).map_err(|error| format!("写测试音频失败: {error}"))
+  }
+
+  /// 外挂音轨 + 音轨开关。界面上的「音轨列表点一下」走的就是 `aid`：
+  /// 选某一条用数字，关掉用字面量 `no`。
+  ///
+  /// 这里挂在带视频轨的文件上：纯音频文件在 `aid=no` 之后会把整片卸掉，
+  /// 再想选回来就已经没有文件了，那是源的问题，不是这条链路的问题。
+  #[test]
+  fn external_audio_track_can_be_selected_and_switched_off() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过音轨切换集成测试");
+      return;
+    }
+
+    let directory = std::env::temp_dir().join(format!("fuvideo-audio-track-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("建目录");
+
+    let track = directory.join("track.wav");
+    write_test_wav(&track).expect("写测试音轨");
+
+    let (_guard, client) = spawn_headless("test-aid", &[]);
+
+    client
+      .load_file("av://lavfi:testsrc=duration=30:size=320x240:rate=30")
+      .expect("载入视频");
+
+    wait_for_tracks(&client, |tracks| !tracks.is_empty(), Duration::from_secs(20));
+
+    client
+      .add_audio(&track.to_string_lossy())
+      .expect("挂上外挂音轨");
+
+    let tracks = wait_for_tracks(
+      &client,
+      |tracks| tracks.iter().any(|track| track.kind == "audio" && track.external),
+      Duration::from_secs(20),
+    );
+
+    let audio = tracks
+      .iter()
+      .find(|track| track.kind == "audio")
+      .expect("挂上去的音轨应该出现在轨道表里");
+
+    assert!(audio.selected, "带 select 标记挂上去之后应当直接选中");
+
+    // 按 id 选中（界面点某一轨就是这条路）
+    client.select_track("aid", audio.id).expect("按 id 选中音轨");
+
+    client.set_string("aid", "no").expect("关掉音频");
+
+    let muted = wait_for_tracks(
+      &client,
+      |tracks| !tracks.iter().any(|track| track.kind == "audio" && track.selected),
+      Duration::from_secs(20),
+    );
+
+    assert!(
+      !muted.iter().any(|track| track.kind == "audio" && track.selected),
+      "aid=no 之后不该还有选中的音频轨"
+    );
+
+    client.select_track("aid", audio.id).expect("选回音轨");
+
+    let restored = wait_for_tracks(
+      &client,
+      |tracks| tracks.iter().any(|track| track.kind == "audio" && track.selected),
+      Duration::from_secs(20),
+    );
+
+    assert!(
+      restored.iter().any(|track| track.kind == "audio" && track.selected),
+      "选回 aid 之后音频轨应当重新被选中"
+    );
+
+    let _ = std::fs::remove_dir_all(&directory);
   }
 }
