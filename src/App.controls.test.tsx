@@ -236,6 +236,12 @@ describe('播放页', () => {
 
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-open', 'false')
   })
+
+  it('一切正常时不显示播放内核版本', async () => {
+    await openPlayingVideo()
+
+    expect(screen.getByTestId('backend-status')).toBeEmptyDOMElement()
+  })
 })
 
 describe('底部常驻条', () => {

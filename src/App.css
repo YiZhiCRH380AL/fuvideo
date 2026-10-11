@@ -5,7 +5,36 @@
   height: 100%;
   min-height: 0;
   /* 窗口本身是透明的，没播放视频时必须自己铺底色，否则会直接透出桌面 */
-  background: var(--bg);
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgb(110 168 255 / 7%), transparent 62%),
+    var(--bg);
+}
+
+/* 缓慢漂移的环境光，只在没有视频的时候出现，
+   否则它会盖到 mpv 画面上把颜色带偏 */
+.app[data-stage='empty']::before {
+  position: absolute;
+  top: -25%;
+  left: 50%;
+  width: 70%;
+  height: 55%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(110 168 255 / 12%), transparent 70%);
+  filter: blur(50px);
+  pointer-events: none;
+  content: '';
+  animation: ambient-drift 26s ease-in-out infinite;
+}
+
+@keyframes ambient-drift {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+
+  50% {
+    transform: translateX(-42%) scale(1.12);
+  }
 }
 
 /* 右侧主体：顶栏 / 舞台 / 控制栏 */
@@ -530,9 +559,11 @@
 .library {
   min-height: 0;
   overflow: hidden;
+  background: radial-gradient(100% 120% at 50% 0%, rgb(255 255 255 / 3%), transparent 55%);
 }
 
 .library__empty {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -540,6 +571,21 @@
   gap: 12px;
   height: 100%;
   text-align: center;
+}
+
+/* 空状态后面垫一团柔光，别让整块黑压压的 */
+.library__empty::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(110 168 255 / 11%), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+  content: '';
+  transform: translate(-50%, -50%);
 }
 
 .library__hint {
@@ -594,19 +640,97 @@
   cursor: pointer;
 }
 
+/* 内描边：让相邻方格不至于糊成一片，又不形成真正的缝隙 */
+.tile::after {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 5%);
+  pointer-events: none;
+  content: '';
+}
+
+/* 正在播放的那一个打个点 */
+.tile[data-current='true']::before {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(110 168 255 / 22%);
+  content: '';
+}
+
 /* 点开放大：占 2x2，周围格子自动让位 */
 .tile[data-focused='true'] {
   grid-column: span 2;
   grid-row: span 2;
 }
 
-.tile__image,
+.tile[data-focused='true']::after {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tile__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 420ms var(--ease);
+}
+
+.tile:hover .tile__image,
+.tile[data-focused='true'] .tile__image {
+  transform: scale(1.04);
+}
+
+/* 缩略图还没到时用流动的暗色占位，比一块死黑好看，也说明在加载 */
 .tile__placeholder {
   display: block;
   width: 100%;
   height: 100%;
-  background: #111;
-  object-fit: cover;
+  background: linear-gradient(100deg, #0f0f13 32%, #1c1c24 50%, #0f0f13 68%);
+  background-size: 220% 100%;
+  animation: tile-shimmer 1.8s linear infinite;
+}
+
+@keyframes tile-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+
+  to {
+    background-position: -40% 0;
+  }
+}
+
+/* 悬停或放大时浮出的播放符号 */
+.tile__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.78);
+  transition:
+    opacity var(--dur-normal) var(--ease),
+    transform var(--dur-normal) var(--ease);
+}
+
+.tile:hover .tile__play,
+.tile[data-focused='true'] .tile__play {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .tile__label {
@@ -704,4 +828,15 @@
   height: 100%;
   background: var(--accent);
   transition: width var(--dur-normal) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app[data-stage='empty']::before,
+  .tile__placeholder {
+    animation: none;
+  }
+
+  .tile__image {
+    transition: none;
+  }
 }

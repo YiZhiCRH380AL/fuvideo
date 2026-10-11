@@ -544,8 +544,17 @@ export default function App() {
     }
   }, [speedOpen])
 
-  const backendLabel = status ? status.message : '正在检测运行环境…'
   const kernelWarning = hasMedia && player !== null && !player.ipcReady ? '播放内核未连接，控制可能无效' : null
+  // 桌面端一切正常时不显示内核版本，只在真出问题时开口
+  const statusNotice = kernelWarning
+    ? kernelWarning
+    : status === null
+      ? '正在检测运行环境…'
+      : status.kind === 'browser'
+        ? status.message
+        : status.mpvAvailable
+          ? null
+          : status.message
   const canOpen = isTauri() && status?.mpvAvailable === true
 
   return (
@@ -605,7 +614,7 @@ export default function App() {
             data-testid="backend-status"
             data-warning={kernelWarning ? 'true' : undefined}
           >
-            {kernelWarning ?? backendLabel}
+            {statusNotice}
           </span>
         </header>
 

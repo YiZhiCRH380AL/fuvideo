@@ -106,6 +106,9 @@ export default function VideoGrid({
             ) : (
               <img className="tile__image" src={thumbnail} alt="" />
             )}
+            <span className="tile__play" aria-hidden="true">
+              ▶
+            </span>
             <span className="tile__label">{video.name}</span>
           </button>
         )
