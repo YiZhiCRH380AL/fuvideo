@@ -19,6 +19,7 @@ interface MpvProbe {
 
 export interface PlayerSnapshot {
   hasMedia: boolean
+  ipcReady: boolean
   path: string | null
   position: number
   duration: number
@@ -30,6 +31,7 @@ export interface PlayerSnapshot {
 
 const IDLE_SNAPSHOT: PlayerSnapshot = {
   hasMedia: false,
+  ipcReady: false,
   path: null,
   position: 0,
   duration: 0,

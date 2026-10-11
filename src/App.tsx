@@ -26,7 +26,7 @@ import {
   stepVolume,
   VOLUME_STEP,
 } from './lib/playback'
-import { isEditableTarget, resolveShortcut } from './lib/shortcuts'
+import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
 import { formatDuration } from './lib/time'
 import { useIdleVisibility } from './lib/use-idle-visibility'
 
@@ -140,7 +140,9 @@ export default function App() {
     }
   }, [reportError])
 
-  const hasMedia = player?.hasMedia === true
+  // 以「是否已选中文件」为准，而不是等播放状态回报，
+  // 否则状态一来一回之间控件会有一段点不动的空窗
+  const hasMedia = currentFile !== null
   const paused = player?.paused !== false
   const duration = player?.duration ?? 0
   const shownPosition = scrub ?? player?.position ?? 0
@@ -208,7 +210,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) {
+      if (shouldIgnoreShortcut(event.code, event.target)) {
         return
       }
 
@@ -289,6 +291,7 @@ export default function App() {
   }, [speedOpen])
 
   const backendLabel = status ? status.message : '正在检测运行环境…'
+  const kernelWarning = hasMedia && player !== null && !player.ipcReady ? '播放内核未连接，控制可能无效' : null
   const canOpen = isTauri() && status?.mpvAvailable === true
 
   return (
@@ -306,8 +309,12 @@ export default function App() {
             </span>
           ) : null}
         </div>
-        <span className="app__backend" data-testid="backend-status">
-          {backendLabel}
+        <span
+          className="app__backend"
+          data-testid="backend-status"
+          data-warning={kernelWarning ? 'true' : undefined}
+        >
+          {kernelWarning ?? backendLabel}
         </span>
       </header>
 
@@ -378,7 +385,7 @@ export default function App() {
             disabled={!hasMedia}
             aria-label="音量"
             onChange={(event) => handleVolumeChange(Number(event.target.value))}
-            style={{ '--volume-fill': `${muted ? 0 : volume}%` } as CSSProperties}
+            style={{ '--fill': `${muted ? 0 : volume}%` } as CSSProperties}
           />
         </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEditableTarget, resolveShortcut } from './shortcuts'
+import { resolveShortcut, shouldIgnoreShortcut } from './shortcuts'
 
 describe('resolveShortcut', () => {
   it('映射常用播放快捷键', () => {
@@ -22,19 +22,40 @@ describe('resolveShortcut', () => {
   })
 })
 
-describe('isEditableTarget', () => {
-  it('输入控件与可编辑区域返回 true', () => {
-    expect(isEditableTarget(document.createElement('input'))).toBe(true)
-    expect(isEditableTarget(document.createElement('select'))).toBe(true)
-    expect(isEditableTarget(document.createElement('textarea'))).toBe(true)
+describe('shouldIgnoreShortcut', () => {
+  it('文本输入与可编辑区域吃掉全部快捷键', () => {
+    const text = document.createElement('input')
+    text.type = 'text'
+
+    expect(shouldIgnoreShortcut('Space', text)).toBe(true)
+    expect(shouldIgnoreShortcut('Space', document.createElement('textarea'))).toBe(true)
+    expect(shouldIgnoreShortcut('Space', document.createElement('select'))).toBe(true)
 
     const editable = document.createElement('div')
     Object.defineProperty(editable, 'isContentEditable', { value: true })
-    expect(isEditableTarget(editable)).toBe(true)
+    expect(shouldIgnoreShortcut('Space', editable)).toBe(true)
   })
 
-  it('普通元素与 null 返回 false', () => {
-    expect(isEditableTarget(document.createElement('div'))).toBe(false)
-    expect(isEditableTarget(null)).toBe(false)
+  it('滑块只吃掉方向键，空格仍然能暂停', () => {
+    const range = document.createElement('input')
+    range.type = 'range'
+
+    expect(shouldIgnoreShortcut('ArrowRight', range)).toBe(true)
+    expect(shouldIgnoreShortcut('ArrowUp', range)).toBe(true)
+    expect(shouldIgnoreShortcut('Space', range)).toBe(false)
+    expect(shouldIgnoreShortcut('KeyM', range)).toBe(false)
+  })
+
+  it('按钮只吃掉空格与回车，避免重复触发', () => {
+    const button = document.createElement('button')
+
+    expect(shouldIgnoreShortcut('Space', button)).toBe(true)
+    expect(shouldIgnoreShortcut('Enter', button)).toBe(true)
+    expect(shouldIgnoreShortcut('KeyF', button)).toBe(false)
+  })
+
+  it('普通元素与 null 不受影响', () => {
+    expect(shouldIgnoreShortcut('Space', document.createElement('div'))).toBe(false)
+    expect(shouldIgnoreShortcut('Space', null)).toBe(false)
   })
 })

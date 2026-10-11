@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -16,8 +17,16 @@ mod ipc;
 /// 允许通过环境变量指定 mpv 可执行文件，便于开发时指向自备的解压版 mpv。
 pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
 
-/// 与 mpv 通信用的命名管道。
-pub const IPC_PIPE: &str = r"\\.\pipe\fuvideo-mpv";
+/// 每次播放用一个全新的管道名。
+///
+/// 固定名字会踩坑：上一次的 mpv 还没完全退出时管道依然存在，
+/// 新的 mpv 建同名管道会失败，而我们可能连到那个正在消失的旧连接上。
+static IPC_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+fn next_pipe_name() -> String {
+  let sequence = IPC_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+  format!(r"\\.\pipe\fuvideo-mpv-{}-{sequence}", std::process::id())
+}
 
 /// PATH 里找不到时兜底的常见安装位置。注意这里是**完整可执行文件路径**，不是目录。
 const MPV_FILE_CANDIDATES: &[&str] = &[
@@ -31,6 +40,7 @@ const MPV_FILE_CANDIDATES: &[&str] = &[
 const MPV_EXECUTABLE: &str = "mpv.exe";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MpvProbe {
   pub available: bool,
   pub version: Option<String>,
@@ -43,11 +53,12 @@ pub struct PlayerState {
   ipc: Mutex<Option<ipc::MpvIpc>>,
   current_path: Mutex<Option<String>>,
   child_window: Mutex<Option<isize>>,
+  ipc_pipe: Mutex<Option<String>>,
 }
 
 impl PlayerState {
   /// 换上一个新的播放进程，同时结束上一个，保证同一时间只跑一个 mpv。
-  fn replace(&self, child: Child, path: String) {
+  fn replace(&self, child: Child, path: String, pipe: String) {
     {
       let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
@@ -63,6 +74,7 @@ impl PlayerState {
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
     *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pipe);
   }
 
   /// 停止当前播放。没有在播放时是空操作。
@@ -77,6 +89,7 @@ impl PlayerState {
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
   }
 
   fn current_path(&self) -> Option<String> {
@@ -99,11 +112,26 @@ impl PlayerState {
   fn ensure_ipc(&self) {
     let mut slot = self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    if slot.is_none() {
-      if let Ok(client) = ipc::MpvIpc::connect(IPC_PIPE) {
+    if slot.is_some() {
+      return;
+    }
+
+    let pipe = self
+      .ipc_pipe
+      .lock()
+      .unwrap_or_else(|poisoned| poisoned.into_inner())
+      .clone();
+
+    if let Some(pipe) = pipe {
+      if let Ok(client) = ipc::MpvIpc::connect(&pipe) {
         *slot = Some(client);
       }
     }
+  }
+
+  /// IPC 是否已经连上，让界面能区分「没在播放」和「连不上播放内核」。
+  fn ipc_ready(&self) -> bool {
+    self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).is_some()
   }
 
   /// 借出 IPC 连接执行一次操作。连接层面出错时丢弃连接，下次自动重连。
@@ -348,12 +376,13 @@ pub fn play_video(
 ) -> Result<(), String> {
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
   let window_handle = window.hwnd().map_err(|error| format!("获取窗口句柄失败: {error}"))?.0 as isize;
+  let pipe = next_pipe_name();
 
   // mpv 建窗是异步的，先记录已有子窗口，启动后对比出 mpv 新建的那个。
   let before = win::child_windows(window_handle);
 
   let mut command = Command::new(&executable);
-  command.args(build_play_args(window_handle, IPC_PIPE, &path));
+  command.args(build_play_args(window_handle, &pipe, &path));
 
   #[cfg(windows)]
   {
@@ -368,7 +397,7 @@ pub fn play_video(
     .spawn()
     .map_err(|error| format!("启动 mpv 失败: {error}"))?;
 
-  state.replace(child, path);
+  state.replace(child, path, pipe);
 
   // mpv 建窗是异步的，轮询找出它新建的那个子窗口。
   let mut embedded = None;
@@ -407,8 +436,10 @@ pub fn stop_video(state: tauri::State<'_, PlayerState>) {
 
 /// 送回给前端的播放状态快照。
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlayerSnapshot {
   pub has_media: bool,
+  pub ipc_ready: bool,
   pub path: Option<String>,
   pub position: f64,
   pub duration: f64,
@@ -425,6 +456,7 @@ const DEFAULT_SPEED: f64 = 1.0;
 fn idle_snapshot() -> PlayerSnapshot {
   PlayerSnapshot {
     has_media: false,
+    ipc_ready: false,
     path: None,
     position: 0.0,
     duration: 0.0,
@@ -444,6 +476,8 @@ pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
 
   PlayerSnapshot {
     has_media: true,
+    // 放在最后取，让前面几次调用有机会把连接懒建立起来
+    ipc_ready: state.ipc_ready(),
     path: Some(path),
     position: state.with_ipc(|client| client.get_number("time-pos")).ok().flatten().unwrap_or(0.0),
     duration: state.with_ipc(|client| client.get_number("duration")).ok().flatten().unwrap_or(0.0),
@@ -565,13 +599,52 @@ mod tests {
 
   #[test]
   fn build_play_args_embeds_window_and_disables_mpv_ui() {
-    let args = build_play_args(4242, IPC_PIPE, r"E:\clips\sample.mkv");
+    let args = build_play_args(4242, r"\\.\pipe\fuvideo-test", r"E:\clips\sample.mkv");
 
     assert!(args.contains(&"--wid=4242".to_string()));
-    assert!(args.contains(&format!("--input-ipc-server={IPC_PIPE}")));
+    assert!(args.contains(&r"--input-ipc-server=\\.\pipe\fuvideo-test".to_string()));
     assert!(args.contains(&"--osc=no".to_string()));
     assert!(args.contains(&"--hwdec=auto-safe".to_string()));
     assert_eq!(args.last(), Some(&r"E:\clips\sample.mkv".to_string()));
+  }
+
+  #[test]
+  fn pipe_names_are_unique_per_playback() {
+    // 固定管道名会在连续打开文件时跟上一个 mpv 抢管道，必须每次都不一样
+    let first = next_pipe_name();
+    let second = next_pipe_name();
+
+    assert_ne!(first, second);
+    assert!(first.starts_with(r"\\.\pipe\fuvideo-mpv-"));
+  }
+
+  /// 前端按 camelCase 读取字段，字段名一旦对不上，界面会静默拿到 undefined。
+  #[test]
+  fn snapshot_serializes_camel_case_fields() {
+    let snapshot = serde_json::to_value(idle_snapshot()).expect("序列化播放状态");
+
+    for key in [
+      "hasMedia",
+      "ipcReady",
+      "path",
+      "position",
+      "duration",
+      "paused",
+      "volume",
+      "muted",
+      "speed",
+    ] {
+      assert!(snapshot.get(key).is_some(), "快照缺少字段 {key}");
+    }
+  }
+
+  #[test]
+  fn probe_serializes_expected_fields() {
+    let probe = serde_json::to_value(probe_at(None)).expect("序列化探测结果");
+
+    assert!(probe.get("available").is_some());
+    assert!(probe.get("version").is_some());
+    assert!(probe.get("path").is_some());
   }
 
   #[test]

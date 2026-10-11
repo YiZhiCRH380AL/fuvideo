@@ -69,6 +69,10 @@
   color: var(--text-muted);
 }
 
+.app__backend[data-warning='true'] {
+  color: var(--danger);
+}
+
 .app__error {
   position: absolute;
   left: 16px;
@@ -137,12 +141,21 @@
   color: var(--text);
   font-size: 14px;
   font-family: inherit;
-  min-width: 24px;
-  transition: opacity var(--dur-fast) var(--ease);
+  min-width: 32px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
 .controls__button:not(:disabled) {
   cursor: pointer;
+}
+
+.controls__button:not(:disabled):hover {
+  background: var(--surface-hover);
 }
 
 .controls__button:disabled {
@@ -155,12 +168,38 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * 滑块本体要比轨道高：视觉上轨道只有 4px，但可点区域必须够大，
+ * 否则 12px 的圆点伸出输入框之外，点在圆点上根本落不到控件上。
+ */
+.controls__progress,
+.controls__volume-slider {
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+}
+
 .controls__progress {
   flex: 1;
+  min-width: 80px;
+}
+
+.controls__progress:not(:disabled),
+.controls__volume-slider:not(:disabled) {
+  cursor: pointer;
+}
+
+.controls__progress:disabled,
+.controls__volume-slider:disabled {
+  opacity: 0.45;
+}
+
+/* 视觉轨道：填充比例由 --fill 控制 */
+.controls__progress::-webkit-slider-runnable-track,
+.controls__volume-slider::-webkit-slider-runnable-track {
   height: 4px;
-  appearance: none;
   border-radius: 999px;
-  /* 用渐变画出已播放部分，填充比例由 --fill 控制 */
   background: linear-gradient(
     to right,
     var(--accent) 0,
@@ -170,17 +209,29 @@
   );
 }
 
-.controls__progress:disabled {
-  opacity: 0.45;
-}
-
 .controls__progress::-webkit-slider-thumb,
 .controls__volume-slider::-webkit-slider-thumb {
   appearance: none;
   width: 12px;
   height: 12px;
+  /* 在 4px 高的轨道上垂直居中 */
+  margin-top: -4px;
   border: none;
   border-radius: 50%;
+  background: var(--accent);
+}
+
+.controls__progress::-moz-range-track,
+.controls__volume-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--track);
+}
+
+.controls__progress::-moz-range-progress,
+.controls__volume-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
   background: var(--accent);
 }
 
@@ -202,17 +253,7 @@
 /* 音量条平时收起，鼠标移上去或聚焦时才展开 */
 .controls__volume-slider {
   width: 0;
-  height: 4px;
-  appearance: none;
-  border-radius: 999px;
   opacity: 0;
-  background: linear-gradient(
-    to right,
-    var(--accent) 0,
-    var(--accent) var(--volume-fill, 0%),
-    var(--track) var(--volume-fill, 0%),
-    var(--track) 100%
-  );
   transition:
     width var(--dur-normal) var(--ease),
     opacity var(--dur-normal) var(--ease);

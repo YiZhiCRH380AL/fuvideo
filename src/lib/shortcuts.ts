@@ -30,8 +30,13 @@ export function resolveShortcut(code: string): ShortcutAction | null {
   return SHORTCUTS[code] ?? null
 }
 
-/** 焦点在输入类控件里时，快捷键要让位给控件本身。 */
-export function isEditableTarget(target: EventTarget | null): boolean {
+/**
+ * 判断这个快捷键要不要让位给当前获得焦点的控件。
+ *
+ * 注意不能一刀切：进度条获得焦点后仍然要能用空格暂停，
+ * 否则用户点过一次进度条，播放器就再也按不动了。
+ */
+export function shouldIgnoreShortcut(code: string, target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false
   }
@@ -40,5 +45,20 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     return true
   }
 
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+  switch (target.tagName) {
+    case 'TEXTAREA':
+    case 'SELECT':
+      return true
+    case 'INPUT': {
+      // 滑块自己要吃方向键，其余快捷键（空格、静音、全屏）照常归播放器
+      const type = target instanceof HTMLInputElement ? target.type : ''
+      return type === 'range' ? code.startsWith('Arrow') : true
+    }
+    case 'BUTTON':
+    case 'A':
+      // 让按钮自己响应空格与回车，避免一次按键触发两遍
+      return code === 'Space' || code === 'Enter' || code === 'NumpadEnter'
+    default:
+      return false
+  }
 }

@@ -6,6 +6,7 @@ import type { PlayerSnapshot } from './lib/backend'
 
 const IDLE: PlayerSnapshot = {
   hasMedia: false,
+  ipcReady: false,
   path: null,
   position: 0,
   duration: 0,
@@ -19,6 +20,7 @@ const IDLE: PlayerSnapshot = {
 const mocks = vi.hoisted(() => ({
   snapshot: {
     hasMedia: false,
+    ipcReady: false,
     path: null,
     position: 0,
     duration: 0,
@@ -82,6 +84,7 @@ async function openVideo() {
 async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}) {
   mocks.snapshot = {
     hasMedia: true,
+    ipcReady: true,
     path: String.raw`E:\clips\demo.mp4`,
     position: 0,
     duration: 120,
@@ -141,6 +144,33 @@ describe('播放控制', () => {
     fireEvent.pointerUp(slider)
 
     await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(42))
+  })
+
+  it('状态回报还没到位时，选好文件后控件就已经可用', async () => {
+    // 曾经 Rust 序列化出的是 has_media，前端读 hasMedia 恒为 undefined，
+    // 于是所有控件都被禁用。这条用例守住这个契约。
+    mocks.snapshot = { ...IDLE }
+
+    render(<App />)
+    await openVideo()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '播放' })).toBeEnabled()
+    })
+    expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled()
+    expect(screen.getByRole('slider', { name: '音量' })).toBeEnabled()
+  })
+
+  it('播放内核没连上时给出提示', async () => {
+    await openPlayingVideo({ ipcReady: false })
+
+    expect(screen.getByTestId('backend-status')).toHaveTextContent('播放内核未连接')
+  })
+
+  it('播放内核正常时不显示告警', async () => {
+    await openPlayingVideo()
+
+    expect(screen.getByTestId('backend-status')).not.toHaveTextContent('播放内核未连接')
   })
 })
 
@@ -235,5 +265,14 @@ describe('键盘快捷键', () => {
     fireEvent.keyDown(slider, { code: 'ArrowRight' })
 
     expect(mocks.seekBy).not.toHaveBeenCalled()
+  })
+
+  it('焦点留在进度条上时，空格依然能暂停', async () => {
+    await openPlayingVideo()
+
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+    fireEvent.keyDown(slider, { code: 'Space' })
+
+    expect(mocks.togglePause).toHaveBeenCalledTimes(1)
   })
 })
