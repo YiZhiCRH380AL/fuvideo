@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
-import { PAUSE_PATH, PLAY_PATH } from './components/PlayPauseIcon'
+import { PAUSE_PATH, PLAY_PATH } from './lib/play-pause-paths'
 
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
