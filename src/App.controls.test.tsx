@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
 import { PAUSE_PATH, PLAY_PATH } from './lib/play-pause-paths'
+import { markTutorialSeen } from './lib/tutorial'
 
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
@@ -99,6 +100,10 @@ vi.mock('./lib/backend', () => ({
 import App from './App'
 
 beforeEach(() => {
+  // 这些用例测的是主界面：教程只在第一次进入时弹，这里先标记看过
+  window.localStorage.clear()
+  markTutorialSeen()
+
   mocks.snapshot = { ...IDLE }
 
   for (const fn of [
@@ -427,6 +432,61 @@ describe('底部控制条', () => {
     await userEvent.click(screen.getByRole('button', { name: '全屏' }))
 
     expect(mocks.toggleFullscreen).toHaveBeenCalledTimes(1)
+  })
+
+  it('按方格墙的顺序切下一集，到头了按钮置灰', async () => {
+    // demo.mp4 是墙里第一个视频，前面没有上一集
+    await openPlayingVideo()
+
+    expect(screen.getByRole('button', { name: '上一集' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '下一集' })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('button', { name: '下一集' }))
+
+    expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(String.raw`E:\clips\other.mkv`)
+    // 换过去之后自己成了最后一个，于是换成上一集能点
+    await waitFor(() => expect(screen.getByRole('button', { name: '上一集' })).toBeEnabled())
+    expect(screen.getByRole('button', { name: '下一集' })).toBeDisabled()
+  })
+
+  it('上一集能回到墙里的前一个', async () => {
+    await openPlayingVideo()
+    await userEvent.click(screen.getByRole('button', { name: '下一集' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '上一集' })).toBeEnabled())
+
+    await userEvent.click(screen.getByRole('button', { name: '上一集' }))
+
+    expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(String.raw`E:\clips\demo.mp4`)
+  })
+})
+
+describe('首次进入的教程', () => {
+  it('第一次进来会弹，关掉之后重开不再弹', async () => {
+    window.localStorage.clear()
+    const first = render(<App />)
+
+    expect(await screen.findByTestId('tutorial', {}, { timeout: 4000 })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '关闭教程' }))
+    expect(screen.queryByTestId('tutorial')).not.toBeInTheDocument()
+
+    // 重开一次：等到开屏走完（教程本该出现的时刻）也不该再弹
+    first.unmount()
+    render(<App />)
+
+    await waitFor(
+      () => expect(document.querySelector('.app')).toHaveAttribute('data-splash', 'done'),
+      { timeout: 4000 },
+    )
+    expect(screen.queryByTestId('tutorial')).not.toBeInTheDocument()
+  })
+
+  it('标题栏的「?」随时能把教程叫回来', async () => {
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: '使用帮助' }))
+
+    expect(await screen.findByTestId('tutorial', {}, { timeout: 4000 })).toBeInTheDocument()
   })
 })
 

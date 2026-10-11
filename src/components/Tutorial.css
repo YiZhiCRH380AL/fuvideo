@@ -1,0 +1,199 @@
+/*
+ * 首次进入的用法教程：一层压暗的底 + 一张分步卡片。
+ */
+
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+}
+
+.tutorial__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(4 4 6 / 66%);
+  backdrop-filter: blur(3px);
+  animation: tutorial-veil 220ms var(--ease) both;
+}
+
+@keyframes tutorial-veil {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.tutorial__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 48px));
+  padding: 26px 26px 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgb(21 21 26 / 97%);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  animation: tutorial-in 320ms var(--ease-spring) both;
+}
+
+@keyframes tutorial-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tutorial__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.tutorial__close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* 每一步换一屏，内容自己滑进来 */
+.tutorial__step {
+  animation: tutorial-step-in 300ms var(--ease) both;
+}
+
+@keyframes tutorial-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tutorial__art {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: rgb(110 168 255 / 12%);
+  color: var(--accent);
+}
+
+.tutorial__art svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tutorial__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tutorial__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-muted);
+}
+
+.tutorial__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tutorial__key {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tutorial__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tutorial__dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tutorial__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  transition:
+    width var(--dur-normal) var(--ease),
+    background var(--dur-normal) var(--ease);
+}
+
+.tutorial__dot[data-active='true'] {
+  width: 18px;
+  background: var(--accent);
+}
+
+.tutorial__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial__backdrop,
+  .tutorial__panel,
+  .tutorial__step {
+    animation: none;
+  }
+
+  .tutorial__dot {
+    transition: none;
+  }
+}

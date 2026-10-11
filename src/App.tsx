@@ -11,8 +11,9 @@ import {
 import './App.css'
 import Crumbs from './components/Crumbs'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
-import Island from './components/Island'
+import Island, { type Episode } from './components/Island'
 import Splash from './components/Splash'
+import Tutorial from './components/Tutorial'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
   getBackendStatus,
@@ -44,6 +45,7 @@ import {
   VOLUME_STEP,
 } from './lib/playback'
 import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
+import { hasSeenTutorial } from './lib/tutorial'
 import { useIdleVisibility } from './lib/use-idle-visibility'
 import { revealMainWindow } from './lib/window'
 
@@ -122,6 +124,9 @@ export default function App() {
   const [atDrives, setAtDrives] = useState(false)
   const [drives, setDrives] = useState<string[]>([])
 
+  /** 首次进入的用法教程。看过一次就不再自动弹，还能从标题栏的「?」叫回来。 */
+  const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial())
+
   const scrubRef = useRef<number | null>(null)
   const pendingTimer = useRef<number | null>(null)
   const previewTimer = useRef<number | null>(null)
@@ -155,6 +160,26 @@ export default function App() {
     () => listing?.entries.filter((entry) => entry.kind === 'directory') ?? [],
     [listing],
   )
+
+  /*
+   * 上下集就是方格墙里的前后一个：排序和墙上看到的完全一致，
+   * 所以「下一集」永远是你眼睛看到的右边那一格。
+   */
+  const episodeIndex = useMemo(
+    () => (currentFile === null ? -1 : videos.findIndex((video) => video.path === currentFile)),
+    [currentFile, videos],
+  )
+
+  const previousEpisode = useMemo<Episode | null>(() => {
+    const video = episodeIndex > 0 ? videos[episodeIndex - 1] : undefined
+    return video === undefined ? null : { path: video.path, name: video.name }
+  }, [episodeIndex, videos])
+
+  const nextEpisode = useMemo<Episode | null>(() => {
+    const video =
+      episodeIndex >= 0 && episodeIndex < videos.length - 1 ? videos[episodeIndex + 1] : undefined
+    return video === undefined ? null : { path: video.path, name: video.name }
+  }, [episodeIndex, videos])
 
   const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
 
@@ -505,6 +530,14 @@ export default function App() {
       reportError(cause)
     }
   }, [loadDirectory, reportError])
+
+  /** 上下集：直接换片，沿用原来那套「载入 + 展开」的流程，不用再点方格。 */
+  const handlePlayEpisode = useCallback(
+    (path: string) => {
+      void playPath(path)
+    },
+    [playPath],
+  )
 
   /** 直接打开单个视频，不走目录。 */
   const handleOpenFile = useCallback(async () => {
@@ -926,13 +959,25 @@ export default function App() {
             )}
           </div>
 
-          <span
-            className="app__backend"
-            data-testid="backend-status"
-            data-warning={kernelWarning ? 'true' : undefined}
-          >
-            {statusNotice}
-          </span>
+          <div className="app__tools">
+            <button
+              className="app__help"
+              type="button"
+              onClick={() => setTutorialOpen(true)}
+              aria-label="使用帮助"
+              title="使用帮助"
+            >
+              ?
+            </button>
+
+            <span
+              className="app__backend"
+              data-testid="backend-status"
+              data-warning={kernelWarning ? 'true' : undefined}
+            >
+              {statusNotice}
+            </span>
+          </div>
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
@@ -1055,6 +1100,9 @@ export default function App() {
       {currentFile ? (
         <Island
           title={fileName(currentFile)}
+          previous={previousEpisode}
+          next={nextEpisode}
+          onPlayEpisode={handlePlayEpisode}
           position={shownPosition}
           duration={duration}
           paused={paused}
@@ -1086,6 +1134,11 @@ export default function App() {
       {splash === 'done' ? null : (
         <Splash ready={bootReady} onLeave={handleSplashLeave} onDone={handleSplashDone} />
       )}
+
+      {/* 开屏没走完之前不弹教程，不然两层浮层会叠在一起 */}
+      {splash === 'done' && tutorialOpen ? (
+        <Tutorial onClose={() => setTutorialOpen(false)} />
+      ) : null}
 
       {error ? (
         <p className="app__error" role="alert">

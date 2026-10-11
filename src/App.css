@@ -234,6 +234,40 @@
   color: var(--text-muted);
 }
 
+.app__tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 想再看一次教程就点它 */
+.app__help {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.app__help:hover {
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
 .app__backend[data-warning='true'] {
   color: var(--danger);
 }
@@ -869,6 +903,16 @@
 
 .island__button:hover {
   background: var(--surface-hover);
+}
+
+/* 到头了的上下集按钮：压暗并把手型收掉 */
+.island__button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.island__button:disabled:hover {
+  background: none;
 }
 
 .island__button--text {

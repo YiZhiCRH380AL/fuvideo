@@ -1,10 +1,54 @@
 import { expect, test, type Page } from '@playwright/test'
 
+/** 先记下教程看过，免得首次进入的浮层挡住要测的东西。 */
+async function markTutorialSeen(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('fuvideo:tutorial-seen', '1')
+    } catch {
+      // about:blank 这类上下文里拿不到存储，忽略
+    }
+  })
+}
+
+// 除了专门测首次教程的那条，其余用例都先把教程标记成看过
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title.includes('首次进入的教程')) {
+    return
+  }
+
+  await markTutorialSeen(page)
+})
+
 /** 等开屏退场：浮层没走之前底下的界面是隐着的，也点不动。 */
 async function waitForBoot(page: Page): Promise<void> {
   await expect(page.locator('.app')).toHaveAttribute('data-splash', 'done', { timeout: 8000 })
   await expect(page.getByTestId('splash')).toHaveCount(0)
 }
+
+test('首次进入的教程会自动弹出，看过之后不再弹', async ({ page }) => {
+  await page.goto('/')
+  await waitForBoot(page)
+
+  const tutorial = page.getByTestId('tutorial')
+  await expect(tutorial).toBeVisible()
+  await expect(tutorial).toContainText('先把视频铺成方格')
+
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(tutorial).toContainText('点一下方格就放大播放')
+
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(tutorial).toContainText('键盘也能用')
+
+  await page.getByRole('button', { name: '开始使用' }).click()
+  await expect(tutorial).toHaveCount(0)
+
+  // 刷新一次：看过了就不该再弹
+  await page.reload()
+  await waitForBoot(page)
+  await expect(page.getByTestId('tutorial')).toHaveCount(0)
+})
 
 test('启动先放开屏动画，环境探完后退场', async ({ page }) => {
   await page.goto('/')

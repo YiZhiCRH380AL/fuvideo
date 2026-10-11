@@ -6,6 +6,10 @@ import PlayPauseIcon from './PlayPauseIcon'
 
 export interface IslandProps {
   title: string
+  /** 同目录里的上一集/下一集：没有就把对应按钮置灰。 */
+  previous: Episode | null
+  next: Episode | null
+  onPlayEpisode: (path: string) => void
   position: number
   duration: number
   paused: boolean
@@ -32,6 +36,11 @@ export interface IslandProps {
   onCollapse: () => void
 }
 
+export interface Episode {
+  path: string
+  name: string
+}
+
 /**
  * 常驻底部的控制条。
  *
@@ -40,6 +49,9 @@ export interface IslandProps {
  */
 export default function Island({
   title,
+  previous,
+  next,
+  onPlayEpisode,
   position,
   duration,
   paused,
@@ -78,6 +90,38 @@ export default function Island({
           aria-label={paused ? '播放' : '暂停'}
         >
           <PlayPauseIcon paused={paused} />
+        </button>
+
+        {/*
+          上下集：直接按目录里的顺序换片，不用先收起画面再点方格。
+          没有上一集/下一集时置灰，用户一眼就知道到头了。
+        */}
+        <button
+          className="island__button"
+          type="button"
+          onClick={() => previous !== null && onPlayEpisode(previous.path)}
+          disabled={previous === null}
+          aria-label="上一集"
+          title={previous === null ? '已经是第一个' : `上一集 · ${previous.name}`}
+        >
+          <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="6" width="2" height="12" rx="1" />
+            <path d="M19.5 6.9v10.2a.9.9 0 0 1-1.4.75l-6.9-5.1a.9.9 0 0 1 0-1.5l6.9-5.1a.9.9 0 0 1 1.4.75z" />
+          </svg>
+        </button>
+
+        <button
+          className="island__button"
+          type="button"
+          onClick={() => next !== null && onPlayEpisode(next.path)}
+          disabled={next === null}
+          aria-label="下一集"
+          title={next === null ? '已经是最后一个' : `下一集 · ${next.name}`}
+        >
+          <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="16" y="6" width="2" height="12" rx="1" />
+            <path d="M4.5 6.9v10.2a.9.9 0 0 0 1.4.75l6.9-5.1a.9.9 0 0 0 0-1.5l-6.9-5.1a.9.9 0 0 0-1.4.75z" />
+          </svg>
         </button>
 
         <span className="island__title" title={title}>

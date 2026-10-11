@@ -757,6 +757,19 @@ mod tests {
     panic!("等不到 mpv 的 IPC 管道 {pipe}: {last_error}");
   }
 
+  /// mpv 子进程的看门狗：测试中途 panic 也要把它收掉。
+  ///
+  /// 漏下来的 mpv 会一直攥着父进程继承过去的管道句柄，
+  /// 于是 `cargo test | ...` 这类用法会一直等不到结束，一个断言失败变成卡住不返回。
+  struct ChildGuard(std::process::Child);
+
+  impl Drop for ChildGuard {
+    fn drop(&mut self) {
+      let _ = self.0.kill();
+      let _ = self.0.wait();
+    }
+  }
+
   fn wait_for_number(client: &ipc::MpvIpc, name: &str, timeout: Duration) -> Option<f64> {
     let deadline = Instant::now() + timeout;
 
@@ -783,22 +796,24 @@ mod tests {
     };
 
     let pipe = format!(r"\\.\pipe\fuvideo-test-{}", std::process::id());
-    let mut child = Command::new(&executable)
-      .args([
-        format!("--input-ipc-server={pipe}"),
-        "--vo=null".to_string(),
-        "--ao=null".to_string(),
-        "--no-terminal".to_string(),
-        "--no-config".to_string(),
-        // 先暂停，避免无渲染时播放速度快到测试读数不稳定
-        "--pause=yes".to_string(),
-        "av://lavfi:testsrc=duration=4:size=320x240:rate=30".to_string(),
-      ])
-      .stdin(Stdio::null())
-      .stdout(Stdio::null())
-      .stderr(Stdio::null())
-      .spawn()
-      .expect("启动 mpv 失败");
+    let _child = ChildGuard(
+      Command::new(&executable)
+        .args([
+          format!("--input-ipc-server={pipe}"),
+          "--vo=null".to_string(),
+          "--ao=null".to_string(),
+          "--no-terminal".to_string(),
+          "--no-config".to_string(),
+          // 先暂停，避免无渲染时播放速度快到测试读数不稳定
+          "--pause=yes".to_string(),
+          "av://lavfi:testsrc=duration=4:size=320x240:rate=30".to_string(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("启动 mpv 失败"),
+    );
 
     let client = connect_until_ready(&pipe, Duration::from_secs(20));
 
@@ -839,7 +854,5 @@ mod tests {
       Some(false)
     );
 
-    let _ = child.kill();
-    let _ = child.wait();
   }
 }

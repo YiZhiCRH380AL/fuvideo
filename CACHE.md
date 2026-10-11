@@ -52,7 +52,7 @@
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（94 个）、
 `npm run test:e2e`（6 个）、`npm run build`、`cd src-tauri && cargo test`（22 个）全绿。
 
-## 当前阶段：能换盘了（已完成）
+## 上一阶段：能换盘了（已完成）
 
 之前从目录里一路点「上一级」只能停在自己那个盘：盘符根目录的 `parent` 是 null，
 再往上没有地方可去，想开 C 盘、D 盘只能重新走一次系统选择框。
@@ -76,6 +76,32 @@
 
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（95 个）、
 `npm run test:e2e`（6 个）、`npm run build`、`cd src-tauri && cargo test`（23 个）全绿。
+
+## 当前阶段：上下集与首次教程（已完成）
+
+补了两个用起来最常缺的东西：
+
+- **灵动岛上的上下集**（[Island.tsx](src/components/Island.tsx)）：
+  播放/暂停右边多了 ⏮ / ⏭，按**方格墙里的顺序**换片——也就是「下一集」永远是眼睛看到
+  右边那一格。到头就置灰，鼠标悬停会提示「上一集 · ep01.mkv」。实现上直接复用
+  `playPath`，不重新走幕布转场，换片是立刻的。
+- **首次进入的教程**（[Tutorial.tsx](src/components/Tutorial.tsx)）：四步讲清楚选目录/进盘、
+  点方格放大播放、灵动岛上都有些什么、键盘快捷键。看过一次记在 localStorage
+  （[tutorial.ts](src/lib/tutorial.ts)）不再自动弹，标题栏右上角的 **?** 随时能叫回来；
+  Esc、右上角 ✕、点背景都能关。
+
+为什么没用现成的引导库：driver.js（MIT）、react-joyride（MIT）都是「高亮页面上某个元素」
+式的引导，而第一次打开时方格墙和灵动岛都还没出现，没有东西可以指，所以用分步卡片自己写。
+
+覆盖到的测试：
+
+- `src/lib/tutorial.test.ts`：看到没看到、本地存储读/写失败时的兜底。
+- `src/components/Tutorial.test.tsx`：翻页、退回、走完记录、Esc / ✕ 关闭。
+- `src/App.controls.test.tsx`：上下集按墙里顺序换片与置灰、首次弹教程、关掉后不再弹、「?」能叫回来。
+- `e2e/smoke.spec.ts`：首次进入自动弹教程 → 走完 → 刷新不再弹。
+
+验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（108 个）、
+`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（23 个）全绿。
 
 ## 下一阶段：还没定
 
