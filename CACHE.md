@@ -103,6 +103,22 @@
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（108 个）、
 `npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（23 个）全绿。
 
+## 当前产物（0.1.1-Alpha）
+
+版本号带 `-Alpha`，MSI 目标不接受非数字的预发布号，所以只打 NSIS：
+
+```
+npm run tauri build -- --bundles nsis
+```
+
+| 产物 | 位置 | 大小 |
+| --- | --- | --- |
+| 主程序 | `src-tauri/target/release/fuvideo.exe` | 9.0 MB |
+| 安装包 | `src-tauri/target/release/bundle/nsis/fuvideo_0.1.1-Alpha_x64-setup.exe` | 36.1 MB |
+
+`target/` 在 `.gitignore` 里，产物不进仓库；要发布得手动传到 Releases
+（本机没装 `gh`，走网页上传，或者装上 `gh` 之后 `gh release create`）。
+
 ## 下一阶段：还没定
 
 目录区现在把「选目录 → 进盘 → 进去 → 挑视频」这条线走顺了。顺着往下最省事的是**记住上次的位置**：
