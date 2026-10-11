@@ -374,6 +374,17 @@
   cursor: default;
 }
 
+/* 引导页下面那排次要入口 */
+.library__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.library__dot {
+  color: var(--text-muted);
+}
+
 /* 强调按钮：空状态里那个「选择目录」是唯一该被一眼看到的东西 */
 .button--primary {
   border-color: transparent;
@@ -476,6 +487,31 @@
   align-self: center;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* 「此电脑」：盘符铺成卡片，比在文件夹条里挤一排更好点 */
+.drives {
+  display: grid;
+  grid-row: 2;
+  box-sizing: border-box;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding: 16px 20px 24px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.drives .folder {
+  max-width: none;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.folder--drive .folder__glyph {
+  width: 20px;
+  height: 20px;
 }
 
 @keyframes folder-in {

@@ -1,4 +1,4 @@
-//! 侧边栏的目录浏览能力：挑目录、列出其中的子目录与视频文件、进入子目录。
+//! 目录浏览能力：挑目录、列出盘符、列出目录里的子目录与视频文件、进入子目录。
 
 use std::path::Path;
 
@@ -101,6 +101,27 @@ pub fn pick_directory() -> Option<String> {
     .map(|path| path.to_string_lossy().to_string())
 }
 
+/// 顶层入口：Windows 上是各个能进的盘符（`C:\`、`D:\`…）。
+///
+/// 判断方式是「能不能读」，而不是查系统盘符表：空的光驱、没插卡的读卡器
+/// 同样会出现在盘符表里，点进去只会报错，不如干脆不列出来。
+pub fn available_drives() -> Vec<String> {
+  if cfg!(windows) {
+    (b'A'..=b'Z')
+      .map(|letter| format!("{}:\\", letter as char))
+      .filter(|root| std::fs::read_dir(root).is_ok())
+      .collect()
+  } else {
+    vec!["/".to_string()]
+  }
+}
+
+/// 列出可以进去的顶层入口。盘符根目录再往上就是这里，不然换不了盘。
+#[tauri::command(async)]
+pub fn list_drives() -> Vec<String> {
+  available_drives()
+}
+
 /// 列出指定目录下的子目录与视频文件。
 #[tauri::command(async)]
 pub fn list_directory(directory: String) -> Result<DirectoryListing, String> {
@@ -179,6 +200,24 @@ mod tests {
     let missing = std::env::temp_dir().join("fuvideo-library-definitely-missing");
 
     assert!(listing_for(&missing).is_err());
+  }
+
+  #[test]
+  fn available_drives_are_roots_that_can_actually_be_listed() {
+    let drives = available_drives();
+
+    assert!(!drives.is_empty(), "至少应该有一个能读的顶层入口");
+
+    for drive in &drives {
+      assert!(
+        drive.ends_with(":\\") || drive == "/",
+        "{drive} 看起来不像顶层入口"
+      );
+      assert!(
+        listing_for(Path::new(drive)).is_ok(),
+        "{drive} 列不出来就不该出现在清单里"
+      );
+    }
   }
 
   #[test]

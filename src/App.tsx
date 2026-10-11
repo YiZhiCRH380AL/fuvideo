@@ -4,12 +4,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import './App.css'
 import Crumbs from './components/Crumbs'
-import FolderStrip from './components/FolderStrip'
+import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island from './components/Island'
 import Splash from './components/Splash'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
@@ -18,6 +19,7 @@ import {
   getPlayerState,
   isTauri,
   listDirectory,
+  listDrives,
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
@@ -57,6 +59,9 @@ const MAX_STRIP_FRAMES = 24
 const STRIP_FRAME_GAP_MS = 120
 /** 缩略图带的帧间隔目标（秒）。 */
 const STRIP_STEP_SECONDS = 10
+
+/** 「此电脑」这一层的显示名。盘符根目录再往上就是它。 */
+const DRIVES_ROOT = '此电脑'
 
 function nearestIndex(times: number[], seconds: number): number {
   let best = 0
@@ -112,6 +117,10 @@ export default function App() {
   const [splash, setSplash] = useState<'visible' | 'leaving' | 'done'>('visible')
   /** 运行环境是否探完（探失败也算），开屏据此决定什么时候收场。 */
   const [bootReady, setBootReady] = useState(false)
+
+  /** 是否停在「此电脑」这一层：列出所有能进的盘符。 */
+  const [atDrives, setAtDrives] = useState(false)
+  const [drives, setDrives] = useState<string[]>([])
 
   const scrubRef = useRef<number | null>(null)
   const pendingTimer = useRef<number | null>(null)
@@ -423,6 +432,8 @@ export default function App() {
       try {
         const next = await listDirectory(target)
         setListing(next)
+        // 从「此电脑」点进来，或者从别处跳过来，都要离开那一层
+        setAtDrives(false)
 
         // 防御：如果换到的目录里没有正在播的这个文件，放大格会消失，
         // 但整窗还是透明的，画面就悬空了。这时直接收起。
@@ -437,6 +448,49 @@ export default function App() {
     },
     [collapseVideo, currentFile, expanded, reportError],
   )
+
+  /** 打开「此电脑」：列出所有能进的盘。盘符根目录再往上就是这里。 */
+  const openDrives = useCallback(async () => {
+    setError(null)
+    setDirectoryBusy(true)
+
+    try {
+      const next = await listDrives()
+      setDrives(next)
+      setAtDrives(true)
+      // 同上：切走以后放大格会消失，整窗还透明的话画面就悬空了
+      if (expanded && currentFile !== null) {
+        void collapseVideo()
+      }
+    } catch (cause: unknown) {
+      reportError(cause)
+    } finally {
+      setDirectoryBusy(false)
+    }
+  }, [collapseVideo, currentFile, expanded, reportError])
+
+  /**
+   * 目录区最前面那个固定入口。
+   *
+   * 平时是「上一级」；站在盘符根目录时再往上就是「此电脑」，
+   * 不然换盘只能靠系统对话框重新选一次目录。
+   */
+  const parentEntry = useMemo<FolderParent | null>(() => {
+    if (atDrives || listing === null) {
+      return null
+    }
+
+    if (listing.parent !== null) {
+      const parent = listing.parent
+      return {
+        label: '上一级',
+        icon: 'up',
+        onOpen: () => void loadDirectory(parent),
+      }
+    }
+
+    return { label: DRIVES_ROOT, icon: 'computer', onOpen: () => void openDrives() }
+  }, [atDrives, listing, loadDirectory, openDrives])
 
   const handleChooseDirectory = useCallback(async () => {
     setError(null)
@@ -466,12 +520,6 @@ export default function App() {
       reportError(cause)
     }
   }, [playPath, reportError])
-
-  const handleGoUp = useCallback(() => {
-    if (listing?.parent) {
-      void loadDirectory(listing.parent)
-    }
-  }, [listing, loadDirectory])
 
   const handleTogglePause = useCallback(async () => {
     setError(null)
@@ -843,6 +891,8 @@ export default function App() {
           ? null
           : status.message
   const canOpen = isTauri() && status?.mpvAvailable === true
+  /** 标题栏面包屑要显示的路径：停在「此电脑」时显示它自己。 */
+  const shownPath = atDrives ? DRIVES_ROOT : (listing?.directory ?? null)
 
   return (
     <div
@@ -860,7 +910,7 @@ export default function App() {
               目录区往上层走的路都在这里，不再单开关一个侧边栏。
               画面展开时连它一起收起：新目录里没有当前视频，放大格会消失。
             */}
-            {expanded || listing === null ? null : (
+            {expanded || shownPath === null ? null : (
               <>
                 <span className="app__divider" aria-hidden="true" />
                 <button
@@ -871,7 +921,7 @@ export default function App() {
                 >
                   {directoryBusy ? '读取中…' : '选择目录'}
                 </button>
-                <Crumbs path={listing.directory} onNavigate={(path) => void loadDirectory(path)} />
+                <Crumbs path={shownPath} onNavigate={(path) => void loadDirectory(path)} />
               </>
             )}
           </div>
@@ -886,7 +936,32 @@ export default function App() {
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
-          {listing === null ? (
+          {atDrives ? (
+            <div className="drives" data-testid="drives">
+              {drives.map((drive, index) => (
+                <button
+                  className="folder folder--drive"
+                  type="button"
+                  key={drive}
+                  style={{ '--i': index } as CSSProperties}
+                  onClick={() => void loadDirectory(drive)}
+                >
+                  <span className="folder__glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="6" width="18" height="12" rx="2.4" />
+                      <path d="M7 14.5h4" />
+                      <path d="M16.5 9.5h.01" />
+                    </svg>
+                  </span>
+                  <span className="folder__name">{drive}</span>
+                </button>
+              ))}
+
+              {drives.length === 0 ? (
+                <p className="library__hint">没有找到可以打开的盘</p>
+              ) : null}
+            </div>
+          ) : listing === null ? (
             <div className="library__empty">
               <span className="library__icon" aria-hidden="true">
                 <svg viewBox="0 0 48 48">
@@ -904,14 +979,27 @@ export default function App() {
               >
                 选择目录
               </button>
-              <button
-                className="library__single"
-                type="button"
-                onClick={() => void handleOpenFile()}
-                disabled={!canOpen}
-              >
-                或打开单个视频
-              </button>
+              <span className="library__links">
+                <button
+                  className="library__single"
+                  type="button"
+                  onClick={() => void openDrives()}
+                  disabled={!canOpen}
+                >
+                  浏览磁盘
+                </button>
+                <span className="library__dot" aria-hidden="true">
+                  ·
+                </span>
+                <button
+                  className="library__single"
+                  type="button"
+                  onClick={() => void handleOpenFile()}
+                  disabled={!canOpen}
+                >
+                  打开单个视频
+                </button>
+              </span>
             </div>
           ) : (
             <>
@@ -919,10 +1007,9 @@ export default function App() {
               {expanded ? null : (
                 <FolderStrip
                   folders={folders}
-                  canGoUp={listing.parent !== null}
+                  parent={parentEntry}
                   busy={directoryBusy}
                   onOpen={(path) => void loadDirectory(path)}
-                  onGoUp={handleGoUp}
                 />
               )}
 

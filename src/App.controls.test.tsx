@@ -66,6 +66,7 @@ const mocks = vi.hoisted(() => {
     playLocalVideo: vi.fn(async (_path: string) => {}),
     pickDirectory: vi.fn(async (): Promise<string | null> => String.raw`E:\clips`),
     listDirectory: vi.fn(async (_directory: string): Promise<DirectoryListing> => listing),
+    listDrives: vi.fn(async (): Promise<string[]> => ['C:\\', 'E:\\']),
     thumbnailAt: vi.fn(async (_source: string, _position: number) => 'data:image/jpeg;base64,AAAA'),
   }
 })
@@ -91,6 +92,7 @@ vi.mock('./lib/backend', () => ({
   toggleFullscreen: () => mocks.toggleFullscreen(),
   pickDirectory: () => mocks.pickDirectory(),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
+  listDrives: () => mocks.listDrives(),
   thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
 }))
 
@@ -110,6 +112,7 @@ beforeEach(() => {
     mocks.playLocalVideo,
     mocks.pickDirectory,
     mocks.listDirectory,
+    mocks.listDrives,
     mocks.thumbnailAt,
   ]) {
     fn.mockClear()
@@ -569,7 +572,7 @@ describe('目录区', () => {
     expect(mocks.listDirectory).not.toHaveBeenCalled()
   })
 
-  it('已经在盘符根目录时不能再往上', async () => {
+  it('站在盘符根目录时，最前面的入口换成「此电脑」', async () => {
     render(<App />)
     mocks.listDirectory.mockImplementation(async () => ({
       directory: 'E:\\',
@@ -580,7 +583,47 @@ describe('目录区', () => {
     await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
 
     expect(await screen.findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
-    expect(folders().getByRole('button', { name: '上一级' })).toBeDisabled()
+    // 根目录再往上没有目录可去，但可以换盘
+    expect(folders().queryByRole('button', { name: '上一级' })).not.toBeInTheDocument()
+
+    const swap = folders().getByRole('button', { name: '此电脑' })
+
+    expect(swap).toBeEnabled()
+    expect(swap.querySelector('rect')).not.toBeNull()
+  })
+
+  it('从盘符根目录可以切到别的盘', async () => {
+    render(<App />)
+    mocks.listDirectory.mockImplementation(async (directory: string) => {
+      if (directory === 'E:\\') {
+        return { directory: 'E:\\', parent: null, entries: [] }
+      }
+
+      if (directory === 'C:\\') {
+        return {
+          directory: 'C:\\',
+          parent: null,
+          entries: [{ name: 'win.mp4', path: String.raw`C:\win.mp4`, kind: 'video' as const }],
+        }
+      }
+
+      return mocks.listing
+    })
+
+    await chooseDirectory()
+    await userEvent.click(folders().getByRole('button', { name: '上一级' }))
+    await userEvent.click(await folders().findByRole('button', { name: '此电脑' }))
+
+    expect(await screen.findByTestId('drives')).toBeInTheDocument()
+    expect(mocks.listDrives).toHaveBeenCalledTimes(1)
+    // 面包屑也跟着停在「此电脑」
+    expect(crumbs()).toHaveTextContent('此电脑')
+
+    await userEvent.click(within(screen.getByTestId('drives')).getByRole('button', { name: 'C:\\' }))
+
+    expect(await grid().findByRole('button', { name: 'win.mp4' })).toBeInTheDocument()
+    expect(screen.queryByTestId('drives')).not.toBeInTheDocument()
+    expect(crumbs()).toHaveAttribute('title', 'C:\\')
   })
 })
 

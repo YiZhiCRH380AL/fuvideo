@@ -207,6 +207,15 @@ export async function listDirectory(directory: string): Promise<DirectoryListing
   return invoke<DirectoryListing>('list_directory', { directory })
 }
 
+/** 列出可以进去的顶层入口（各盘符）。盘符根目录再往上就是这里，不然换不了盘。 */
+export async function listDrives(): Promise<string[]> {
+  if (!isTauri()) {
+    return []
+  }
+
+  return invoke<string[]>('list_drives')
+}
+
 /** 抓取指定视频在指定时间点的画面，返回可直接显示的 data URL。 */
 export async function thumbnailAt(source: string, position: number): Promise<string> {
   if (!isTauri()) {

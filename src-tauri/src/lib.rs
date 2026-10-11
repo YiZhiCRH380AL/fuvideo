@@ -67,6 +67,7 @@ pub fn run() {
       mpv::toggle_fullscreen,
       library::pick_directory,
       library::list_directory,
+      library::list_drives,
       thumbnail::thumbnail_at,
     ])
     .on_window_event(|window, event| {
