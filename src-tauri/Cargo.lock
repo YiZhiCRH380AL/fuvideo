@@ -957,6 +957,7 @@ dependencies = [
 name = "fuvideo"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "log",
  "rfd",
  "serde",

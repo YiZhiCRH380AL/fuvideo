@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-mod ipc;
+pub(crate) mod ipc;
 
 /// 允许通过环境变量指定 mpv 可执行文件，便于开发时指向自备的解压版 mpv。
 pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
@@ -23,9 +23,10 @@ pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
 /// 新的 mpv 建同名管道会失败，而我们可能连到那个正在消失的旧连接上。
 static IPC_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-fn next_pipe_name() -> String {
+/// 生成一个带用途标签的唯一管道名。播放器与缩略图两个实例各用各的。
+pub(crate) fn next_pipe_name(label: &str) -> String {
   let sequence = IPC_SEQUENCE.fetch_add(1, Ordering::SeqCst);
-  format!(r"\\.\pipe\fuvideo-mpv-{}-{sequence}", std::process::id())
+  format!(r"\\.\pipe\fuvideo-{label}-{}-{sequence}", std::process::id())
 }
 
 /// PATH 里找不到时兜底的常见安装位置。注意这里是**完整可执行文件路径**，不是目录。
@@ -258,7 +259,7 @@ pub fn build_play_args(window_handle: isize, pipe_path: &str, path: &str) -> Vec
 }
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /* ---------------- Windows 子窗口处理 ---------------- */
 
@@ -372,11 +373,12 @@ pub fn pick_video_file() -> Result<Option<String>, String> {
 pub fn play_video(
   window: tauri::WebviewWindow,
   state: tauri::State<'_, PlayerState>,
+  thumbnails: tauri::State<'_, crate::thumbnail::ThumbnailState>,
   path: String,
 ) -> Result<(), String> {
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
   let window_handle = window.hwnd().map_err(|error| format!("获取窗口句柄失败: {error}"))?.0 as isize;
-  let pipe = next_pipe_name();
+  let pipe = next_pipe_name("mpv");
 
   // mpv 建窗是异步的，先记录已有子窗口，启动后对比出 mpv 新建的那个。
   let before = win::child_windows(window_handle);
@@ -397,6 +399,8 @@ pub fn play_video(
     .spawn()
     .map_err(|error| format!("启动 mpv 失败: {error}"))?;
 
+  // 换了片源，预览进程要跟着换
+  thumbnails.set_source(Some(path.clone()));
   state.replace(child, path, pipe);
 
   // mpv 建窗是异步的，轮询找出它新建的那个子窗口。
@@ -430,8 +434,12 @@ pub fn play_video(
 
 /// 停止当前播放。
 #[tauri::command(async)]
-pub fn stop_video(state: tauri::State<'_, PlayerState>) {
+pub fn stop_video(
+  state: tauri::State<'_, PlayerState>,
+  thumbnails: tauri::State<'_, crate::thumbnail::ThumbnailState>,
+) {
   state.stop();
+  thumbnails.set_source(None);
 }
 
 /// 送回给前端的播放状态快照。
@@ -611,8 +619,8 @@ mod tests {
   #[test]
   fn pipe_names_are_unique_per_playback() {
     // 固定管道名会在连续打开文件时跟上一个 mpv 抢管道，必须每次都不一样
-    let first = next_pipe_name();
-    let second = next_pipe_name();
+    let first = next_pipe_name("mpv");
+    let second = next_pipe_name("mpv");
 
     assert_ne!(first, second);
     assert!(first.starts_with(r"\\.\pipe\fuvideo-mpv-"));

@@ -151,6 +151,11 @@ impl MpvIpc {
   pub fn seek_relative(&self, offset: f64) -> Result<(), IpcError> {
     self.request(json!(["seek", offset, "relative"])).map(|_| ())
   }
+
+  /// 精确跳转（关键帧之间也定位），用于抓取指定时间点的画面。
+  pub fn seek_exact(&self, seconds: f64) -> Result<(), IpcError> {
+    self.request(json!(["seek", seconds, "absolute+exact"])).map(|_| ())
+  }
 }
 
 /// 独占管道句柄，串行地「写入请求 → 读到匹配响应」。

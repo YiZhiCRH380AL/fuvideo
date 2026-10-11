@@ -1,20 +1,34 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import './App.css'
+import HoverPreview from './components/HoverPreview'
+import Sidebar from './components/Sidebar'
 import {
   getBackendStatus,
   getPlayerState,
   isTauri,
+  listVideos,
+  pickDirectory,
   pickVideoFile,
   playLocalVideo,
   seekBy,
   seekTo,
   setSpeed,
   setVolume,
+  thumbnailAt,
   toggleFullscreen,
   toggleMute,
   togglePause,
   type BackendStatus,
   type PlayerSnapshot,
+  type VideoEntry,
 } from './lib/backend'
 import { fileName } from './lib/path'
 import {
@@ -45,8 +59,16 @@ export default function App() {
   const [overControls, setOverControls] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [directory, setDirectory] = useState<string | null>(null)
+  const [entries, setEntries] = useState<VideoEntry[]>([])
+  const [directoryBusy, setDirectoryBusy] = useState(false)
+  const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const scrubRef = useRef<number | null>(null)
   const pendingTimer = useRef<number | null>(null)
+  const previewTimer = useRef<number | null>(null)
+  const thumbnailCache = useRef(new Map<string, string>())
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -119,21 +141,56 @@ export default function App() {
     }
   }, [currentFile, reportError])
 
+  /** 播放一个具体路径。打开文件与侧边栏点选都走这里。 */
+  const playPath = useCallback(
+    async (path: string) => {
+      setError(null)
+
+      try {
+        await playLocalVideo(path)
+        setCurrentFile(path)
+        setPendingSeek(null)
+        // 换了片源，预览缓存作废
+        thumbnailCache.current.clear()
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    },
+    [reportError],
+  )
+
   const handleOpen = useCallback(async () => {
     setError(null)
 
     try {
       const path = await pickVideoFile()
 
-      if (!path) {
+      if (path) {
+        await playPath(path)
+      }
+    } catch (cause: unknown) {
+      reportError(cause)
+    }
+  }, [playPath, reportError])
+
+  const handleChooseDirectory = useCallback(async () => {
+    setError(null)
+
+    try {
+      const picked = await pickDirectory()
+
+      if (!picked) {
         return
       }
 
-      await playLocalVideo(path)
-      setCurrentFile(path)
-      setPendingSeek(null)
+      setDirectoryBusy(true)
+      const videos = await listVideos(picked)
+      setDirectory(picked)
+      setEntries(videos)
     } catch (cause: unknown) {
       reportError(cause)
+    } finally {
+      setDirectoryBusy(false)
     }
   }, [reportError])
 
@@ -231,11 +288,64 @@ export default function App() {
     [],
   )
 
-  // 空闲一会儿自动收起控件；暂停、拖动进度、开着倍速菜单时保持显示
+  const loadPreview = useCallback(async (seconds: number) => {
+    const key = String(Math.round(seconds))
+    const cached = thumbnailCache.current.get(key)
+
+    if (cached !== undefined) {
+      setPreviewImage(cached)
+      return
+    }
+
+    try {
+      const image = await thumbnailAt(seconds)
+      thumbnailCache.current.set(key, image)
+      setPreviewImage(image)
+    } catch {
+      // 预览拿不到就只是不显示画面，不打断播放
+      setPreviewImage(null)
+    }
+  }, [])
+
+  const handleProgressHover = useCallback(
+    (event: ReactPointerEvent<HTMLInputElement>) => {
+      if (!hasMedia || duration <= 0) {
+        return
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect()
+      const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+
+      setPreview({ fraction, seconds: fraction * duration })
+
+      // 鼠标快速扫过时不值得每一帧都去截图
+      if (previewTimer.current !== null) {
+        window.clearTimeout(previewTimer.current)
+      }
+
+      previewTimer.current = window.setTimeout(() => {
+        previewTimer.current = null
+        void loadPreview(fraction * duration)
+      }, 120)
+    },
+    [duration, hasMedia, loadPreview],
+  )
+
+  const handleProgressLeave = useCallback(() => {
+    if (previewTimer.current !== null) {
+      window.clearTimeout(previewTimer.current)
+      previewTimer.current = null
+    }
+
+    setPreview(null)
+    setPreviewImage(null)
+  }, [])
+
+  // 空闲一会儿自动收起控件；暂停、拖动进度、开着倍速菜单或正在预览时保持显示
   const controlsVisible = useIdleVisibility({
     delayMs: CONTROLS_IDLE_MS,
     enabled: hasMedia && !paused && scrub === null && !speedOpen,
-    pinned: overControls || !hasMedia,
+    pinned: overControls || !hasMedia || preview !== null,
   })
 
   useEffect(() => {
@@ -330,8 +440,28 @@ export default function App() {
       data-stage={currentFile ? 'video' : 'empty'}
       data-controls={controlsVisible ? 'visible' : 'hidden'}
     >
+      <Sidebar
+        open={sidebarOpen}
+        directory={directory}
+        entries={entries}
+        currentPath={currentFile}
+        busy={directoryBusy}
+        onChooseDirectory={() => void handleChooseDirectory()}
+        onSelect={(path) => void playPath(path)}
+      />
+
+      <div className="shell">
       <header className="app__bar">
         <div className="app__brand">
+          <button
+            className="app__toggle"
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-expanded={sidebarOpen}
+            aria-label="视频库"
+          >
+            ☰
+          </button>
           <span className="app__wordmark">futurevideo</span>
           {currentFile ? (
             <span className="app__file" data-testid="current-file">
@@ -378,21 +508,28 @@ export default function App() {
           {formatDuration(shownPosition)} / {formatDuration(duration)}
         </span>
 
-        <input
-          className="controls__progress"
-          type="range"
-          min={0}
-          max={Math.max(duration, 0.1)}
-          step={0.1}
-          value={shownPosition}
-          disabled={!hasMedia}
-          aria-label="播放进度"
-          onChange={handleScrubChange}
-          onPointerUp={handleScrubCommit}
-          onKeyUp={handleScrubCommit}
-          onBlur={handleScrubCommit}
-          style={{ '--fill': `${fillPercent}%` } as CSSProperties}
-        />
+        <div className="controls__progress-wrap">
+          <input
+            className="controls__progress"
+            type="range"
+            min={0}
+            max={Math.max(duration, 0.1)}
+            step={0.1}
+            value={shownPosition}
+            disabled={!hasMedia}
+            aria-label="播放进度"
+            onChange={handleScrubChange}
+            onPointerUp={handleScrubCommit}
+            onKeyUp={handleScrubCommit}
+            onBlur={handleScrubCommit}
+            onPointerMove={handleProgressHover}
+            onPointerLeave={handleProgressLeave}
+            style={{ '--fill': `${fillPercent}%` } as CSSProperties}
+          />
+          {preview ? (
+            <HoverPreview image={previewImage} seconds={preview.seconds} fraction={preview.fraction} />
+          ) : null}
+        </div>
 
         <div className="controls__volume">
           <button
@@ -458,6 +595,7 @@ export default function App() {
           ⛶
         </button>
       </footer>
+      </div>
 
       {error ? (
         <p className="app__error" role="alert">

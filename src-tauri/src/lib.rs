@@ -1,11 +1,14 @@
+mod library;
 mod mpv;
+mod thumbnail;
 
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let app = tauri::Builder::default()
     .manage(mpv::PlayerState::default())
+    .manage(thumbnail::ThumbnailState::default())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -29,6 +32,9 @@ pub fn run() {
       mpv::toggle_mute,
       mpv::set_speed,
       mpv::toggle_fullscreen,
+      library::pick_directory,
+      library::list_videos,
+      thumbnail::thumbnail_at,
     ])
     .on_window_event(|window, event| {
       // 主窗口尺寸变化（含全屏切换）时，让嵌入的 mpv 子窗口跟着变
@@ -39,6 +45,13 @@ pub fn run() {
         }
       }
     })
-    .run(tauri::generate_context!())
+    .build(tauri::generate_context!())
     .expect("error while building tauri application");
+
+  app.run(|app_handle, event| {
+    if let tauri::RunEvent::Exit = event {
+      // 预览用的是独立 mpv 进程，不主动收掉会在应用退出后残留
+      app_handle.state::<thumbnail::ThumbnailState>().shutdown();
+    }
+  });
 }

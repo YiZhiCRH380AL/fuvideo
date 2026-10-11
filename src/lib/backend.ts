@@ -29,6 +29,11 @@ export interface PlayerSnapshot {
   speed: number
 }
 
+export interface VideoEntry {
+  name: string
+  path: string
+}
+
 const IDLE_SNAPSHOT: PlayerSnapshot = {
   hasMedia: false,
   ipcReady: false,
@@ -170,4 +175,31 @@ export async function toggleFullscreen(): Promise<boolean> {
   }
 
   return invoke<boolean>('toggle_fullscreen')
+}
+
+/** 弹出目录选择框，返回选中的目录；用户取消时返回 null。 */
+export async function pickDirectory(): Promise<string | null> {
+  if (!isTauri()) {
+    return null
+  }
+
+  return invoke<string | null>('pick_directory')
+}
+
+/** 列出目录下的视频文件。 */
+export async function listVideos(directory: string): Promise<VideoEntry[]> {
+  if (!isTauri()) {
+    return []
+  }
+
+  return invoke<VideoEntry[]>('list_videos', { directory })
+}
+
+/** 抓取指定时间点的画面，返回可直接显示的 data URL。 */
+export async function thumbnailAt(position: number): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('画面预览需要在桌面应用中运行')
+  }
+
+  return invoke<string>('thumbnail_at', { position })
 }
