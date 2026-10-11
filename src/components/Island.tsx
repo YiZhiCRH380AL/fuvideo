@@ -1,4 +1,9 @@
-import type { ChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type {
+  ChangeEvent,
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react'
 import { formatSpeed, SPEED_OPTIONS } from '../lib/playback'
 import { formatDuration } from '../lib/time'
 import HoverPreview from './HoverPreview'
@@ -35,6 +40,11 @@ export interface IslandProps {
   /** 倍速菜单自己收起时（点外面或按 Esc）通知外面。 */
   onCloseSpeedMenu: () => void
   onSelectSpeed: (speed: number) => void
+  mediaOpen: boolean
+  onToggleMediaPanel: () => void
+  onCloseMediaPanel: () => void
+  /** 音轨与字幕面板的内容。面板自己管数据，这里只给它一个挂载点。 */
+  mediaPanel: ReactNode
   onToggleFullscreen: () => void
   onCollapse: () => void
 }
@@ -77,6 +87,10 @@ export default function Island({
   onSelectSpeed,
   onToggleSpeedMenu,
   onCloseSpeedMenu,
+  mediaOpen,
+  onToggleMediaPanel,
+  onCloseMediaPanel,
+  mediaPanel,
   onToggleFullscreen,
   onCollapse,
 }: IslandProps) {
@@ -188,6 +202,39 @@ export default function Island({
                 {formatSpeed(option)}
               </button>
             ))}
+          </Popover>
+        </div>
+
+        {/* 音轨、输出设备、字幕都收在这个面板里，控制条上只多一个入口 */}
+        <div className="island__media">
+          <button
+            className="island__button"
+            type="button"
+            onClick={onToggleMediaPanel}
+            aria-haspopup="dialog"
+            aria-expanded={mediaOpen}
+            aria-label="音轨与字幕"
+            title="音轨与字幕"
+          >
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3.5" y="5.4" width="17" height="1.6" rx="0.8" />
+              <rect x="3.5" y="11.2" width="17" height="1.6" rx="0.8" />
+              <rect x="3.5" y="17" width="17" height="1.6" rx="0.8" />
+              <rect x="7.2" y="3.6" width="2.2" height="5.4" rx="1.1" />
+              <rect x="14.2" y="9.4" width="2.2" height="5.4" rx="1.1" />
+              <rect x="6" y="15.2" width="2.2" height="5.4" rx="1.1" />
+            </svg>
+          </button>
+
+          <Popover
+            open={mediaOpen}
+            onClose={onCloseMediaPanel}
+            label="音轨与字幕"
+            anchorSelector=".island__media"
+            className="popover--panel"
+            role="dialog"
+          >
+            {mediaPanel}
           </Popover>
         </div>
 

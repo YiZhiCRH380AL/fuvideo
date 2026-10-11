@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  addSubtitleFile,
   describeProbe,
+  getAudioDevices,
   getBackendStatus,
   getPlayerDetails,
   isTauri,
   readSettings,
+  setAudioDevice,
+  setAudioTrack,
   writeSettings,
 } from './backend'
 
@@ -59,5 +63,14 @@ describe('readSettings', () => {
 describe('writeSettings', () => {
   it('浏览器环境下明确报错，而不是静默丢掉用户的修改', async () => {
     await expect(writeSettings(DEFAULT_SETTINGS)).rejects.toThrow()
+  })
+})
+
+describe('播放控制类命令', () => {
+  it('浏览器环境下给出可读的错误，而不是沉默地什么都不做', async () => {
+    await expect(getAudioDevices()).rejects.toThrow('桌面应用')
+    await expect(setAudioTrack(2)).rejects.toThrow('桌面应用')
+    await expect(addSubtitleFile()).rejects.toThrow('桌面应用')
+    await expect(setAudioDevice('auto')).rejects.toThrow('桌面应用')
   })
 })

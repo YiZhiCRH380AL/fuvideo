@@ -14,6 +14,8 @@ export interface PopoverProps {
   anchorSelector: string
   /** 面板自己的附加类名，用来放宽度之类的差异。 */
   className?: string
+  /** 面板的角色。简单的选项列表是 `menu`，带页签的设置面板更像 `dialog`。 */
+  role?: 'menu' | 'dialog'
   children: ReactNode
 }
 
@@ -31,6 +33,7 @@ export default function Popover({
   label,
   anchorSelector,
   className,
+  role = 'menu',
   children,
 }: PopoverProps) {
   useEffect(() => {
@@ -66,7 +69,7 @@ export default function Popover({
   return (
     <div
       className={className === undefined ? 'popover' : `popover ${className}`}
-      role="menu"
+      role={role}
       aria-label={label}
       data-testid="popover"
     >

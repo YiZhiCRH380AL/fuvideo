@@ -95,6 +95,36 @@ vi.mock('./lib/backend', () => ({
   listDirectory: (directory: string) => mocks.listDirectory(directory),
   listDrives: () => mocks.listDrives(),
   thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
+  // 音轨与字幕面板用到的那一批：这个测试只关心面板能不能打开，
+  // 面板内部的行为由 MediaPanel.test.tsx 负责。
+  getPlayerDetails: async () => ({
+    path: null,
+    tracks: [],
+    hwdecCurrent: null,
+    secondarySubtitleId: null,
+    audioDelay: 0,
+    subtitleDelay: 0,
+    subtitleFontSize: 38,
+    subtitlePosition: 100,
+    subtitleStyle: 'scale',
+    audioChannels: 'auto-safe',
+    audioDevice: 'auto',
+    audioExclusive: false,
+  }),
+  getAudioDevices: async () => [],
+  setAudioTrack: async () => {},
+  setSubtitleTrack: async () => {},
+  setSecondarySubtitle: async () => {},
+  addSubtitleFile: async () => null,
+  addAudioFile: async () => null,
+  setAudioDelay: async () => {},
+  setSubtitleDelay: async () => {},
+  setSubtitleFontSize: async () => {},
+  setSubtitlePosition: async () => {},
+  setSubtitleStyleOverride: async () => {},
+  setAudioChannels: async () => {},
+  setAudioDevice: async () => {},
+  setAudioExclusive: async () => {},
 }))
 
 import App from './App'
@@ -435,6 +465,18 @@ describe('底部控制条', () => {
     await userEvent.keyboard('{Escape}')
 
     expect(screen.queryByRole('menuitemradio', { name: '1.5x' })).not.toBeInTheDocument()
+  })
+
+  it('控制条上的按钮能打开音轨与字幕面板，再按一次收起', async () => {
+    await openPlayingVideo()
+
+    const button = screen.getByRole('button', { name: '音轨与字幕' })
+
+    await userEvent.click(button)
+    expect(await screen.findByRole('dialog', { name: '音轨与字幕' })).toBeInTheDocument()
+
+    await userEvent.click(button)
+    expect(screen.queryByRole('dialog', { name: '音轨与字幕' })).not.toBeInTheDocument()
   })
 
   it('全屏按钮调用全屏切换', async () => {

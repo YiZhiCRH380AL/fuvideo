@@ -962,6 +962,12 @@
   flex: none;
 }
 
+/* 音轨与字幕面板的挂载点：和倍速一样，自己就是浮层的定位锚点 */
+.island__media {
+  position: relative;
+  flex: none;
+}
+
 /*
  * 滑块本体要比轨道高：视觉上轨道只有 4px，但可点区域必须够大，
  * 否则 12px 的圆点伸出输入框之外，点在圆点上根本落不到控件上。
@@ -1112,6 +1118,235 @@
 
 .popover__item:nth-child(6) {
   animation-delay: 144ms;
+}
+
+/* ============ 音轨与字幕面板 ============ */
+
+/*
+ * 面板型浮层：比倍速菜单宽得多，里面是可滚动的列表。
+ * 高度跟着窗口走，窗口矮的时候列表自己滚，不会顶出屏幕。
+ */
+.popover--panel {
+  width: 296px;
+  max-height: min(440px, 68vh);
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.media {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.media__tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.media__tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.media__tab:hover {
+  background: var(--surface-hover);
+}
+
+.media__tab[aria-selected='true'] {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.media__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.media__label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.media__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 设备多的时候列表自己滚，面板整体不被撑高 */
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.media__option {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media__option:hover {
+  background: var(--surface-hover);
+}
+
+.media__option:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.media__option:disabled:hover {
+  background: none;
+}
+
+.media__option[aria-checked='true'] {
+  color: var(--accent);
+}
+
+/* 选中项前面点一个圆点：列表长了也能一眼看出当前用的是哪条 */
+.media__option[aria-checked='true']::before {
+  content: '';
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.media__option-title {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media__option-detail {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* 「加载字幕文件…」这类次要动作，用虚线框和主列表区分开 */
+.media__action {
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.media__action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.media__action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.media__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.media__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.media__chip {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.media__chip:hover {
+  background: var(--surface-hover);
+}
+
+.media__chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.media__chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.media__stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.media__step {
+  min-width: 40px;
+  padding: 5px 6px;
+  border: none;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.media__step:hover {
+  color: var(--accent);
+}
+
+.media__step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.media__value {
+  flex: 1;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.media__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 @keyframes item-in {

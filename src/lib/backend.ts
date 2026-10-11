@@ -48,6 +48,23 @@ export interface PlayerDetails {
   path: string | null
   tracks: TrackInfo[]
   hwdecCurrent: string | null
+  /** 第二字幕（双语字幕的第二条）；`null` 表示没开。 */
+  secondarySubtitleId: number | null
+  audioDelay: number
+  subtitleDelay: number
+  subtitleFontSize: number
+  subtitlePosition: number
+  /** ASS 字幕的样式覆盖模式：`scale` 跟着文件走，`force` 用播放器的字号与位置。 */
+  subtitleStyle: string
+  audioChannels: string
+  audioDevice: string
+  audioExclusive: boolean
+}
+
+/** 一个音频输出设备。展示用 description，切换时传 name。 */
+export interface AudioDevice {
+  name: string
+  description: string
 }
 
 /**
@@ -61,8 +78,11 @@ export interface PlayerSettings {
   savePosition: boolean
   subAuto: string | null
   subFontSize: number | null
+  subPosition: number | null
+  subAssOverride: string | null
   audioChannels: string | null
   audioDevice: string | null
+  audioExclusive: boolean
 }
 
 /** 和 Rust 侧 `Settings::default()` 保持一致。 */
@@ -71,14 +91,26 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   savePosition: true,
   subAuto: null,
   subFontSize: null,
+  subPosition: null,
+  subAssOverride: null,
   audioChannels: null,
   audioDevice: null,
+  audioExclusive: false,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
   path: null,
   tracks: [],
   hwdecCurrent: null,
+  secondarySubtitleId: null,
+  audioDelay: 0,
+  subtitleDelay: 0,
+  subtitleFontSize: 38,
+  subtitlePosition: 100,
+  subtitleStyle: 'scale',
+  audioChannels: 'auto-safe',
+  audioDevice: 'auto',
+  audioExclusive: false,
 }
 
 export type BrowseKind = 'directory' | 'video'
@@ -216,6 +248,90 @@ export async function togglePause(): Promise<boolean> {
   }
 
   return invoke<boolean>('toggle_pause')
+}
+
+/**
+ * 播放控制类命令的统一入口。
+ *
+ * 这些命令都是一行 invoke，差别只在名字和参数；浏览器里一律给出可读错误，
+ * 而不是让 invoke 抛一个看不懂的失败。
+ */
+async function playerCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  return invoke<T>(command, args)
+}
+
+/** 列出音频输出设备。展开音轨面板时拉一次。 */
+export function getAudioDevices(): Promise<AudioDevice[]> {
+  return playerCommand<AudioDevice[]>('audio_devices')
+}
+
+/** 切换音轨；传 null 表示关掉音频。 */
+export function setAudioTrack(id: number | null): Promise<void> {
+  return playerCommand<void>('set_audio_track', { id })
+}
+
+/** 切换字幕轨；传 null 表示关闭字幕。 */
+export function setSubtitleTrack(id: number | null): Promise<void> {
+  return playerCommand<void>('set_subtitle_track', { id })
+}
+
+/** 选第二字幕做双语；传 null 表示关掉。 */
+export function setSecondarySubtitle(id: number | null): Promise<void> {
+  return playerCommand<void>('set_secondary_subtitle', { id })
+}
+
+/** 弹框选一个字幕文件挂上去。用户取消时返回 null。 */
+export function addSubtitleFile(): Promise<string | null> {
+  return playerCommand<string | null>('add_subtitle_file')
+}
+
+/** 弹框选一个音频文件当外挂音轨。用户取消时返回 null。 */
+export function addAudioFile(): Promise<string | null> {
+  return playerCommand<string | null>('add_audio_file')
+}
+
+/** 音频延迟，正数表示声音晚一点出来。 */
+export function setAudioDelay(seconds: number): Promise<void> {
+  return playerCommand<void>('set_audio_delay', { seconds })
+}
+
+/** 字幕延迟，正数表示字幕晚一点出来。 */
+export function setSubtitleDelay(seconds: number): Promise<void> {
+  return playerCommand<void>('set_subtitle_delay', { seconds })
+}
+
+/** 字幕字号。这是全局偏好，下次启动也用它。 */
+export function setSubtitleFontSize(size: number): Promise<void> {
+  return playerCommand<void>('set_subtitle_font_size', { size })
+}
+
+/** 字幕垂直位置：0 在顶部，100 在底部。同样是全局偏好。 */
+export function setSubtitlePosition(position: number): Promise<void> {
+  return playerCommand<void>('set_subtitle_position', { position })
+}
+
+/** ASS 字幕的样式覆盖模式。 */
+export function setSubtitleStyleOverride(mode: string): Promise<void> {
+  return playerCommand<void>('set_subtitle_style_override', { mode })
+}
+
+/** 声道布局，取值见 `AUDIO_CHANNEL_OPTIONS`。 */
+export function setAudioChannels(channels: string): Promise<void> {
+  return playerCommand<void>('set_audio_channels', { channels })
+}
+
+/** 切换音频输出设备，设备名来自 `getAudioDevices`。 */
+export function setAudioDevice(device: string): Promise<void> {
+  return playerCommand<void>('set_audio_device', { device })
+}
+
+/** 独占模式：开着会独占设备，别的程序就出不了声。 */
+export function setAudioExclusive(enabled: boolean): Promise<void> {
+  return playerCommand<void>('set_audio_exclusive', { enabled })
 }
 
 /** 跳转到指定秒数。 */

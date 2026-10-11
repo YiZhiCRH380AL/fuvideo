@@ -12,6 +12,7 @@ import './App.css'
 import Crumbs from './components/Crumbs'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
+import MediaPanel from './components/MediaPanel'
 import Splash from './components/Splash'
 import Tutorial from './components/Tutorial'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
@@ -118,7 +119,7 @@ export default function App() {
    * 倍速菜单是第一个使用者，后面的音轨、字幕面板往这个联合类型里加就行：
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
-  const [openPanel, setOpenPanel] = useState<'speed' | null>(null)
+  const [openPanel, setOpenPanel] = useState<'speed' | 'media' | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
 
   /** 开屏走到哪一步：入场 → 收场（界面同时淡入）→ 卸载。 */
@@ -1094,6 +1095,8 @@ export default function App() {
           preview={preview}
           previewImage={previewImage}
           speedOpen={openPanel === 'speed'}
+          mediaOpen={openPanel === 'media'}
+          mediaPanel={<MediaPanel source={currentFile} onError={reportError} />}
           onTogglePause={() => void handleTogglePause()}
           onScrubChange={handleScrubChange}
           onScrubCommit={handleScrubCommit}
@@ -1103,6 +1106,8 @@ export default function App() {
           onToggleMute={handleToggleMute}
           onToggleSpeedMenu={() => setOpenPanel((open) => (open === 'speed' ? null : 'speed'))}
           onCloseSpeedMenu={() => setOpenPanel(null)}
+          onToggleMediaPanel={() => setOpenPanel((open) => (open === 'media' ? null : 'media'))}
+          onCloseMediaPanel={() => setOpenPanel(null)}
           onSelectSpeed={handleSpeedChange}
           onToggleFullscreen={handleToggleFullscreen}
           onCollapse={() => void collapseVideo()}
