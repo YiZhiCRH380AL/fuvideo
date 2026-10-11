@@ -119,13 +119,115 @@ npm run tauri build -- --bundles nsis
 `target/` 在 `.gitignore` 里，产物不进仓库；要发布得手动传到 Releases
 （本机没装 `gh`，走网页上传，或者装上 `gh` 之后 `gh release create`）。
 
-## 下一阶段：还没定
+## 下一阶段：播放器能力扩展（规划中，尚未开工）
 
-目录区现在把「选目录 → 进盘 → 进去 → 挑视频」这条线走顺了。顺着往下最省事的是**记住上次的位置**：
+目标：把 mpv 已经具备、但界面没有暴露出来的播放器能力分批接出来，功能面对标 PotPlayer；
+**但不改画面渲染链，也不改现有外观与动效**。这一节是路线图，动手前先看下面的调研结论和设计约束。
 
-- 记住上次打开的目录，启动后直接铺回方格墙，开屏收场就不再是空画面；
-- 顺带记住每个视频的播放进度，下次点开接着放（README 的「已知限制」里也列着这条）。
+### 调研结论（已在本机核实过，不用再查一遍）
 
-另外还可以做：方格墙按名称/时间排序、搜索框；把开屏时长做成设置项；M3 多主题 token。
+- 内核是 mpv **v0.41.0**（shinchiro 构建，FFmpeg 带 libavdevice），经 `--wid` 嵌入 + 命名管道 JSON IPC 控制。
+- `--hwdec=help` 列出的后端只是**编译期的合法取值**，不代表本机能用：实际可用性由 GPU 决定
+  （本机是 RTX 4090 + AMD 核显，`qsv` 不可用）。运行时真正生效的后端看 `hwdec-current` 属性。
+  另外要分清**解码**和**编码**：mpv 播放只解码；硬件编码（NVENC/QSV/AMF）只有在导出新文件时才涉及。
+- 音频输出只有 `wasapi / openal / null / pcm`：**没有 ASIO、也没有 DirectSound**，
+  独占模式只能靠 `audio-exclusive`。
+- mpv 已移除 `--video-stereo-mode`（0.41 的选项表里不存在）→ **3D 立体输出做不到**。
+- `--sub-auto` 默认就是 `exact`：同名外挂字幕**本来就会自动加载**，缺的只是界面和模糊匹配。
+- `watch-later-options` 默认就记录 `aid`、`sid`、`sub-delay`、`video-zoom`、`brightness`、`ab-loop` 等，
+  也就是「每部片子记住自己选过的音轨/字幕/画面设置」是 mpv 的原生能力。但现在换片是直接 `kill` 进程
+  （`PlayerState::replace`），这种机制根本来不及落盘。
+- 已确认存在的能力举例：`audio-device-list`、`audio-channels`、`audio-spdif`、`secondary-sid`、
+  `chapter-list`、`playlist*`、`ab-loop-a/b`、`screenshot`（jpg/png/webp/jxl/avif）、`--stream-record`、
+  `--dvd-device` / `--bluray-device`、`--ytdl`；音频滤镜 `superequalizer`(18 段)、`loudnorm`、
+  `scaletempo2`、`surround`、`channelmap`；视频滤镜 `crop` / `rotate` / `eq` / `unsharp` / `hqdn3d` /
+  `deband` / `delogo` / `v360` / `libplacebo`。
 
-以上都等确认后再动。
+### 设计约束（每个阶段都要守）
+
+- 画面由 mpv 原生子窗口渲染，字幕由 libass 画在视频层；新功能一律走 HTML 覆盖层，不碰这两条链路。
+- 新面板复用现有倍速菜单（`.speed-menu`）的浮层形态与 CSS 变量；`prefers-reduced-motion` 下动画关掉。
+- 新面板必须接进 `useIdleVisibility` 的判据（现在只有 `!speedOpen`），否则鼠标停在面板上界面会自己隐去。
+- 高频快照 `player_state` 不再加字段；轨道表、设备表这类列表数据走独立的低频通道。
+
+### P0 地基（不新增可见功能，先做）
+
+1. 常驻 mpv + `loadfile`，替掉「每片 kill + 重启」。收益：设备/字幕/画面偏好天然跨片保留，
+   换片不再重启内核，也不用每次重新找子窗口。
+2. 优雅退出：用 `quit` 命令代替 `kill`，让 `watch-later` 能落盘，顺手解决「上次看到哪」。
+3. 设置持久化：应用配置目录下的 JSON 存全局偏好与默认值，播放时注入启动参数，
+   或在 IPC 连上后立刻写属性。
+4. 面板骨架：统一的浮层组件 + 关闭逻辑 + 空闲隐藏判据 + 键盘可达。
+5. 低频详情通道：新增 `player_details` 一类命令（轨道表、设备表、章节表），与高频快照分离。
+
+验收：`cargo test` 覆盖常驻内核的 loadfile / quit / watch-later；Vitest 覆盖设置读写与面板开关；
+e2e 覆盖「打开面板时界面不会隐去」。
+
+### P1 音频与字幕（最高频，全是 mpv 现成能力）
+
+- 音轨：`track-list` / `aid` / `alang`；外挂音轨 `audio-add` / `--audio-file-auto`。
+- 输出设备：`audio-device` + `audio-device-list`（显示 description，不是内部 name）；
+  独占模式 `audio-exclusive`（要明确提示会独占设备）。
+- 声道：`audio-channels`（mono/stereo/5.1/7.1），进阶 `audio-channel-map`；音频延迟 `audio-delay`。
+- 字幕：手动添加 `sub-add`，轨道选择 `sid` / `secondary-sid`（双语），
+  `sub-delay` / `sub-pos` / `sub-scale` / `sub-font-size` / `sub-ass-override`；
+  自动加载 `--sub-auto=fuzzy` + `--sub-file-paths`。
+- 以上选择都要跨片保持（依赖 P0）。
+
+风险：切换输出设备会重建音频管线，有短暂断音，个别驱动下可能失败——需要提示与回退。
+
+### P2 音频进阶
+
+- 均衡器 `superequalizer`（18 段）+ 预设；响度归一化 `loudnorm` / `dynaudnorm`。
+- 变速不变调 `scaletempo2` / `rubberband` + `audio-pitch-correction`。
+- 立体声扩展 `extrastereo`、环绕上混 `surround`、声道重映射 `channelmap` / `pan`。
+- 透传 `audio-spdif`（AC3/DTS/EAC3/TrueHD/DTS-HD）；采样率与位深 `audio-samplerate` / `audio-format`。
+
+### P3 画面
+
+- 缩放与画幅：`video-zoom` / `panscan` / `video-aspect-override` / `video-align-x,y`。
+- 色彩：`brightness` / `contrast` / `saturation` / `hue` / `gamma`。
+- 几何：`video-rotate` / `hflip` / `vflip` / `crop` / `cropdetect`。
+- 画质档位：`deband` / `sharpen` / `interpolation` / `tscale` / `icc-profile-auto`。
+- 硬解：`hwdec` 下拉（自动 / d3d11va / nvdec / amf / 关闭），并用 `hwdec-current` 显示**实际生效**的后端，
+  不要把那一百多个名字铺开。
+- HDR：`tone-mapping` / `target-peak` / `hdr-contrast-recovery`。
+- 快照：`screenshot`（jpg/png/webp/jxl/avif，可带或不带字幕），可指定保存目录。
+- 可选：`v360` 做 360° 视角（VR 头显不支持）。
+
+### P4 播放控制与应用层
+
+- 播放列表与队列 `playlist*` / `loadlist`；循环与随机 `loop-file` / `loop-playlist` / `shuffle`。
+- 章节 `chapter-list` / `chapter`；逐帧 `frame-step` / `frame-back-step`。
+- AB 循环 `ab-loop-a` / `ab-loop-b` / `ab-loop-count`。
+- 记忆播放位置与播放历史（依赖 P0 的 watch-later）；书签（mpv 无此能力，应用层自己存）。
+- 定时关闭 / 定时暂停（应用层）。
+- 快捷键自定义（现在 `--input-default-bindings=no`，按键全由前端 `resolveShortcut` 处理）。
+- 窗口行为：迷你模式、置顶、透明度（Tauri 窗口属性）。
+- 打开方式：拖放、打开 URL、加载外部音频。
+- 顺带把之前列过的小项做掉：记住上次目录、方格墙排序与搜索、开屏时长做成设置项、M3 主题 token。
+
+### P5 内容来源与新依赖（需要先决策）
+
+- 网络流 http/rtsp/rtmp/udp：内核支持，不引入新依赖。
+- 在线视频 `--ytdl`：需要外部 `yt-dlp` 可执行文件 + 网络，包体和网络边界要先定。
+- 光盘 `--dvd-device` / `--bluray-device`：能读盘，**没有导航菜单**。
+- 输入设备采集 `av://dshow:...`：mpv **不提供设备枚举**，要自己写 WASAPI / Media Foundation 枚举，
+  是这一阶段唯一的系统级新代码。
+- 边播边录 `--stream-record`：流复制，不重编码，不需要编码器。
+
+### 明确不做（连同理由一起记下）
+
+- 在线字幕搜索/下载、实时字幕翻译：mpv 没有，需要第三方服务与密钥。
+- 字幕时间轴编辑器：等于新写一个编辑器，超出播放器范围。
+- DTV 电视广播（DVB 调谐器）：mpv 不支持。
+- 3D 立体输出：mpv 0.41 已移除 `video-stereo-mode`。
+- ASIO 输出：本机 mpv 的音频输出只有 wasapi/openal/null/pcm。
+- DirectShow 滤镜图管理（PotPlayer 挂 LAV/madVR 的那套）：架构不同，没有对应概念。
+- 蓝光导航菜单；皮肤文件生态（改为 HTML 主题 token）。
+
+### 待决策（开工前要拍板）
+
+1. 设置入口形态：以抽屉面板为主，还是以右键菜单为主？这决定信息架构，也决定它像不像 PotPlayer。
+2. 是否引入网络能力（yt-dlp / 在线字幕）：会带来外部依赖与包体增长。
+3. 「输入设备」到底指什么：采集卡当播放源、麦克风监听、还是录屏？三条路径的实现完全不同。
