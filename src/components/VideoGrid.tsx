@@ -30,6 +30,8 @@ export interface VideoGridProps {
 interface TileProps {
   video: BrowseEntry
   thumbnail: string | undefined
+  /** 在墙里的第几个，用来错开入场动画。 */
+  index: number
   expanded: boolean
   flash: GridFlash | null
   buffering: boolean
@@ -41,6 +43,7 @@ interface TileProps {
 const Tile = memo(function Tile({
   video,
   thumbnail,
+  index,
   expanded,
   flash,
   buffering,
@@ -97,17 +100,22 @@ const Tile = memo(function Tile({
       data-tile={video.path}
       type="button"
       title={video.name}
+      style={{ '--i': index } as CSSProperties}
       onClick={(event) => onOpen(video.path, event.currentTarget.getBoundingClientRect())}
     >
-      {thumbnail === undefined ? (
-        <span className="tile__placeholder" />
-      ) : (
-        <img className="tile__image" src={thumbnail} alt="" loading="lazy" decoding="async" />
-      )}
-      <span className="tile__play" aria-hidden="true">
-        ▶
+      <span className="tile__frame">
+        {thumbnail === undefined ? (
+          <span className="tile__placeholder" />
+        ) : (
+          <img className="tile__image" src={thumbnail} alt="" loading="lazy" decoding="async" />
+        )}
+
+        <span className="tile__play" aria-hidden="true">
+          ▶
+        </span>
       </span>
-      <span className="tile__label">{video.name}</span>
+
+      <span className="tile__name">{video.name}</span>
     </button>
   )
 })
@@ -198,7 +206,7 @@ export default function VideoGrid({
 
       // 文字被整体缩放会糊，动画期间先藏起来再淡回
       tile
-        .querySelector('.tile__label')
+        .querySelector('.tile__name')
         ?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'linear' })
     }
 
@@ -214,11 +222,12 @@ export default function VideoGrid({
       data-testid="video-grid"
       data-expanded={expandedPath !== null ? 'true' : 'false'}
     >
-      {videos.map((video) => (
+      {videos.map((video, index) => (
         <Tile
           key={video.path}
           video={video}
           thumbnail={thumbnails[video.path]}
+          index={index}
           expanded={video.path === expandedPath}
           flash={video.path === expandedPath ? flash : null}
           buffering={video.path === expandedPath && buffering}

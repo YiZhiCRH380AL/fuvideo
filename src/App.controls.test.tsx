@@ -126,12 +126,12 @@ beforeEach(() => {
 })
 
 const grid = () => within(screen.getByTestId('video-grid'))
-const sidebar = () => within(screen.getByTestId('sidebar'))
+const folders = () => within(screen.getByTestId('folder-strip'))
+const crumbs = () => screen.getByTestId('crumbs')
 
-/** 侧边栏选目录，等方格出现。 */
+/** 选一个目录，等方格出现。 */
 async function chooseDirectory(): Promise<void> {
-  await userEvent.click(screen.getByRole('button', { name: '视频库' }))
-  await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
+  await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
   await grid().findByRole('button', { name: 'demo.mp4' })
 }
 
@@ -232,15 +232,17 @@ describe('方格放大播放', () => {
     expect(document.querySelector('.app')).toHaveAttribute('data-video', 'true')
   })
 
-  it('展开时不显示视频库入口，收起后恢复', async () => {
+  it('展开时不显示换目录的入口，收起后恢复', async () => {
     await openPlayingVideo()
 
     // 换目录会让放大格消失，所以看画面时先把入口藏掉
-    expect(screen.queryByRole('button', { name: '视频库' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '选择目录' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('folder-strip')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '收起画面' }))
 
-    expect(await screen.findByRole('button', { name: '视频库' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '选择目录' })).toBeInTheDocument()
+    expect(screen.getByTestId('folder-strip')).toBeInTheDocument()
   })
 
   it('点击展开的画面切换播放暂停', async () => {
@@ -492,50 +494,78 @@ describe('键盘快捷键', () => {
   })
 })
 
-describe('侧边栏', () => {
-  it('选择目录后同时列出子目录与视频', async () => {
+describe('目录区', () => {
+  it('选目录后子目录铺成文件夹条，视频铺成方格，路径进面包屑', async () => {
     render(<App />)
 
     await chooseDirectory()
 
     expect(mocks.pickDirectory).toHaveBeenCalledTimes(1)
-    expect(sidebar().getByRole('button', { name: 'anime' })).toBeInTheDocument()
-    expect(sidebar().getByRole('button', { name: 'other.mkv' })).toBeInTheDocument()
-    expect(screen.getByTestId('sidebar-directory')).toHaveTextContent(CLIPS)
+    // 子目录在中心区域，和方格同一套视觉，不再是侧边栏里的一份列表
+    expect(folders().getByRole('button', { name: 'anime' })).toBeInTheDocument()
+    expect(grid().getByRole('button', { name: 'other.mkv' })).toBeInTheDocument()
+    expect(crumbs()).toHaveAttribute('title', CLIPS)
+    expect(crumbs()).toHaveTextContent('clips')
   })
 
-  it('点子目录会进去，点上一级会回到父目录', async () => {
+  it('点文件夹会进去，点上一级会回到父目录', async () => {
     render(<App />)
     await chooseDirectory()
 
-    await userEvent.click(sidebar().getByRole('button', { name: 'anime' }))
+    await userEvent.click(folders().getByRole('button', { name: 'anime' }))
 
-    expect(await sidebar().findByRole('button', { name: 'ep01.mkv' })).toBeInTheDocument()
+    expect(await grid().findByRole('button', { name: 'ep01.mkv' })).toBeInTheDocument()
     expect(mocks.listDirectory).toHaveBeenLastCalledWith(ANIME)
+    expect(crumbs()).toHaveAttribute('title', ANIME)
 
-    await userEvent.click(sidebar().getByRole('button', { name: '上一级' }))
+    await userEvent.click(folders().getByRole('button', { name: '上一级' }))
 
-    expect(await sidebar().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
     expect(mocks.listDirectory).toHaveBeenLastCalledWith(CLIPS)
   })
 
-  it('点侧边栏里的视频也会播放', async () => {
+  it('点面包屑里的任意一层直接跳过去', async () => {
     render(<App />)
     await chooseDirectory()
 
-    await userEvent.click(sidebar().getByRole('button', { name: 'other.mkv' }))
+    await userEvent.click(folders().getByRole('button', { name: 'anime' }))
+    await grid().findByRole('button', { name: 'ep01.mkv' })
 
-    expect(mocks.playLocalVideo).toHaveBeenCalledWith(String.raw`E:\clips\other.mkv`)
+    // 从 E:\clips\anime 点「clips」回到上一层
+    await userEvent.click(within(crumbs()).getByRole('button', { name: 'clips' }))
+
+    expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(mocks.listDirectory).toHaveBeenLastCalledWith(CLIPS)
+  })
+
+  it('路径太深时只显示最后几层，前面折成省略号', async () => {
+    render(<App />)
+    mocks.listDirectory.mockImplementation(async () => ({
+      directory: String.raw`E:\a\b\c\d`,
+      parent: String.raw`E:\a\b\c`,
+      entries: [{ name: 'deep.mp4', path: String.raw`E:\a\b\c\d\deep.mp4`, kind: 'video' as const }],
+    }))
+
+    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
+    await grid().findByRole('button', { name: 'deep.mp4' })
+
+    expect(crumbs()).toHaveTextContent('…')
+    // 只留最后三层：b、c 可点，d 是当前目录
+    expect(within(crumbs()).queryByRole('button', { name: 'E:' })).not.toBeInTheDocument()
+    expect(within(crumbs()).getByRole('button', { name: 'b' })).toBeInTheDocument()
+    expect(within(crumbs()).getByRole('button', { name: 'c' })).toBeInTheDocument()
+    expect(within(crumbs()).getByText('d')).toBeInTheDocument()
   })
 
   it('用户取消选择目录时保持原状', async () => {
     render(<App />)
     mocks.pickDirectory.mockResolvedValueOnce(null)
 
-    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
-    await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
+    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
 
-    expect(screen.getByTestId('sidebar-directory')).toHaveTextContent('还没有选择目录')
+    expect(screen.getByText('选一个目录，把里面的视频铺成方格')).toBeInTheDocument()
+    expect(screen.queryByTestId('crumbs')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('folder-strip')).not.toBeInTheDocument()
     expect(mocks.listDirectory).not.toHaveBeenCalled()
   })
 
@@ -547,11 +577,10 @@ describe('侧边栏', () => {
       entries: [],
     }))
 
-    await userEvent.click(screen.getByRole('button', { name: '视频库' }))
-    await userEvent.click(sidebar().getByRole('button', { name: '选择目录' }))
+    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
 
-    expect(await sidebar().findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
-    expect(sidebar().getByRole('button', { name: '上一级' })).toBeDisabled()
+    expect(await screen.findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
+    expect(folders().getByRole('button', { name: '上一级' })).toBeDisabled()
   })
 })
 

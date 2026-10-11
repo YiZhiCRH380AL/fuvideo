@@ -41,24 +41,25 @@ test('未播放视频时窗口有不透明底色，不会透出桌面', async ({
   expect(appBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
 })
 
-test('侧边栏默认收起，点按钮后展开', async ({ page }) => {
+test('目录区占满整窗，不再有侧边栏', async ({ page }) => {
   await page.goto('/')
   await waitForBoot(page)
 
-  const sidebar = page.locator('.sidebar')
-  await expect(sidebar).toHaveAttribute('data-open', 'false')
+  // 侧边栏整块去掉了：目录导航进标题栏，子目录进中心区域
+  await expect(page.locator('.sidebar')).toHaveCount(0)
 
-  await page.getByRole('button', { name: '视频库' }).click()
+  const size = page.viewportSize()
+  const library = await page.locator('.library').boundingBox()
+  const choose = await page.getByRole('button', { name: '选择目录' }).boundingBox()
 
-  await expect(sidebar).toHaveAttribute('data-open', 'true')
-  await expect(page.getByTestId('sidebar-directory')).toHaveText('还没有选择目录')
-
-  // 展开带 220ms 过渡，等它稳定后再量宽度
-  await expect
-    .poll(async () => sidebar.evaluate((element) => Math.round(element.getBoundingClientRect().width)), {
-      timeout: 2000,
-    })
-    .toBeGreaterThan(200)
+  expect(size).not.toBeNull()
+  expect(library).not.toBeNull()
+  expect(choose).not.toBeNull()
+  // 目录区从窗口最左边铺到最右边，没有侧边栏占位
+  expect(library!.x).toBeLessThan(1)
+  expect(library!.width).toBeGreaterThan(size!.width - 1)
+  // 引导按钮落在窗口正中间，说明目录区确实占了整块主区域
+  expect(Math.abs(choose!.x + choose!.width / 2 - size!.width / 2)).toBeLessThan(6)
 })
 
 test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {

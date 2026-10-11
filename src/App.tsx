@@ -8,8 +8,9 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import './App.css'
+import Crumbs from './components/Crumbs'
+import FolderStrip from './components/FolderStrip'
 import Island from './components/Island'
-import Sidebar from './components/Sidebar'
 import Splash from './components/Splash'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
@@ -103,7 +104,6 @@ export default function App() {
   )
 
   const [error, setError] = useState<string | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [directoryBusy, setDirectoryBusy] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
@@ -138,6 +138,12 @@ export default function App() {
   // 会白白重测一遍所有方格的位置
   const videos = useMemo(
     () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
+    [listing],
+  )
+
+  /** 子目录现在铺在方格上面，和方格同一套视觉。 */
+  const folders = useMemo(
+    () => listing?.entries.filter((entry) => entry.kind === 'directory') ?? [],
     [listing],
   )
 
@@ -388,8 +394,6 @@ export default function App() {
         }
 
         setExpanded(true)
-        // 画面展开时把侧边栏收掉：入口也会一起隐藏，避免播放中换目录
-        setSidebarOpen(false)
       } catch (cause: unknown) {
         reportError(cause)
       }
@@ -485,7 +489,6 @@ export default function App() {
       // 已经是当前视频就展开继续看，否则换片
       if (path === currentFile) {
         setExpanded(true)
-        setSidebarOpen(false)
         if (player?.paused !== false) {
           void handleTogglePause()
         }
@@ -848,35 +851,29 @@ export default function App() {
       data-chrome={chromeVisible ? 'visible' : 'hidden'}
       data-splash={splash}
     >
-      <Sidebar
-        open={sidebarOpen}
-        listing={listing}
-        currentPath={currentFile}
-        busy={directoryBusy}
-        onChooseDirectory={() => void handleChooseDirectory()}
-        onEnterDirectory={(path) => void loadDirectory(path)}
-        onGoUp={handleGoUp}
-        onSelect={(path) => void playPath(path)}
-      />
-
       <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
-            {/* 画面展开时不给换目录的入口：新目录里没有当前视频，放大格会消失 */}
-            {expanded ? null : (
-              <button
-                className="app__toggle"
-                type="button"
-                onClick={() => setSidebarOpen((open) => !open)}
-                aria-expanded={sidebarOpen}
-                aria-label="视频库"
-              >
-                <span aria-hidden="true">☰</span>
-                <span className="app__toggle-label">视频库</span>
-              </button>
-            )}
-
             <span className="app__wordmark">futurevideo</span>
+
+            {/*
+              目录区往上层走的路都在这里，不再单开关一个侧边栏。
+              画面展开时连它一起收起：新目录里没有当前视频，放大格会消失。
+            */}
+            {expanded || listing === null ? null : (
+              <>
+                <span className="app__divider" aria-hidden="true" />
+                <button
+                  className="app__choose"
+                  type="button"
+                  onClick={() => void handleChooseDirectory()}
+                  disabled={!canOpen || directoryBusy}
+                >
+                  {directoryBusy ? '读取中…' : '选择目录'}
+                </button>
+                <Crumbs path={listing.directory} onNavigate={(path) => void loadDirectory(path)} />
+              </>
+            )}
           </div>
 
           <span
@@ -889,7 +886,7 @@ export default function App() {
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
-          {videos.length === 0 ? (
+          {listing === null ? (
             <div className="library__empty">
               <span className="library__icon" aria-hidden="true">
                 <svg viewBox="0 0 48 48">
@@ -900,7 +897,7 @@ export default function App() {
               </span>
               <p className="library__hint">选一个目录，把里面的视频铺成方格</p>
               <button
-                className="button"
+                className="button button--primary"
                 type="button"
                 onClick={() => void handleChooseDirectory()}
                 disabled={!canOpen}
@@ -917,24 +914,53 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <VideoGrid
-              videos={videos}
-              thumbnails={thumbnails}
-              expandedPath={expanded ? currentFile : null}
-              flash={flash}
-              buffering={buffering}
-              onOpen={handleOpenFromTile}
-              onTogglePlay={() => void handleTogglePause()}
-              onSeekBy={(offset) => {
-                handleSeekBy(offset)
-                setFlash({
-                  id: Date.now(),
-                  x: offset > 0 ? 78 : 22,
-                  y: 50,
-                  offset,
-                })
-              }}
-            />
+            <>
+              {/* 看画面时把目录条收掉：整块留给视频 */}
+              {expanded ? null : (
+                <FolderStrip
+                  folders={folders}
+                  canGoUp={listing.parent !== null}
+                  busy={directoryBusy}
+                  onOpen={(path) => void loadDirectory(path)}
+                  onGoUp={handleGoUp}
+                />
+              )}
+
+              {videos.length === 0 ? (
+                <div className="library__none">
+                  <p className="library__hint">
+                    {listing.entries.length === 0 ? '这个目录里没有子目录或视频文件' : '这个目录里没有视频'}
+                  </p>
+                  <button
+                    className="library__single"
+                    type="button"
+                    onClick={() => void handleOpenFile()}
+                    disabled={!canOpen}
+                  >
+                    或打开单个视频
+                  </button>
+                </div>
+              ) : (
+                <VideoGrid
+                  videos={videos}
+                  thumbnails={thumbnails}
+                  expandedPath={expanded ? currentFile : null}
+                  flash={flash}
+                  buffering={buffering}
+                  onOpen={handleOpenFromTile}
+                  onTogglePlay={() => void handleTogglePause()}
+                  onSeekBy={(offset) => {
+                    handleSeekBy(offset)
+                    setFlash({
+                      id: Date.now(),
+                      x: offset > 0 ? 78 : 22,
+                      y: 50,
+                      offset,
+                    })
+                  }}
+                />
+              )}
+            </>
           )}
         </main>
       </div>
