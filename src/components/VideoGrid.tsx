@@ -176,19 +176,30 @@ export default function VideoGrid({
         continue
       }
 
-      tile.animate(
+      // 提前提层，避免动画期间每帧重新栅格化
+      tile.style.willChange = 'transform'
+
+      const animation = tile.animate(
         [
           { transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})` },
           { transform: 'none' },
         ],
-        // 用减速更早的曲线，末段才不会有「一顿」的僵硬感
-        { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+        // 末段带一点点过冲，格子归位才有「被推过去」的手感
+        { duration: 320, easing: 'cubic-bezier(0.34, 1.12, 0.5, 1)' },
+      )
+
+      animation.addEventListener(
+        'finish',
+        () => {
+          tile.style.willChange = ''
+        },
+        { once: true },
       )
 
       // 文字被整体缩放会糊，动画期间先藏起来再淡回
       tile
         .querySelector('.tile__label')
-        ?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'linear' })
+        ?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'linear' })
     }
 
     // 注意依赖里没有 thumbnails：缩略图到达不改变任何格子的位置，

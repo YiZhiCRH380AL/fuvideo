@@ -42,3 +42,48 @@ test('侧边栏默认收起，点按钮后展开', async ({ page }) => {
     })
     .toBeGreaterThan(200)
 })
+
+test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
+  await page.goto('/')
+
+  // 浏览器里没有视频可以播，直接构造展开态量高度——
+  // 这正是「只听到声音看不到画面」的那个坑：放大格塌掉后，
+  // 后面的方格会顶上来把画面盖住
+  const measured = await page.evaluate(() => {
+    const library = document.querySelector('.library')
+
+    if (library === null) {
+      return null
+    }
+
+    const grid = document.createElement('div')
+    grid.className = 'grid'
+    grid.dataset.expanded = 'true'
+
+    const expanded = document.createElement('div')
+    expanded.className = 'tile tile--expanded'
+
+    const other = document.createElement('div')
+    other.className = 'tile'
+
+    grid.append(expanded, other)
+    library.append(grid)
+
+    const result = {
+      library: library.getBoundingClientRect().height,
+      expanded: expanded.getBoundingClientRect().height,
+      otherTop: other.getBoundingClientRect().top,
+      expandedBottom: expanded.getBoundingClientRect().bottom,
+    }
+
+    grid.remove()
+
+    return result
+  })
+
+  expect(measured).not.toBeNull()
+  expect(measured!.library).toBeGreaterThan(200)
+  expect(measured!.expanded).toBeGreaterThan(measured!.library * 0.9)
+  // 其他方格必须排到画面下面去
+  expect(measured!.otherTop).toBeGreaterThanOrEqual(measured!.expandedBottom - 1)
+})

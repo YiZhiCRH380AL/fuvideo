@@ -18,6 +18,13 @@
   background-image: none;
 }
 
+/* 画面展开时这一整条链路都必须是透明的，任何一层铺了底都会盖住视频 */
+.app[data-video='true'] .shell,
+.app[data-video='true'] .library,
+.app[data-video='true'] .grid {
+  background: transparent;
+}
+
 /* 缓慢漂移的环境光，只在没有画面时出现，否则会把视频的颜色带偏 */
 .app[data-video='false']::before {
   position: absolute;
@@ -413,10 +420,14 @@
   align-content: start;
 }
 
-/* 画面展开时不让滚动：其他方格已经整体让到下方，收起后再浏览 */
+/*
+ * 画面展开时改成竖向排列：放大那格占满一屏，其余方格排在它下面被裁掉。
+ * 用 flex 而不是 grid 行百分比——百分比在父级高度不确定时会解析失败，
+ * 放大格会塌成 0 高，后面的方格就顶上来把画面盖住了。
+ */
 .grid[data-expanded='true'] {
-  /* 首行占满可视高度，放大那格正好铺一屏，后面的方格被裁掉看不见 */
-  grid-template-rows: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -433,6 +444,12 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  /*
+   * FLIP 用 translate + scale 把格子从旧位置挪到新位置，
+   * 这要求缩放以左上角为原点；浏览器默认是中心，原点不对的话
+   * 每帧的起始位置都是错的，动画开头会先跳一下。
+   */
+  transform-origin: 0 0;
 }
 
 /* 内描边：让相邻方格不至于糊成一片，又不形成真正的缝隙 */
@@ -521,9 +538,11 @@
  */
 .tile--expanded {
   order: -1;
-  grid-column: 1 / -1;
+  flex: none;
   width: 100%;
   height: 100%;
+  /* 百分比万一解析不出来，用视口高度兜底，画面不会塌掉 */
+  min-height: calc(100vh - 120px);
   background: transparent;
 }
 
