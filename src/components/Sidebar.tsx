@@ -1,26 +1,29 @@
-import type { VideoEntry } from '../lib/backend'
-import { fileName } from '../lib/path'
+import type { DirectoryListing } from '../lib/backend'
 
 export interface SidebarProps {
   open: boolean
-  directory: string | null
-  entries: VideoEntry[]
+  listing: DirectoryListing | null
   currentPath: string | null
   busy: boolean
   onChooseDirectory: () => void
+  onEnterDirectory: (path: string) => void
+  onGoUp: () => void
   onSelect: (path: string) => void
 }
 
-/** 侧边栏：选一个目录，列出其中的视频，点一下就能播。 */
+/** 侧边栏：选一个目录，浏览其中的子目录与视频，点视频即播。 */
 export default function Sidebar({
   open,
-  directory,
-  entries,
+  listing,
   currentPath,
   busy,
   onChooseDirectory,
+  onEnterDirectory,
+  onGoUp,
   onSelect,
 }: SidebarProps) {
+  const empty = listing !== null && listing.entries.length === 0
+
   return (
     <aside
       className="sidebar"
@@ -36,26 +39,48 @@ export default function Sidebar({
           </button>
         </div>
 
-        <p className="sidebar__directory" data-testid="sidebar-directory">
-          {directory === null ? '还没有选择目录' : fileName(directory)}
-        </p>
+        <div className="sidebar__path">
+          <button
+            className="sidebar__up"
+            type="button"
+            onClick={onGoUp}
+            disabled={listing?.parent == null}
+            aria-label="上一级"
+            title="上一级"
+          >
+            ↑
+          </button>
+          <span
+            className="sidebar__directory"
+            data-testid="sidebar-directory"
+            title={listing?.directory ?? ''}
+          >
+            {listing === null ? '还没有选择目录' : listing.directory}
+          </span>
+        </div>
 
-        {directory === null ? (
-          <p className="sidebar__hint">选一个目录，这里会列出里面的视频</p>
-        ) : entries.length === 0 ? (
-          <p className="sidebar__hint">这个目录里没有视频文件</p>
+        {listing === null ? (
+          <p className="sidebar__hint">选一个目录，这里会列出里面的子目录和视频</p>
+        ) : empty ? (
+          <p className="sidebar__hint">这个目录里没有子目录或视频文件</p>
         ) : (
           <ul className="sidebar__list">
-            {entries.map((entry) => (
+            {listing.entries.map((entry) => (
               <li key={entry.path}>
                 <button
                   className="sidebar__item"
+                  data-kind={entry.kind}
                   type="button"
                   title={entry.name}
-                  aria-current={entry.path === currentPath}
-                  onClick={() => onSelect(entry.path)}
+                  aria-current={entry.kind === 'video' ? entry.path === currentPath : undefined}
+                  onClick={() =>
+                    entry.kind === 'directory' ? onEnterDirectory(entry.path) : onSelect(entry.path)
+                  }
                 >
-                  {entry.name}
+                  <span className="sidebar__marker" aria-hidden="true">
+                    {entry.kind === 'directory' ? '▸' : ''}
+                  </span>
+                  <span className="sidebar__name">{entry.name}</span>
                 </button>
               </li>
             ))}

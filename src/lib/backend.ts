@@ -29,9 +29,19 @@ export interface PlayerSnapshot {
   speed: number
 }
 
-export interface VideoEntry {
+export type BrowseKind = 'directory' | 'video'
+
+export interface BrowseEntry {
   name: string
   path: string
+  kind: BrowseKind
+}
+
+export interface DirectoryListing {
+  directory: string
+  /** 上一级目录；已经在盘符根目录时为 null。 */
+  parent: string | null
+  entries: BrowseEntry[]
 }
 
 const IDLE_SNAPSHOT: PlayerSnapshot = {
@@ -186,13 +196,13 @@ export async function pickDirectory(): Promise<string | null> {
   return invoke<string | null>('pick_directory')
 }
 
-/** 列出目录下的视频文件。 */
-export async function listVideos(directory: string): Promise<VideoEntry[]> {
+/** 列出目录下的子目录与视频文件。 */
+export async function listDirectory(directory: string): Promise<DirectoryListing> {
   if (!isTauri()) {
-    return []
+    return { directory, parent: null, entries: [] }
   }
 
-  return invoke<VideoEntry[]>('list_videos', { directory })
+  return invoke<DirectoryListing>('list_directory', { directory })
 }
 
 /** 抓取指定时间点的画面，返回可直接显示的 data URL。 */

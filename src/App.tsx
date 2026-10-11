@@ -14,7 +14,7 @@ import {
   getBackendStatus,
   getPlayerState,
   isTauri,
-  listVideos,
+  listDirectory,
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
@@ -27,8 +27,8 @@ import {
   toggleMute,
   togglePause,
   type BackendStatus,
+  type DirectoryListing,
   type PlayerSnapshot,
-  type VideoEntry,
 } from './lib/backend'
 import { fileName } from './lib/path'
 import {
@@ -60,8 +60,7 @@ export default function App() {
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [directory, setDirectory] = useState<string | null>(null)
-  const [entries, setEntries] = useState<VideoEntry[]>([])
+  const [listing, setListing] = useState<DirectoryListing | null>(null)
   const [directoryBusy, setDirectoryBusy] = useState(false)
   const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -173,26 +172,42 @@ export default function App() {
     }
   }, [playPath, reportError])
 
+  /** 读取并展示一个目录，进入子目录与返回上一级都走这里。 */
+  const loadDirectory = useCallback(
+    async (target: string) => {
+      setError(null)
+      setDirectoryBusy(true)
+
+      try {
+        setListing(await listDirectory(target))
+      } catch (cause: unknown) {
+        reportError(cause)
+      } finally {
+        setDirectoryBusy(false)
+      }
+    },
+    [reportError],
+  )
+
   const handleChooseDirectory = useCallback(async () => {
     setError(null)
 
     try {
       const picked = await pickDirectory()
 
-      if (!picked) {
-        return
+      if (picked) {
+        await loadDirectory(picked)
       }
-
-      setDirectoryBusy(true)
-      const videos = await listVideos(picked)
-      setDirectory(picked)
-      setEntries(videos)
     } catch (cause: unknown) {
       reportError(cause)
-    } finally {
-      setDirectoryBusy(false)
     }
-  }, [reportError])
+  }, [loadDirectory, reportError])
+
+  const handleGoUp = useCallback(() => {
+    if (listing?.parent) {
+      void loadDirectory(listing.parent)
+    }
+  }, [listing, loadDirectory])
 
   const handleTogglePause = useCallback(async () => {
     setError(null)
@@ -442,11 +457,12 @@ export default function App() {
     >
       <Sidebar
         open={sidebarOpen}
-        directory={directory}
-        entries={entries}
+        listing={listing}
         currentPath={currentFile}
         busy={directoryBusy}
         onChooseDirectory={() => void handleChooseDirectory()}
+        onEnterDirectory={(path) => void loadDirectory(path)}
+        onGoUp={handleGoUp}
         onSelect={(path) => void playPath(path)}
       />
 

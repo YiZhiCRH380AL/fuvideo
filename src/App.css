@@ -400,11 +400,41 @@
 
 .sidebar__directory {
   overflow: hidden;
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar__path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar__up {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebar__up:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sidebar__up:not(:disabled):hover {
+  background: var(--surface-hover);
 }
 
 .sidebar__hint {
@@ -423,9 +453,13 @@
 }
 
 .sidebar__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   overflow: hidden;
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   padding: 7px 8px;
   border: none;
   border-radius: 6px;
@@ -434,9 +468,19 @@
   font-family: inherit;
   font-size: 12px;
   text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__marker {
+  flex: none;
+  width: 10px;
+  color: var(--text-muted);
+}
+
+.sidebar__name {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
 }
 
 .sidebar__item:hover {

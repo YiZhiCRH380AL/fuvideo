@@ -1,19 +1,36 @@
-//! 侧边栏的「选目录看视频」能力：挑目录、列出其中的视频文件。
+//! 侧边栏的目录浏览能力：挑目录、列出其中的子目录与视频文件、进入子目录。
 
 use std::path::Path;
 
 use serde::Serialize;
 
-/// 能被侧边栏识别的视频扩展名。与文件选择框的过滤条件保持一致。
+/// 能被识别为视频的扩展名。与文件选择框的过滤条件保持一致。
 pub const VIDEO_EXTENSIONS: &[&str] = &[
   "mp4", "mkv", "mov", "avi", "webm", "flv", "ts", "m2ts", "mts", "wmv", "m4v", "mpg", "mpeg", "rmvb", "3gp", "ogv",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowseKind {
+  Directory,
+  Video,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VideoEntry {
+pub struct BrowseEntry {
   pub name: String,
   pub path: String,
+  pub kind: BrowseKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryListing {
+  pub directory: String,
+  /// 上一级目录；已经在盘符根目录时为 null。
+  pub parent: Option<String>,
+  pub entries: Vec<BrowseEntry>,
 }
 
 /// 按扩展名判断是不是视频文件。
@@ -29,26 +46,50 @@ pub fn is_video_file(path: &Path) -> bool {
     .unwrap_or(false)
 }
 
-/// 列出目录下的视频文件，按文件名排序（忽略大小写）。
-pub fn list_videos_in(directory: &Path) -> Result<Vec<VideoEntry>, String> {
-  let entries = std::fs::read_dir(directory).map_err(|error| format!("读取目录失败: {error}"))?;
+fn by_name(left: &BrowseEntry, right: &BrowseEntry) -> std::cmp::Ordering {
+  left.name.to_lowercase().cmp(&right.name.to_lowercase())
+}
 
-  let mut videos: Vec<VideoEntry> = entries
-    .filter_map(Result::ok)
-    .map(|entry| entry.path())
-    .filter(|path| path.is_file() && is_video_file(path))
-    .map(|path| VideoEntry {
-      name: path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_default(),
-      path: path.to_string_lossy().to_string(),
-    })
-    .collect();
+/// 列出一个目录：子目录排在前面，其后是视频文件，各自按名称排序。
+pub fn listing_for(directory: &Path) -> Result<DirectoryListing, String> {
+  let read = std::fs::read_dir(directory).map_err(|error| format!("读取目录失败: {error}"))?;
 
-  videos.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+  let mut directories = Vec::new();
+  let mut videos = Vec::new();
 
-  Ok(videos)
+  for entry in read.filter_map(Result::ok) {
+    let path = entry.path();
+
+    let Some(name) = path.file_name().map(|name| name.to_string_lossy().to_string()) else {
+      continue;
+    };
+
+    let is_directory = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+
+    if is_directory {
+      directories.push(BrowseEntry {
+        name,
+        path: path.to_string_lossy().to_string(),
+        kind: BrowseKind::Directory,
+      });
+    } else if is_video_file(&path) {
+      videos.push(BrowseEntry {
+        name,
+        path: path.to_string_lossy().to_string(),
+        kind: BrowseKind::Video,
+      });
+    }
+  }
+
+  directories.sort_by(by_name);
+  videos.sort_by(by_name);
+  directories.extend(videos);
+
+  Ok(DirectoryListing {
+    directory: directory.to_string_lossy().to_string(),
+    parent: directory.parent().map(|parent| parent.to_string_lossy().to_string()),
+    entries: directories,
+  })
 }
 
 /// 弹出系统目录选择框；用户取消时返回 `None`。
@@ -60,10 +101,10 @@ pub fn pick_directory() -> Option<String> {
     .map(|path| path.to_string_lossy().to_string())
 }
 
-/// 列出指定目录下的视频文件。
+/// 列出指定目录下的子目录与视频文件。
 #[tauri::command(async)]
-pub fn list_videos(directory: String) -> Result<Vec<VideoEntry>, String> {
-  list_videos_in(Path::new(&directory))
+pub fn list_directory(directory: String) -> Result<DirectoryListing, String> {
+  listing_for(Path::new(&directory))
 }
 
 #[cfg(test)]
@@ -86,31 +127,49 @@ mod tests {
   }
 
   #[test]
-  fn lists_only_videos_sorted_by_name() {
-    let directory = scratch_dir("sorted");
+  fn lists_subdirectories_before_videos_sorted_by_name() {
+    let directory = scratch_dir("order");
 
-    for name in ["b.mp4", "A.mkv", "notes.txt", "cover.jpg", "c.MP4"] {
-      std::fs::write(directory.join(name), b"stub").expect("写入测试文件");
-    }
+    std::fs::create_dir(directory.join("z-folder")).expect("建立子目录");
+    std::fs::create_dir(directory.join("A-folder")).expect("建立子目录");
+    std::fs::write(directory.join("b.mp4"), b"stub").expect("写入视频");
+    std::fs::write(directory.join("a.mkv"), b"stub").expect("写入视频");
+    std::fs::write(directory.join("notes.txt"), b"stub").expect("写入文本");
 
-    let videos = list_videos_in(&directory).expect("列出视频");
-    let names: Vec<&str> = videos.iter().map(|entry| entry.name.as_str()).collect();
+    let listing = listing_for(&directory).expect("列出目录");
+    let names: Vec<&str> = listing.entries.iter().map(|entry| entry.name.as_str()).collect();
 
-    assert_eq!(names, vec!["A.mkv", "b.mp4", "c.MP4"]);
+    assert_eq!(names, vec!["A-folder", "z-folder", "a.mkv", "b.mp4"]);
+    assert_eq!(listing.entries[0].kind, BrowseKind::Directory);
+    assert_eq!(listing.entries[2].kind, BrowseKind::Video);
 
     let _ = std::fs::remove_dir_all(&directory);
   }
 
   #[test]
-  fn ignores_subdirectories_even_if_they_look_like_videos() {
-    let directory = scratch_dir("nested");
-    std::fs::create_dir(directory.join("folder.mp4")).expect("建立同名子目录");
-    std::fs::write(directory.join("real.mp4"), b"stub").expect("写入测试文件");
+  fn reports_parent_directory_for_navigation() {
+    let directory = scratch_dir("parent");
+    let child = directory.join("child");
+    std::fs::create_dir(&child).expect("建立子目录");
 
-    let videos = list_videos_in(&directory).expect("列出视频");
+    let listing = listing_for(&child).expect("列出子目录");
+    let expected = directory.to_string_lossy().to_string();
 
-    assert_eq!(videos.len(), 1);
-    assert_eq!(videos[0].name, "real.mp4");
+    assert_eq!(listing.parent, Some(expected));
+
+    let _ = std::fs::remove_dir_all(&directory);
+  }
+
+  #[test]
+  fn skips_files_that_are_not_videos() {
+    let directory = scratch_dir("filter");
+    std::fs::write(directory.join("cover.jpg"), b"stub").expect("写入图片");
+    std::fs::write(directory.join("real.mp4"), b"stub").expect("写入视频");
+
+    let listing = listing_for(&directory).expect("列出目录");
+
+    assert_eq!(listing.entries.len(), 1);
+    assert_eq!(listing.entries[0].name, "real.mp4");
 
     let _ = std::fs::remove_dir_all(&directory);
   }
@@ -119,19 +178,26 @@ mod tests {
   fn reports_unreadable_directory() {
     let missing = std::env::temp_dir().join("fuvideo-library-definitely-missing");
 
-    assert!(list_videos_in(&missing).is_err());
+    assert!(listing_for(&missing).is_err());
   }
 
   #[test]
-  fn entries_serialize_camel_case() {
-    let entry = VideoEntry {
-      name: "a.mp4".to_string(),
-      path: r"E:\a.mp4".to_string(),
+  fn listing_serializes_camel_case() {
+    let listing = DirectoryListing {
+      directory: r"E:\clips".to_string(),
+      parent: None,
+      entries: vec![BrowseEntry {
+        name: "a".to_string(),
+        path: r"E:\clips\a".to_string(),
+        kind: BrowseKind::Video,
+      }],
     };
 
-    let json = serde_json::to_value(entry).expect("序列化条目");
+    let json = serde_json::to_value(listing).expect("序列化目录列表");
 
-    assert!(json.get("name").is_some());
-    assert!(json.get("path").is_some());
+    assert!(json.get("directory").is_some());
+    assert!(json.get("parent").is_some());
+    assert!(json.get("entries").is_some());
+    assert_eq!(json["entries"][0]["kind"], serde_json::json!("video"));
   }
 }

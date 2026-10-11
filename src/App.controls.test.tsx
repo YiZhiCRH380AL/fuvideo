@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PlayerSnapshot, VideoEntry } from './lib/backend'
+import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
 
 const IDLE: PlayerSnapshot = {
   hasMedia: false,
@@ -16,37 +16,55 @@ const IDLE: PlayerSnapshot = {
   speed: 1,
 }
 
+const CLIPS = String.raw`E:\clips`
+const ANIME = String.raw`E:\clips\anime`
+
 // vi.hoisted 保证这些 mock 在模块导入之前就已经就绪
-const mocks = vi.hoisted(() => ({
-  snapshot: {
-    hasMedia: false,
-    ipcReady: false,
-    path: null,
-    position: 0,
-    duration: 0,
-    paused: true,
-    volume: 100,
-    muted: false,
-    speed: 1,
-  } as PlayerSnapshot,
-  togglePause: vi.fn(async () => false),
-  seekTo: vi.fn(async (_position: number) => {}),
-  seekBy: vi.fn(async (_offset: number) => {}),
-  setVolume: vi.fn(async (_volume: number) => {}),
-  toggleMute: vi.fn(async () => true),
-  setSpeed: vi.fn(async (_speed: number) => {}),
-  toggleFullscreen: vi.fn(async () => true),
-  playLocalVideo: vi.fn(async (_path: string) => {}),
-  pickDirectory: vi.fn(async (): Promise<string | null> => String.raw`E:\clips`),
-  listVideos: vi.fn(
-    async (_directory: string) =>
-      [
-        { name: 'demo.mp4', path: String.raw`E:\clips\demo.mp4` },
-        { name: 'other.mkv', path: String.raw`E:\clips\other.mkv` },
-      ] as VideoEntry[],
-  ),
-  thumbnailAt: vi.fn(async (_position: number) => 'data:image/jpeg;base64,AAAA'),
-}))
+const mocks = vi.hoisted(() => {
+  const listing = {
+    directory: String.raw`E:\clips`,
+    // 尾随反斜杠不能用 String.raw：那儿的 \ 会把结束反引号转义掉
+    parent: 'E:\\',
+    entries: [
+      { name: 'anime', path: String.raw`E:\clips\anime`, kind: 'directory' as const },
+      { name: 'demo.mp4', path: String.raw`E:\clips\demo.mp4`, kind: 'video' as const },
+      { name: 'other.mkv', path: String.raw`E:\clips\other.mkv`, kind: 'video' as const },
+    ],
+  }
+
+  const subListing = {
+    directory: String.raw`E:\clips\anime`,
+    parent: String.raw`E:\clips`,
+    entries: [{ name: 'ep01.mkv', path: String.raw`E:\clips\anime\ep01.mkv`, kind: 'video' as const }],
+  }
+
+  return {
+    listing,
+    subListing,
+    snapshot: {
+      hasMedia: false,
+      ipcReady: false,
+      path: null,
+      position: 0,
+      duration: 0,
+      paused: true,
+      volume: 100,
+      muted: false,
+      speed: 1,
+    } as PlayerSnapshot,
+    togglePause: vi.fn(async () => false),
+    seekTo: vi.fn(async (_position: number) => {}),
+    seekBy: vi.fn(async (_offset: number) => {}),
+    setVolume: vi.fn(async (_volume: number) => {}),
+    toggleMute: vi.fn(async () => true),
+    setSpeed: vi.fn(async (_speed: number) => {}),
+    toggleFullscreen: vi.fn(async () => true),
+    playLocalVideo: vi.fn(async (_path: string) => {}),
+    pickDirectory: vi.fn(async (): Promise<string | null> => String.raw`E:\clips`),
+    listDirectory: vi.fn(async (_directory: string): Promise<DirectoryListing> => listing),
+    thumbnailAt: vi.fn(async (_position: number) => 'data:image/jpeg;base64,AAAA'),
+  }
+})
 
 vi.mock('./lib/backend', () => ({
   isTauri: () => true,
@@ -68,7 +86,7 @@ vi.mock('./lib/backend', () => ({
   setSpeed: (speed: number) => mocks.setSpeed(speed),
   toggleFullscreen: () => mocks.toggleFullscreen(),
   pickDirectory: () => mocks.pickDirectory(),
-  listVideos: (directory: string) => mocks.listVideos(directory),
+  listDirectory: (directory: string) => mocks.listDirectory(directory),
   thumbnailAt: (position: number) => mocks.thumbnailAt(position),
 }))
 
@@ -87,7 +105,10 @@ beforeEach(() => {
   mocks.toggleFullscreen.mockClear()
   mocks.playLocalVideo.mockClear()
   mocks.pickDirectory.mockClear()
-  mocks.listVideos.mockClear()
+  mocks.listDirectory.mockClear()
+  mocks.listDirectory.mockImplementation(async (directory: string) =>
+    directory === ANIME ? mocks.subListing : mocks.listing,
+  )
   mocks.thumbnailAt.mockClear()
   mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,AAAA')
 })
@@ -327,31 +348,51 @@ describe('侧边栏', () => {
     await userEvent.click(screen.getByRole('button', { name: '视频库' }))
   }
 
-  it('选择目录后列出视频，点条目即可播放', async () => {
-    render(<App />)
-
+  async function chooseDirectory() {
     await openSidebar()
     await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
+    await screen.findByRole('button', { name: 'demo.mp4' })
+  }
+
+  it('选择目录后同时列出子目录与视频', async () => {
+    render(<App />)
+
+    await chooseDirectory()
 
     expect(mocks.pickDirectory).toHaveBeenCalledTimes(1)
-    expect(mocks.listVideos).toHaveBeenCalledWith(String.raw`E:\clips`)
+    expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS)
+    expect(screen.getByRole('button', { name: 'anime' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-directory')).toHaveTextContent(CLIPS)
+  })
+
+  it('点子目录会进去，点上一级会回到父目录', async () => {
+    render(<App />)
+
+    await chooseDirectory()
+
+    await userEvent.click(screen.getByRole('button', { name: 'anime' }))
+
+    expect(await screen.findByRole('button', { name: 'ep01.mkv' })).toBeInTheDocument()
+    expect(mocks.listDirectory).toHaveBeenLastCalledWith(ANIME)
+
+    await userEvent.click(screen.getByRole('button', { name: '上一级' }))
+
     expect(await screen.findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
-    expect(screen.getByTestId('sidebar-directory')).toHaveTextContent('clips')
+    expect(mocks.listDirectory).toHaveBeenLastCalledWith(CLIPS)
+  })
+
+  it('点视频即播放，并标出正在播放的那一个', async () => {
+    await openPlayingVideo()
+
+    await chooseDirectory()
+
+    expect(screen.getByRole('button', { name: 'demo.mp4' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'other.mkv' })).toHaveAttribute('aria-current', 'false')
 
     await userEvent.click(screen.getByRole('button', { name: 'other.mkv' }))
 
     expect(mocks.playLocalVideo).toHaveBeenCalledWith(String.raw`E:\clips\other.mkv`)
-  })
-
-  it('列表里标出正在播放的那一个', async () => {
-    await openPlayingVideo()
-
-    await openSidebar()
-    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
-    await screen.findByRole('button', { name: 'demo.mp4' })
-
-    expect(screen.getByRole('button', { name: 'demo.mp4' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('button', { name: 'other.mkv' })).toHaveAttribute('aria-current', 'false')
   })
 
   it('用户取消选择目录时保持原状', async () => {
@@ -362,7 +403,22 @@ describe('侧边栏', () => {
     await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
 
     expect(screen.getByTestId('sidebar-directory')).toHaveTextContent('还没有选择目录')
-    expect(mocks.listVideos).not.toHaveBeenCalled()
+    expect(mocks.listDirectory).not.toHaveBeenCalled()
+  })
+
+  it('已经在盘符根目录时不能再往上', async () => {
+    render(<App />)
+    mocks.listDirectory.mockImplementation(async () => ({
+      directory: 'E:\\',
+      parent: null,
+      entries: [],
+    }))
+
+    await openSidebar()
+    await userEvent.click(screen.getByRole('button', { name: '选择目录' }))
+
+    expect(await screen.findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '上一级' })).toBeDisabled()
   })
 })
 

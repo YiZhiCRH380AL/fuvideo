@@ -33,7 +33,7 @@ pub fn run() {
       mpv::set_speed,
       mpv::toggle_fullscreen,
       library::pick_directory,
-      library::list_videos,
+      library::list_directory,
       thumbnail::thumbnail_at,
     ])
     .on_window_event(|window, event| {
