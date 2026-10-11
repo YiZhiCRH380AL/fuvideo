@@ -40,11 +40,14 @@ import {
   VOLUME_STEP,
 } from './lib/playback'
 import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
+import { useIdleVisibility } from './lib/use-idle-visibility'
 
 /** 播放状态的轮询间隔。 */
 const POLL_INTERVAL_MS = 300
 /** 鼠标停留多久才真正去抓预览图。 */
 const PREVIEW_DEBOUNCE_MS = 120
+/** 画面展开播放时，空闲多久把顶栏和底栏一起隐去。 */
+const CHROME_IDLE_MS = 2600
 
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
@@ -79,6 +82,8 @@ export default function App() {
   const previewCache = useRef(new Map<string, string>())
   const gridCache = useRef(new Map<string, string>())
   const curtainRef = useRef<HTMLDivElement>(null)
+  const previewBusy = useRef(false)
+  const queuedPreview = useRef<{ source: string; seconds: number } | null>(null)
 
   // 派生值放在最前面：后面的处理函数要用，不能等到渲染前才算
   const hasMedia = currentFile !== null
@@ -96,6 +101,13 @@ export default function App() {
     () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
     [listing],
   )
+
+  // 画面展开播放时，空闲一会儿把顶栏和底栏一起隐去。
+  // 暂停、拖动进度、开着倍速菜单时保持显示。
+  const chromeVisible = useIdleVisibility({
+    delayMs: CHROME_IDLE_MS,
+    enabled: expanded && hasMedia && !paused && scrub === null && !speedOpen,
+  })
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -216,6 +228,40 @@ export default function App() {
       cancelled = true
     }
   }, [listing, expanded])
+
+  // 展开画面后先抓一次首帧：既把抓帧进程热起来，又提前把文件载入，
+  // 这样第一次悬停进度条不用等冷启动
+  useEffect(() => {
+    if (!expanded || currentFile === null) {
+      return
+    }
+
+    let cancelled = false
+
+    const warm = async () => {
+      const key = `${currentFile}::0`
+
+      if (previewCache.current.has(key)) {
+        return
+      }
+
+      try {
+        const image = await thumbnailAt(currentFile, 0)
+
+        if (!cancelled) {
+          previewCache.current.set(key, image)
+        }
+      } catch {
+        // 预热失败无所谓，真用的时候再抓
+      }
+    }
+
+    void warm()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentFile, expanded])
 
   const playPath = useCallback(
     async (path: string, from?: DOMRect) => {
@@ -402,22 +448,42 @@ export default function App() {
     seekTo(pending).catch(reportError)
   }, [reportError])
 
-  const loadPreview = useCallback(async (source: string, seconds: number) => {
-    const key = `${source}::${Math.round(seconds)}`
-    const cached = previewCache.current.get(key)
+  /**
+   * 抓一帧预览图。
+   *
+   * 抓帧是串行的（同一个进程），如果在抓的过程中继续排队就会越积越多，
+   * 画面永远落后于光标。所以这里只记住「最新那个位置」，
+   * 当前的抓完再处理它，中间那些直接丢掉。
+   */
+  const fetchPreview = useCallback(async (source: string, seconds: number) => {
+    let task: { source: string; seconds: number } | null = { source, seconds }
 
-    if (cached !== undefined) {
-      setPreviewImage(cached)
+    if (previewBusy.current) {
+      queuedPreview.current = task
       return
     }
 
+    previewBusy.current = true
+
     try {
-      const image = await thumbnailAt(source, seconds)
-      previewCache.current.set(key, image)
-      setPreviewImage(image)
-    } catch {
-      // 预览拿不到就只是不显示画面，不打断播放
-      setPreviewImage(null)
+      while (task !== null) {
+        try {
+          const key = `${task.source}::${Math.round(task.seconds)}`
+          const cached = previewCache.current.get(key)
+          const image = cached ?? (await thumbnailAt(task.source, task.seconds))
+
+          previewCache.current.set(key, image)
+          setPreviewImage(image)
+        } catch {
+          // 预览拿不到就只是不显示画面，不打断播放
+          setPreviewImage(null)
+        }
+
+        task = queuedPreview.current
+        queuedPreview.current = null
+      }
+    } finally {
+      previewBusy.current = false
     }
   }, [])
 
@@ -451,10 +517,10 @@ export default function App() {
 
       previewTimer.current = window.setTimeout(() => {
         previewTimer.current = null
-        void loadPreview(currentFile, seconds)
+        void fetchPreview(currentFile, seconds)
       }, PREVIEW_DEBOUNCE_MS)
     },
-    [currentFile, duration, loadPreview],
+    [currentFile, duration, fetchPreview],
   )
 
   const handleProgressLeave = useCallback(() => {
@@ -640,7 +706,11 @@ export default function App() {
   const canOpen = isTauri() && status?.mpvAvailable === true
 
   return (
-    <div className="app" data-video={expanded && currentFile ? 'true' : 'false'}>
+    <div
+      className="app"
+      data-video={expanded && currentFile ? 'true' : 'false'}
+      data-chrome={chromeVisible ? 'visible' : 'hidden'}
+    >
       <Sidebar
         open={sidebarOpen}
         listing={listing}

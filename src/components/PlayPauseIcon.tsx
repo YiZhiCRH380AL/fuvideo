@@ -46,8 +46,9 @@ function toPath(left: Array<[number, number]>, right: Array<[number, number]>): 
   return `${toQuad(left)} ${toQuad(right)}`
 }
 
-const PLAY_PATH = toPath(PLAY_LEFT, PLAY_RIGHT)
-const PAUSE_PATH = toPath(PAUSE_LEFT, PAUSE_RIGHT)
+/** 导出给测试用来钉死「哪个状态对应哪个形状」。 */
+export const PLAY_PATH = toPath(PLAY_LEFT, PLAY_RIGHT)
+export const PAUSE_PATH = toPath(PAUSE_LEFT, PAUSE_RIGHT)
 
 export interface PlayPauseIconProps {
   /** true 表示当前是暂停状态，图标应显示三角形。 */
@@ -56,10 +57,11 @@ export interface PlayPauseIconProps {
 
 export default function PlayPauseIcon({ paused }: PlayPauseIconProps) {
   const pathRef = useRef<SVGPathElement>(null)
-  const shownRef = useRef(paused ? PAUSE_PATH : PLAY_PATH)
+  // paused 为真表示已经暂停，这时该显示「播放」三角形
+  const shownRef = useRef(paused ? PLAY_PATH : PAUSE_PATH)
 
   useEffect(() => {
-    const target = paused ? PAUSE_PATH : PLAY_PATH
+    const target = paused ? PLAY_PATH : PAUSE_PATH
     const from = shownRef.current
     shownRef.current = target
 
@@ -78,7 +80,7 @@ export default function PlayPauseIcon({ paused }: PlayPauseIconProps) {
 
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path ref={pathRef} d={paused ? PAUSE_PATH : PLAY_PATH} />
+      <path ref={pathRef} d={paused ? PLAY_PATH : PAUSE_PATH} />
     </svg>
   )
 }

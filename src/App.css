@@ -59,6 +59,33 @@
   gap: 12px;
   padding: 12px 16px;
   background: var(--chrome);
+  transition:
+    opacity var(--dur-normal) var(--ease-spring),
+    transform var(--dur-normal) var(--ease-spring);
+}
+
+/* 看画面时空闲一会儿，顶栏和底栏一起隐去；鼠标一动就回来 */
+.app[data-chrome='hidden'] {
+  cursor: none;
+}
+
+.app[data-chrome='hidden'] .app__bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  /* 收起时不回弹，回弹只属于「出现」 */
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+
+.app[data-chrome='hidden'] .island {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 14px) scale(0.97);
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
 }
 
 .app__brand {
@@ -609,6 +636,9 @@
   background: rgb(20 20 24 / 92%);
   box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
   transform: translateX(-50%);
+  transition:
+    opacity var(--dur-normal) var(--ease-spring),
+    transform var(--dur-normal) var(--ease-spring);
 }
 
 .island__row {

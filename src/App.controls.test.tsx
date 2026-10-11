@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
+import { PAUSE_PATH, PLAY_PATH } from './components/PlayPauseIcon'
 
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
@@ -190,6 +191,30 @@ describe('目录页', () => {
 })
 
 describe('方格放大播放', () => {
+  it('播放中按钮显示暂停图标，暂停时显示播放图标', async () => {
+    await openPlayingVideo({ paused: false })
+
+    expect(screen.getByRole('button', { name: '暂停' }).querySelector('path')).toHaveAttribute(
+      'd',
+      PAUSE_PATH,
+    )
+  })
+
+  it('暂停状态显示播放三角形', async () => {
+    await openPlayingVideo({ paused: true })
+
+    expect(screen.getByRole('button', { name: '播放' }).querySelector('path')).toHaveAttribute(
+      'd',
+      PLAY_PATH,
+    )
+  })
+
+  it('暂停时顶栏和底栏保持显示', async () => {
+    await openPlayingVideo({ paused: true })
+
+    expect(document.querySelector('.app')).toHaveAttribute('data-chrome', 'visible')
+  })
+
   it('点击方格后放大成画面，其他方格向下让位', async () => {
     await openPlayingVideo()
 
@@ -574,5 +599,44 @@ describe('进度条悬停预览', () => {
     fireEvent.pointerLeave(slider)
 
     expect(screen.queryByTestId('hover-preview')).not.toBeInTheDocument()
+  })
+
+  it('抓帧没返回前不再发新请求，只记住最新位置', async () => {
+    await openPlayingVideo({ position: 0, duration: 100 })
+
+    // 展开时会先预热一次首帧，等它过去再测队列
+    await waitFor(() =>
+      expect(mocks.thumbnailAt.mock.calls.filter(([, position]) => position === 0).length).toBeGreaterThan(0),
+    )
+
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+    const called = (position: number) =>
+      mocks.thumbnailAt.mock.calls.filter(([, value]) => value === position).length
+
+    let release: (value: string) => void = () => {}
+    mocks.thumbnailAt.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve
+        }),
+    )
+
+    hoverAt(slider, 40)
+    await waitFor(() => expect(called(20)).toBe(1), { timeout: 1500 })
+
+    hoverAt(slider, 100)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    })
+
+    // 第一个还挂着，第二个应该只是排队，不能又发出去
+    expect(called(50)).toBe(0)
+
+    await act(async () => {
+      release('data:image/jpeg;base64,AAAA')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    })
+
+    await waitFor(() => expect(called(50)).toBe(1), { timeout: 1500 })
   })
 })
