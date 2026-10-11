@@ -55,6 +55,23 @@
   grid-template-rows: auto 1fr;
   min-width: 0;
   min-height: 0;
+  /*
+   * 开屏浮层还盖着时界面先隐着，收场那一刻才交叉淡入。
+   * 时长和曲线跟开屏保持一致：两边同时走到一半，中间不会闪出一块空底色。
+   */
+  transition:
+    opacity var(--dur-splash) var(--ease),
+    transform var(--dur-splash) var(--ease);
+}
+
+/* 开屏期间底下的界面不露面；浮层收场时它同时淡进来 */
+.app[data-splash='visible'] .shell {
+  opacity: 0;
+  transform: scale(0.992);
+}
+
+.app[data-splash='visible'] .sidebar {
+  opacity: 0;
 }
 
 /* ============ 顶栏 ============ */
@@ -958,6 +975,7 @@
     animation: none;
   }
 
+  .shell,
   .tile__image {
     transition: none;
   }

@@ -10,6 +10,7 @@ import {
 import './App.css'
 import Island from './components/Island'
 import Sidebar from './components/Sidebar'
+import Splash from './components/Splash'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
   getBackendStatus,
@@ -41,6 +42,7 @@ import {
 } from './lib/playback'
 import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
 import { useIdleVisibility } from './lib/use-idle-visibility'
+import { revealMainWindow } from './lib/window'
 
 /** 播放状态的轮询间隔。 */
 const POLL_INTERVAL_MS = 300
@@ -106,6 +108,11 @@ export default function App() {
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
 
+  /** 开屏走到哪一步：入场 → 收场（界面同时淡入）→ 卸载。 */
+  const [splash, setSplash] = useState<'visible' | 'leaving' | 'done'>('visible')
+  /** 运行环境是否探完（探失败也算），开屏据此决定什么时候收场。 */
+  const [bootReady, setBootReady] = useState(false)
+
   const scrubRef = useRef<number | null>(null)
   const pendingTimer = useRef<number | null>(null)
   const previewTimer = useRef<number | null>(null)
@@ -163,11 +170,29 @@ export default function App() {
           reportError(cause)
         }
       })
+      .finally(() => {
+        // 探失败也别把开屏挂死：顶栏自己会提示内核不可用
+        if (!cancelled) {
+          setBootReady(true)
+        }
+      })
 
     return () => {
       cancelled = true
     }
   }, [reportError])
+
+  /*
+   * 主窗口是隐藏着创建出来的，等开屏画好再让它露面。
+   * 这一步放在挂载之后再跑：此刻开屏已经提交进 DOM，窗口一显示就是满的，
+   * 不会先闪一下空窗口或半个界面。
+   */
+  useEffect(() => {
+    revealMainWindow().catch(reportError)
+  }, [reportError])
+
+  const handleSplashLeave = useCallback(() => setSplash('leaving'), [])
+  const handleSplashDone = useCallback(() => setSplash('done'), [])
 
   // 播放开始后持续拉取进度，供底部常驻条使用
   useEffect(() => {
@@ -821,6 +846,7 @@ export default function App() {
       className="app"
       data-video={expanded && currentFile ? 'true' : 'false'}
       data-chrome={chromeVisible ? 'visible' : 'hidden'}
+      data-splash={splash}
     >
       <Sidebar
         open={sidebarOpen}
@@ -943,6 +969,10 @@ export default function App() {
       ) : null}
 
       {curtain ? <div className="curtain" ref={curtainRef} data-testid="curtain" /> : null}
+
+      {splash === 'done' ? null : (
+        <Splash ready={bootReady} onLeave={handleSplashLeave} onDone={handleSplashDone} />
+      )}
 
       {error ? (
         <p className="app__error" role="alert">

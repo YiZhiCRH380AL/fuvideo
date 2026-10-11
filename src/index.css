@@ -15,6 +15,8 @@
   --radius: 8px;
   --dur-fast: 140ms;
   --dur-normal: 220ms;
+  /* 开屏收场。JS 那边的 SPLASH_EXIT_MS 要和它对齐 */
+  --dur-splash: 460ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
   /* 带一点回弹的曲线，用在「出现」而不是「消失」上 */
   --ease-spring: cubic-bezier(0.34, 1.42, 0.5, 1);
@@ -46,5 +48,6 @@ html[data-shell='browser'] body {
   :root {
     --dur-fast: 0ms;
     --dur-normal: 0ms;
+    --dur-splash: 0ms;
   }
 }

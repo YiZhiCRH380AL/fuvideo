@@ -4,6 +4,16 @@ mod thumbnail;
 
 use tauri::Manager;
 
+/// 把主窗口显示出来。
+///
+/// 主窗口在 `tauri.conf.json` 里是 `visible: false`：窗口先建好、前端把开屏动画的
+/// 第一帧画完，再让窗口露面。这样启动时不会先闪一个空窗口，开屏是从第一帧开始的。
+#[tauri::command]
+fn reveal_window(window: tauri::WebviewWindow) {
+  let _ = window.show();
+  let _ = window.set_focus();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
@@ -25,9 +35,24 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // 兜底：前端要是没能把窗口叫起来（脚本报错、开发服务器没起来），
+      // 过一会儿自己显示，别让应用变成「看不见的窗口」。
+      let handle = app.handle().clone();
+      std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(3000));
+
+        if let Some(window) = handle.get_webview_window("main") {
+          if !window.is_visible().unwrap_or(true) {
+            let _ = window.show();
+          }
+        }
+      });
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
+      reveal_window,
       mpv::probe_mpv,
       mpv::pick_video_file,
       mpv::play_video,

@@ -1,15 +1,32 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+/** 等开屏退场：浮层没走之前底下的界面是隐着的，也点不动。 */
+async function waitForBoot(page: Page): Promise<void> {
+  await expect(page.locator('.app')).toHaveAttribute('data-splash', 'done', { timeout: 8000 })
+  await expect(page.getByTestId('splash')).toHaveCount(0)
+}
+
+test('启动先放开屏动画，环境探完后退场', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.getByTestId('splash')).toBeVisible()
+  await expect(page.getByTestId('splash').locator('.splash__logo')).toBeVisible()
+
+  await waitForBoot(page)
+})
 
 test('播放器外壳能加载并显示运行环境', async ({ page }) => {
   await page.goto('/')
+  await waitForBoot(page)
 
-  await expect(page.getByText('futurevideo')).toBeVisible()
+  await expect(page.locator('.app__wordmark')).toHaveText('futurevideo')
   await expect(page.getByTestId('backend-status')).toContainText('浏览器')
   await expect(page.getByText('选一个目录，把里面的视频铺成方格')).toBeVisible()
 })
 
 test('浏览器环境下选择目录不可用，避免误导用户', async ({ page }) => {
   await page.goto('/')
+  await waitForBoot(page)
 
   await expect(page.getByRole('button', { name: '选择目录' })).toBeDisabled()
 })
@@ -26,6 +43,7 @@ test('未播放视频时窗口有不透明底色，不会透出桌面', async ({
 
 test('侧边栏默认收起，点按钮后展开', async ({ page }) => {
   await page.goto('/')
+  await waitForBoot(page)
 
   const sidebar = page.locator('.sidebar')
   await expect(sidebar).toHaveAttribute('data-open', 'false')

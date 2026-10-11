@@ -1,0 +1,208 @@
+/*
+ * 开屏动画。
+ *
+ * 节奏：环境光先亮 → logo 从模糊里化出来 → 字标跟上 → 状态线开始跑。
+ * 收场把整块往前推一点点再淡掉，底下的界面同时淡入，像一次镜头切换。
+ * 所有动画都只用 opacity / transform / filter，不动布局。
+ */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background-color: var(--bg);
+  /* 和主界面同源的一团蓝光，收场时不会看到底色断层 */
+  background-image: radial-gradient(110% 80% at 50% 42%, rgb(110 168 255 / 13%), transparent 64%);
+  will-change: opacity, transform;
+  transition:
+    opacity var(--dur-splash) var(--ease),
+    transform var(--dur-splash) var(--ease),
+    filter var(--dur-splash) var(--ease);
+}
+
+.splash[data-leaving='true'] {
+  /* 收场时不该再挡住任何东西 */
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(7px);
+  transform: scale(1.045);
+}
+
+.splash__glow {
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(110 168 255 / 17%), transparent 68%);
+  pointer-events: none;
+  animation: splash-bloom 800ms var(--ease) both;
+}
+
+@keyframes splash-bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.splash__mark {
+  position: relative;
+  overflow: hidden;
+  width: 88px;
+  height: 88px;
+  /* 圆角对齐图标里那个 rx=228/1024 的方框，高光才不会被切歪 */
+  border-radius: 22.3%;
+  /* 入场之后轻轻浮着，别让画面完全死住 */
+  animation: splash-float 3.6s var(--ease) 900ms infinite;
+}
+
+@keyframes splash-float {
+  0%,
+  100% {
+    transform: translateY(-2px);
+  }
+
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* 掠过 logo 的一道高光，把「加载中」的意思藏在质感里 */
+.splash__mark::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 40%,
+    rgb(255 255 255 / 16%) 50%,
+    transparent 60%
+  );
+  background-size: 260% 100%;
+  pointer-events: none;
+  content: '';
+  animation: splash-sheen 1200ms var(--ease) 360ms both;
+}
+
+@keyframes splash-sheen {
+  from {
+    background-position: 190% 0;
+  }
+
+  to {
+    background-position: -90% 0;
+  }
+}
+
+.splash__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  will-change: transform, opacity, filter;
+  animation: splash-mark-in 560ms var(--ease) both;
+}
+
+/*
+ * 入场要「一睁眼就有东西」：窗口显示的第一帧就得看见 logo 的轮廓，
+ * 所以模糊从 6px 起步（再大第一帧就是一片黑），曲线也选前段快的 --ease。
+ */
+@keyframes splash-mark-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.88) translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+.splash__name {
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  color: var(--text);
+  animation: splash-name-in 560ms var(--ease) 160ms both;
+}
+
+/* 字距从松到紧地落位，比单纯淡入更有「对焦」的感觉 */
+@keyframes splash-name-in {
+  from {
+    opacity: 0;
+    letter-spacing: 0.42em;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 0.92;
+    letter-spacing: 0.16em;
+    transform: none;
+  }
+}
+
+.splash__bar {
+  position: relative;
+  overflow: hidden;
+  width: 112px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 7%);
+  animation: splash-bar-in 480ms var(--ease) 220ms both;
+}
+
+@keyframes splash-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.splash__bar::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  content: '';
+  animation: splash-bar-run 1.4s var(--ease) 520ms infinite;
+}
+
+@keyframes splash-bar-run {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash,
+  .splash__glow,
+  .splash__mark,
+  .splash__mark::after,
+  .splash__logo,
+  .splash__name,
+  .splash__bar,
+  .splash__bar::after {
+    animation: none;
+    transition: none;
+  }
+}
