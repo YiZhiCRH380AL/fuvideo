@@ -48,6 +48,38 @@ const POLL_INTERVAL_MS = 300
 const PREVIEW_DEBOUNCE_MS = 120
 /** 画面展开播放时，空闲多久把顶栏和底栏一起隐去。 */
 const CHROME_IDLE_MS = 2600
+/** 缩略图带最多抽多少帧。 */
+const MAX_STRIP_FRAMES = 24
+/** 抽两帧之间歇一下，别把 CPU 占满影响播放。 */
+const STRIP_FRAME_GAP_MS = 120
+/** 缩略图带的帧间隔目标（秒）。 */
+const STRIP_STEP_SECONDS = 10
+
+function nearestIndex(times: number[], seconds: number): number {
+  let best = 0
+
+  for (let index = 1; index < times.length; index += 1) {
+    if (Math.abs(times[index] - seconds) < Math.abs(times[best] - seconds)) {
+      best = index
+    }
+  }
+
+  return best
+}
+
+/** 缩略图带要抽哪些时间点：整片均匀铺开，两端各留半格。 */
+function stripTimesFor(duration: number): number[] {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return []
+  }
+
+  const count = Math.min(
+    MAX_STRIP_FRAMES,
+    Math.max(6, Math.round(duration / STRIP_STEP_SECONDS)),
+  )
+
+  return Array.from({ length: count }, (_, index) => (duration * (index + 0.5)) / count)
+}
 
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
@@ -101,6 +133,8 @@ export default function App() {
     () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
     [listing],
   )
+
+  const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
 
   // 画面展开播放时，空闲一会儿把顶栏和底栏一起隐去。
   // 暂停、拖动进度、开着倍速菜单时保持显示。
@@ -263,6 +297,56 @@ export default function App() {
     }
   }, [currentFile, expanded])
 
+  /**
+   * 后台铺一条缩略图带。
+   *
+   * 单帧抓取要 150-300ms，悬停时临时抓永远跟不上鼠标。所以画面一加载就
+   * 按时间均匀抽一批帧存起来，悬停时直接取最近的一帧，响应是即时的。
+   * 抽帧之间留一点间隔，避免把 CPU 占满影响播放。
+   *
+   * 帧只写进缓存（ref），不放进 state：悬停时读的就是缓存，
+   * 不需要为了「某一帧好了」再触发一次渲染。
+   */
+  useEffect(() => {
+    if (currentFile === null || stripTimes.length === 0) {
+      return
+    }
+
+    let cancelled = false
+
+    const run = async () => {
+      for (const time of stripTimes) {
+        if (cancelled) {
+          return
+        }
+
+        const key = `${currentFile}::${Math.round(time)}`
+
+        if (previewCache.current.has(key)) {
+          continue
+        }
+
+        try {
+          const image = await thumbnailAt(currentFile, time)
+
+          if (!cancelled) {
+            previewCache.current.set(key, image)
+          }
+        } catch {
+          // 单帧失败就跳过，不影响其他帧
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, STRIP_FRAME_GAP_MS))
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentFile, stripTimes])
+
   const playPath = useCallback(
     async (path: string, from?: DOMRect) => {
       setError(null)
@@ -279,6 +363,8 @@ export default function App() {
         }
 
         setExpanded(true)
+        // 画面展开时把侧边栏收掉：入口也会一起隐藏，避免播放中换目录
+        setSidebarOpen(false)
       } catch (cause: unknown) {
         reportError(cause)
       }
@@ -286,20 +372,41 @@ export default function App() {
     [reportError],
   )
 
+  /** 收起画面：把视频停下来，方格墙恢复原样。 */
+  const collapseVideo = useCallback(async () => {
+    setExpanded(false)
+
+    if (player?.paused === false) {
+      try {
+        const paused = await togglePause()
+        setPlayer((previous) => (previous ? { ...previous, paused } : previous))
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    }
+  }, [player?.paused, reportError])
+
   const loadDirectory = useCallback(
     async (target: string) => {
       setError(null)
       setDirectoryBusy(true)
 
       try {
-        setListing(await listDirectory(target))
+        const next = await listDirectory(target)
+        setListing(next)
+
+        // 防御：如果换到的目录里没有正在播的这个文件，放大格会消失，
+        // 但整窗还是透明的，画面就悬空了。这时直接收起。
+        if (expanded && currentFile !== null && !next.entries.some((entry) => entry.path === currentFile)) {
+          void collapseVideo()
+        }
       } catch (cause: unknown) {
         reportError(cause)
       } finally {
         setDirectoryBusy(false)
       }
     },
-    [reportError],
+    [collapseVideo, currentFile, expanded, reportError],
   )
 
   const handleChooseDirectory = useCallback(async () => {
@@ -353,6 +460,7 @@ export default function App() {
       // 已经是当前视频就展开继续看，否则换片
       if (path === currentFile) {
         setExpanded(true)
+        setSidebarOpen(false)
         if (player?.paused !== false) {
           void handleTogglePause()
         }
@@ -363,20 +471,6 @@ export default function App() {
     },
     [currentFile, handleTogglePause, playPath, player?.paused],
   )
-
-  /** 收起画面：把视频停下来，方格墙恢复原样。 */
-  const handleCollapse = useCallback(async () => {
-    setExpanded(false)
-
-    if (player?.paused === false) {
-      try {
-        const paused = await togglePause()
-        setPlayer((previous) => (previous ? { ...previous, paused } : previous))
-      } catch (cause: unknown) {
-        reportError(cause)
-      }
-    }
-  }, [player?.paused, reportError])
 
   const handleSeekBy = useCallback(
     (offset: number) => {
@@ -510,6 +604,23 @@ export default function App() {
         })
       }
 
+      // 缩略图带里已经有最近的那一帧就直接显示，不用等抓取
+      if (stripTimes.length > 0) {
+        const nearest = stripTimes[nearestIndex(stripTimes, seconds)]
+        const fromStrip = previewCache.current.get(`${currentFile}::${Math.round(nearest)}`)
+
+        if (fromStrip !== undefined) {
+          setPreviewImage(fromStrip)
+
+          if (previewTimer.current !== null) {
+            window.clearTimeout(previewTimer.current)
+            previewTimer.current = null
+          }
+
+          return
+        }
+      }
+
       // 抓帧比移动慢得多，快速扫过时只处理停下来的那个位置
       if (previewTimer.current !== null) {
         window.clearTimeout(previewTimer.current)
@@ -520,7 +631,7 @@ export default function App() {
         void fetchPreview(currentFile, seconds)
       }, PREVIEW_DEBOUNCE_MS)
     },
-    [currentFile, duration, fetchPreview],
+    [currentFile, duration, fetchPreview, stripTimes],
   )
 
   const handleProgressLeave = useCallback(() => {
@@ -725,16 +836,19 @@ export default function App() {
       <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
-            <button
-              className="app__toggle"
-              type="button"
-              onClick={() => setSidebarOpen((open) => !open)}
-              aria-expanded={sidebarOpen}
-              aria-label="视频库"
-            >
-              <span aria-hidden="true">☰</span>
-              <span className="app__toggle-label">视频库</span>
-            </button>
+            {/* 画面展开时不给换目录的入口：新目录里没有当前视频，放大格会消失 */}
+            {expanded ? null : (
+              <button
+                className="app__toggle"
+                type="button"
+                onClick={() => setSidebarOpen((open) => !open)}
+                aria-expanded={sidebarOpen}
+                aria-label="视频库"
+              >
+                <span aria-hidden="true">☰</span>
+                <span className="app__toggle-label">视频库</span>
+              </button>
+            )}
 
             <span className="app__wordmark">futurevideo</span>
           </div>
@@ -824,7 +938,7 @@ export default function App() {
           onToggleSpeedMenu={() => setSpeedOpen((open) => !open)}
           onSelectSpeed={handleSpeedChange}
           onToggleFullscreen={handleToggleFullscreen}
-          onCollapse={() => void handleCollapse()}
+          onCollapse={() => void collapseVideo()}
         />
       ) : null}
 

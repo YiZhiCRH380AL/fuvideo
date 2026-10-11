@@ -232,6 +232,17 @@ describe('方格放大播放', () => {
     expect(document.querySelector('.app')).toHaveAttribute('data-video', 'true')
   })
 
+  it('展开时不显示视频库入口，收起后恢复', async () => {
+    await openPlayingVideo()
+
+    // 换目录会让放大格消失，所以看画面时先把入口藏掉
+    expect(screen.queryByRole('button', { name: '视频库' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '收起画面' }))
+
+    expect(await screen.findByRole('button', { name: '视频库' })).toBeInTheDocument()
+  })
+
   it('点击展开的画面切换播放暂停', async () => {
     await openPlayingVideo()
 
@@ -564,6 +575,20 @@ describe('进度条悬停预览', () => {
   const previewCalls = () =>
     mocks.thumbnailAt.mock.calls.filter(([, position]) => position === 50).length
 
+  const calledWith = (position: number) =>
+    mocks.thumbnailAt.mock.calls.filter(([, value]) => value === position).length
+
+  /** 等缩略图带把 100 秒的片子抽完，免得它的请求干扰后面的断言。 */
+  async function waitForStrip(): Promise<void> {
+    const times = Array.from({ length: 10 }, (_, index) => Math.round((100 * (index + 0.5)) / 10))
+
+    await waitFor(() => expect(times.every((time) => calledWith(time) > 0)).toBe(true), { timeout: 6000 })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    })
+  }
+
   it('悬停会抓取对应时间点的画面', async () => {
     await openPlayingVideo({ position: 0, duration: 100 })
 
@@ -601,42 +626,21 @@ describe('进度条悬停预览', () => {
     expect(screen.queryByTestId('hover-preview')).not.toBeInTheDocument()
   })
 
-  it('抓帧没返回前不再发新请求，只记住最新位置', async () => {
+  it('缩略图带铺好后，悬停直接取用不再抓帧', async () => {
     await openPlayingVideo({ position: 0, duration: 100 })
+    await waitForStrip()
 
-    // 展开时会先预热一次首帧，等它过去再测队列
-    await waitFor(() =>
-      expect(mocks.thumbnailAt.mock.calls.filter(([, position]) => position === 0).length).toBeGreaterThan(0),
-    )
+    const before = mocks.thumbnailAt.mock.calls.length
 
-    const slider = screen.getByRole('slider', { name: '播放进度' })
-    const called = (position: number) =>
-      mocks.thumbnailAt.mock.calls.filter(([, value]) => value === position).length
+    // 悬停到 45 秒：带里已有这一帧，不该再发请求
+    hoverAt(screen.getByRole('slider', { name: '播放进度' }), 90)
 
-    let release: (value: string) => void = () => {}
-    mocks.thumbnailAt.mockImplementationOnce(
-      () =>
-        new Promise<string>((resolve) => {
-          release = resolve
-        }),
-    )
+    expect(await screen.findByTestId('hover-preview-image')).toBeInTheDocument()
 
-    hoverAt(slider, 40)
-    await waitFor(() => expect(called(20)).toBe(1), { timeout: 1500 })
-
-    hoverAt(slider, 100)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 250))
     })
 
-    // 第一个还挂着，第二个应该只是排队，不能又发出去
-    expect(called(50)).toBe(0)
-
-    await act(async () => {
-      release('data:image/jpeg;base64,AAAA')
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    })
-
-    await waitFor(() => expect(called(50)).toBe(1), { timeout: 1500 })
+    expect(mocks.thumbnailAt.mock.calls.length).toBe(before)
   })
 })
