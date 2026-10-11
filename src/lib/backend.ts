@@ -23,6 +23,9 @@ export interface PlayerSnapshot {
   position: number
   duration: number
   paused: boolean
+  volume: number
+  muted: boolean
+  speed: number
 }
 
 const IDLE_SNAPSHOT: PlayerSnapshot = {
@@ -31,6 +34,9 @@ const IDLE_SNAPSHOT: PlayerSnapshot = {
   position: 0,
   duration: 0,
   paused: true,
+  volume: 100,
+  muted: false,
+  speed: 1,
 }
 
 /** 是否跑在 Tauri 外壳里。浏览器里打开时返回 false。 */
@@ -117,4 +123,49 @@ export async function seekTo(position: number): Promise<void> {
   }
 
   await invoke('seek_to', { position })
+}
+
+/** 相对当前位置前后跳转，秒数为正表示前进。 */
+export async function seekBy(offset: number): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  await invoke('seek_by', { offset })
+}
+
+/** 设置音量（0-100）。 */
+export async function setVolume(volume: number): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  await invoke('set_volume', { volume })
+}
+
+/** 静音开关，返回切换后的静音状态。 */
+export async function toggleMute(): Promise<boolean> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  return invoke<boolean>('toggle_mute')
+}
+
+/** 设置播放倍速。 */
+export async function setSpeed(speed: number): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('播放控制需要在桌面应用中运行')
+  }
+
+  await invoke('set_speed', { speed })
+}
+
+/** 切换全屏，返回切换后的全屏状态。 */
+export async function toggleFullscreen(): Promise<boolean> {
+  if (!isTauri()) {
+    throw new Error('全屏需要在桌面应用中运行')
+  }
+
+  return invoke<boolean>('toggle_fullscreen')
 }

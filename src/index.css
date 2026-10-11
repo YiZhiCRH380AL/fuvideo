@@ -14,6 +14,7 @@
   --chrome: rgba(11, 11, 13, 0.68);
   --radius: 8px;
   --dur-fast: 140ms;
+  --dur-normal: 220ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   color-scheme: dark;
@@ -42,5 +43,6 @@ html[data-shell='browser'] body {
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 0ms;
+    --dur-normal: 0ms;
   }
 }

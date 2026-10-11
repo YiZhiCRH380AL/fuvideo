@@ -1,4 +1,5 @@
 .app {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
@@ -12,6 +13,23 @@
   background: transparent;
 }
 
+/* 播放中空闲一段时间后收起全部控件，连光标一起隐藏 */
+.app[data-controls='hidden'] {
+  cursor: none;
+}
+
+.app[data-controls='hidden'] .app__bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+}
+
+.app[data-controls='hidden'] .controls {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+
 .app__bar {
   display: flex;
   align-items: center;
@@ -19,6 +37,9 @@
   gap: 12px;
   padding: 12px 16px;
   background: var(--chrome);
+  transition:
+    opacity var(--dur-normal) var(--ease),
+    transform var(--dur-normal) var(--ease);
 }
 
 .app__wordmark {
@@ -49,8 +70,13 @@
 }
 
 .app__error {
+  position: absolute;
+  left: 16px;
+  bottom: 64px;
   margin: 0;
-  padding: 8px 16px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 70%);
   font-size: 12px;
   color: var(--danger);
 }
@@ -100,6 +126,9 @@
   gap: 12px;
   padding: 10px 16px 16px;
   background: var(--chrome);
+  transition:
+    opacity var(--dur-normal) var(--ease),
+    transform var(--dur-normal) var(--ease);
 }
 
 .controls__button {
@@ -145,7 +174,8 @@
   opacity: 0.45;
 }
 
-.controls__progress::-webkit-slider-thumb {
+.controls__progress::-webkit-slider-thumb,
+.controls__volume-slider::-webkit-slider-thumb {
   appearance: none;
   width: 12px;
   height: 12px;
@@ -154,10 +184,83 @@
   background: var(--accent);
 }
 
-.controls__progress::-moz-range-thumb {
+.controls__progress::-moz-range-thumb,
+.controls__volume-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border: none;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.controls__volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 音量条平时收起，鼠标移上去或聚焦时才展开 */
+.controls__volume-slider {
+  width: 0;
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  opacity: 0;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) var(--volume-fill, 0%),
+    var(--track) var(--volume-fill, 0%),
+    var(--track) 100%
+  );
+  transition:
+    width var(--dur-normal) var(--ease),
+    opacity var(--dur-normal) var(--ease);
+}
+
+.controls__volume:hover .controls__volume-slider,
+.controls__volume:focus-within .controls__volume-slider {
+  width: 88px;
+  opacity: 1;
+}
+
+.controls__speed {
+  position: relative;
+}
+
+.controls__button--text {
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.speed-menu__item {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.speed-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.speed-menu__item[aria-checked='true'] {
+  color: var(--accent);
 }

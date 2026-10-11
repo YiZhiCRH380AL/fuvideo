@@ -6,16 +6,34 @@ import {
   isTauri,
   pickVideoFile,
   playLocalVideo,
+  seekBy,
   seekTo,
+  setSpeed,
+  setVolume,
+  toggleFullscreen,
+  toggleMute,
   togglePause,
   type BackendStatus,
   type PlayerSnapshot,
 } from './lib/backend'
 import { fileName } from './lib/path'
+import {
+  formatSpeed,
+  JUMP_STEP,
+  SEEK_STEP,
+  SPEED_OPTIONS,
+  stepSpeed,
+  stepVolume,
+  VOLUME_STEP,
+} from './lib/playback'
+import { isEditableTarget, resolveShortcut } from './lib/shortcuts'
 import { formatDuration } from './lib/time'
+import { useIdleVisibility } from './lib/use-idle-visibility'
 
 /** 播放状态的轮询间隔。 */
 const POLL_INTERVAL_MS = 300
+/** 空闲多久后收起控件。 */
+const CONTROLS_IDLE_MS = 2500
 
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
@@ -23,7 +41,14 @@ export default function App() {
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null)
   const [scrub, setScrub] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [overControls, setOverControls] = useState(false)
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
   const scrubRef = useRef<number | null>(null)
+
+  const reportError = useCallback((cause: unknown) => {
+    setError(cause instanceof Error ? cause.message : String(cause))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -38,33 +63,16 @@ export default function App() {
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause))
+          reportError(cause)
         }
       })
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reportError])
 
-  const handleOpen = useCallback(async () => {
-    setError(null)
-
-    try {
-      const path = await pickVideoFile()
-
-      if (!path) {
-        return
-      }
-
-      await playLocalVideo(path)
-      setCurrentFile(path)
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [])
-
-  // 播放开始后持续拉取进度，供进度条与时间显示使用
+  // 播放开始后持续拉取进度，供进度条、时间与音量显示使用
   useEffect(() => {
     if (!currentFile) {
       return
@@ -88,7 +96,7 @@ export default function App() {
         }
       } catch (cause: unknown) {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause))
+          reportError(cause)
         }
       } finally {
         inFlight = false
@@ -102,7 +110,24 @@ export default function App() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [currentFile])
+  }, [currentFile, reportError])
+
+  const handleOpen = useCallback(async () => {
+    setError(null)
+
+    try {
+      const path = await pickVideoFile()
+
+      if (!path) {
+        return
+      }
+
+      await playLocalVideo(path)
+      setCurrentFile(path)
+    } catch (cause: unknown) {
+      reportError(cause)
+    }
+  }, [reportError])
 
   const handleTogglePause = useCallback(async () => {
     setError(null)
@@ -111,9 +136,50 @@ export default function App() {
       const paused = await togglePause()
       setPlayer((previous) => (previous ? { ...previous, paused } : previous))
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      reportError(cause)
     }
-  }, [])
+  }, [reportError])
+
+  const hasMedia = player?.hasMedia === true
+  const paused = player?.paused !== false
+  const duration = player?.duration ?? 0
+  const shownPosition = scrub ?? player?.position ?? 0
+  const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
+  const volume = player?.volume ?? 100
+  const muted = player?.muted === true
+  const speed = player?.speed ?? 1
+
+  const handleVolumeChange = useCallback(
+    (next: number) => {
+      setVolume(next).catch(reportError)
+
+      // 拖着音量条就等于要听声音，顺手解除静音
+      if (muted && next > 0) {
+        toggleMute().catch(reportError)
+      }
+    },
+    [muted, reportError],
+  )
+
+  const handleToggleMute = useCallback(() => {
+    toggleMute()
+      .then((next) => setPlayer((previous) => (previous ? { ...previous, muted: next } : previous)))
+      .catch(reportError)
+  }, [reportError])
+
+  const handleSpeedChange = useCallback(
+    (next: number) => {
+      setSpeed(next).catch(reportError)
+      setSpeedOpen(false)
+    },
+    [reportError],
+  )
+
+  const handleToggleFullscreen = useCallback(() => {
+    toggleFullscreen()
+      .then(setFullscreen)
+      .catch(reportError)
+  }, [reportError])
 
   const handleScrubChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     scrubRef.current = Number(event.target.value)
@@ -130,20 +196,107 @@ export default function App() {
       return
     }
 
-    seekTo(pending).catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    })
-  }, [])
+    seekTo(pending).catch(reportError)
+  }, [reportError])
+
+  // 空闲一会儿自动收起控件；暂停、拖动进度、开着倍速菜单时保持显示
+  const controlsVisible = useIdleVisibility({
+    delayMs: CONTROLS_IDLE_MS,
+    enabled: hasMedia && !paused && scrub === null && !speedOpen,
+    pinned: overControls || !hasMedia,
+  })
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return
+      }
+
+      const action = resolveShortcut(event.code)
+
+      if (!action) {
+        return
+      }
+
+      event.preventDefault()
+
+      switch (action) {
+        case 'toggle-play':
+          void handleTogglePause()
+          break
+        case 'seek-forward':
+          seekBy(SEEK_STEP).catch(reportError)
+          break
+        case 'seek-backward':
+          seekBy(-SEEK_STEP).catch(reportError)
+          break
+        case 'jump-forward':
+          seekBy(JUMP_STEP).catch(reportError)
+          break
+        case 'jump-backward':
+          seekBy(-JUMP_STEP).catch(reportError)
+          break
+        case 'volume-up':
+          handleVolumeChange(stepVolume(volume, VOLUME_STEP))
+          break
+        case 'volume-down':
+          handleVolumeChange(stepVolume(volume, -VOLUME_STEP))
+          break
+        case 'toggle-mute':
+          handleToggleMute()
+          break
+        case 'toggle-fullscreen':
+          handleToggleFullscreen()
+          break
+        case 'speed-up':
+          handleSpeedChange(stepSpeed(speed, 1))
+          break
+        case 'speed-down':
+          handleSpeedChange(stepSpeed(speed, -1))
+          break
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleSpeedChange, handleToggleFullscreen, handleToggleMute, handleTogglePause, handleVolumeChange, reportError, speed, volume])
+
+  // 倍速菜单开着时，点别处或按 Esc 收起
+  useEffect(() => {
+    if (!speedOpen) {
+      return
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof HTMLElement) || event.target.closest('.controls__speed') === null) {
+        setSpeedOpen(false)
+      }
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSpeedOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [speedOpen])
 
   const backendLabel = status ? status.message : '正在检测运行环境…'
   const canOpen = isTauri() && status?.mpvAvailable === true
-  const hasMedia = player?.hasMedia === true
-  const duration = player?.duration ?? 0
-  const shownPosition = scrub ?? player?.position ?? 0
-  const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
 
   return (
-    <div className="app" data-stage={currentFile ? 'video' : 'empty'}>
+    <div
+      className="app"
+      data-stage={currentFile ? 'video' : 'empty'}
+      data-controls={controlsVisible ? 'visible' : 'hidden'}
+    >
       <header className="app__bar">
         <div className="app__brand">
           <span className="app__wordmark">futurevideo</span>
@@ -158,7 +311,7 @@ export default function App() {
         </span>
       </header>
 
-      <main className="stage">
+      <main className="stage" onClick={hasMedia ? () => void handleTogglePause() : undefined}>
         {currentFile ? null : (
           <div className="stage__empty">
             <p className="stage__hint">把视频拖进来，或</p>
@@ -169,19 +322,25 @@ export default function App() {
         )}
       </main>
 
-      <footer className="controls">
+      <footer
+        className="controls"
+        onMouseEnter={() => setOverControls(true)}
+        onMouseLeave={() => setOverControls(false)}
+      >
         <button
           className="controls__button"
           type="button"
-          onClick={handleTogglePause}
+          onClick={() => void handleTogglePause()}
           disabled={!hasMedia}
-          aria-label={player?.paused === false ? '暂停' : '播放'}
+          aria-label={paused ? '播放' : '暂停'}
         >
-          {player?.paused === false ? '❚❚' : '▶'}
+          {paused ? '▶' : '❚❚'}
         </button>
+
         <span className="controls__time" data-testid="time-display">
           {formatDuration(shownPosition)} / {formatDuration(duration)}
         </span>
+
         <input
           className="controls__progress"
           type="range"
@@ -197,6 +356,70 @@ export default function App() {
           onBlur={handleScrubCommit}
           style={{ '--fill': `${fillPercent}%` } as CSSProperties}
         />
+
+        <div className="controls__volume">
+          <button
+            className="controls__button"
+            type="button"
+            onClick={handleToggleMute}
+            disabled={!hasMedia}
+            aria-label={muted ? '取消静音' : '静音'}
+            aria-pressed={muted}
+          >
+            {muted || volume === 0 ? '🔇' : '🔊'}
+          </button>
+          <input
+            className="controls__volume-slider"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={muted ? 0 : Math.round(volume)}
+            disabled={!hasMedia}
+            aria-label="音量"
+            onChange={(event) => handleVolumeChange(Number(event.target.value))}
+            style={{ '--volume-fill': `${muted ? 0 : volume}%` } as CSSProperties}
+          />
+        </div>
+
+        <div className="controls__speed">
+          <button
+            className="controls__button controls__button--text"
+            type="button"
+            onClick={() => setSpeedOpen((open) => !open)}
+            disabled={!hasMedia}
+            aria-haspopup="menu"
+            aria-expanded={speedOpen}
+            aria-label="播放倍速"
+          >
+            {formatSpeed(speed)}
+          </button>
+          {speedOpen ? (
+            <div className="speed-menu" role="menu" aria-label="播放倍速">
+              {SPEED_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  className="speed-menu__item"
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={Math.abs(option - speed) < 0.01}
+                  onClick={() => handleSpeedChange(option)}
+                >
+                  {formatSpeed(option)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          className="controls__button"
+          type="button"
+          onClick={handleToggleFullscreen}
+          aria-label={fullscreen ? '退出全屏' : '全屏'}
+        >
+          ⛶
+        </button>
       </footer>
 
       {error ? (

@@ -133,12 +133,23 @@ impl MpvIpc {
     }
   }
 
-  pub fn set_pause(&self, paused: bool) -> Result<(), IpcError> {
-    self.request(json!(["set_property", "pause", paused])).map(|_| ())
+  /// 写入数值属性。
+  pub fn set_number(&self, name: &str, value: f64) -> Result<(), IpcError> {
+    self.request(json!(["set_property", name, value])).map(|_| ())
+  }
+
+  /// 写入布尔属性。
+  pub fn set_flag(&self, name: &str, value: bool) -> Result<(), IpcError> {
+    self.request(json!(["set_property", name, value])).map(|_| ())
   }
 
   pub fn seek_absolute(&self, seconds: f64) -> Result<(), IpcError> {
     self.request(json!(["seek", seconds, "absolute"])).map(|_| ())
+  }
+
+  /// 相对当前位置前后跳转，秒数为正表示前进。
+  pub fn seek_relative(&self, offset: f64) -> Result<(), IpcError> {
+    self.request(json!(["seek", offset, "relative"])).map(|_| ())
   }
 }
 

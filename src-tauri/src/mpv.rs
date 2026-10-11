@@ -42,6 +42,7 @@ pub struct PlayerState {
   child: Mutex<Option<Child>>,
   ipc: Mutex<Option<ipc::MpvIpc>>,
   current_path: Mutex<Option<String>>,
+  child_window: Mutex<Option<isize>>,
 }
 
 impl PlayerState {
@@ -61,6 +62,7 @@ impl PlayerState {
     // 换了进程，旧连接就作废了，交给 ensure_ipc 重新建立
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
   }
 
   /// 停止当前播放。没有在播放时是空操作。
@@ -74,6 +76,7 @@ impl PlayerState {
 
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
   }
 
   fn current_path(&self) -> Option<String> {
@@ -82,6 +85,14 @@ impl PlayerState {
       .lock()
       .unwrap_or_else(|poisoned| poisoned.into_inner())
       .clone()
+  }
+
+  fn child_window(&self) -> Option<isize> {
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+  }
+
+  fn set_child_window(&self, handle: Option<isize>) {
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = handle;
   }
 
   /// 确保 IPC 已连接。mpv 刚启动时管道可能还没建好，失败就等下一次再试。
@@ -227,7 +238,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 mod win {
   use windows::Win32::Foundation::{HWND, LPARAM};
   use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, SetWindowPos, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    EnumChildWindows, SetWindowPos, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
   };
 
   /// 枚举某个窗口的直接与间接子窗口句柄。
@@ -268,6 +279,21 @@ mod win {
       );
     }
   }
+
+  /// 让嵌入的 mpv 子窗口跟上主窗口的尺寸。
+  pub fn resize(hwnd: isize, width: i32, height: i32) {
+    unsafe {
+      let _ = SetWindowPos(
+        HWND(hwnd as *mut _),
+        None,
+        0,
+        0,
+        width,
+        height,
+        SWP_NOACTIVATE | SWP_NOZORDER,
+      );
+    }
+  }
 }
 
 #[cfg(not(windows))]
@@ -277,6 +303,15 @@ mod win {
   }
 
   pub fn send_to_bottom(_hwnd: isize) {}
+
+  pub fn resize(_hwnd: isize, _width: i32, _height: i32) {}
+}
+
+/// 主窗口尺寸变化时，让嵌入的 mpv 子窗口跟着一起变。
+pub fn resize_embedded(state: &PlayerState, width: u32, height: u32) {
+  if let Some(handle) = state.child_window() {
+    win::resize(handle, width as i32, height as i32);
+  }
 }
 
 /* ---------------- Tauri 命令 ---------------- */
@@ -335,13 +370,31 @@ pub fn play_video(
 
   state.replace(child, path);
 
-  std::thread::sleep(Duration::from_millis(500));
+  // mpv 建窗是异步的，轮询找出它新建的那个子窗口。
+  let mut embedded = None;
 
-  for handle in win::child_windows(window_handle) {
-    if !before.contains(&handle) {
-      win::send_to_bottom(handle);
+  for _ in 0..20 {
+    std::thread::sleep(Duration::from_millis(100));
+
+    if let Some(handle) = win::child_windows(window_handle)
+      .into_iter()
+      .find(|handle| !before.contains(handle))
+    {
+      embedded = Some(handle);
+      break;
     }
   }
+
+  if let Some(handle) = embedded {
+    // 对齐当前窗口尺寸，再压到底层，让透明的 WebView 界面浮在画面之上
+    if let Ok(size) = window.inner_size() {
+      win::resize(handle, size.width as i32, size.height as i32);
+    }
+
+    win::send_to_bottom(handle);
+  }
+
+  state.set_child_window(embedded);
 
   Ok(())
 }
@@ -360,7 +413,14 @@ pub struct PlayerSnapshot {
   pub position: f64,
   pub duration: f64,
   pub paused: bool,
+  pub volume: f64,
+  pub muted: bool,
+  pub speed: f64,
 }
+
+/// mpv 的默认音量与倍速，用作属性尚未就绪时的兜底。
+const DEFAULT_VOLUME: f64 = 100.0;
+const DEFAULT_SPEED: f64 = 1.0;
 
 fn idle_snapshot() -> PlayerSnapshot {
   PlayerSnapshot {
@@ -369,6 +429,9 @@ fn idle_snapshot() -> PlayerSnapshot {
     position: 0.0,
     duration: 0.0,
     paused: true,
+    volume: DEFAULT_VOLUME,
+    muted: false,
+    speed: DEFAULT_SPEED,
   }
 }
 
@@ -385,6 +448,17 @@ pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
     position: state.with_ipc(|client| client.get_number("time-pos")).ok().flatten().unwrap_or(0.0),
     duration: state.with_ipc(|client| client.get_number("duration")).ok().flatten().unwrap_or(0.0),
     paused: state.with_ipc(|client| client.get_bool("pause")).ok().flatten().unwrap_or(false),
+    volume: state
+      .with_ipc(|client| client.get_number("volume"))
+      .ok()
+      .flatten()
+      .unwrap_or(DEFAULT_VOLUME),
+    muted: state.with_ipc(|client| client.get_bool("mute")).ok().flatten().unwrap_or(false),
+    speed: state
+      .with_ipc(|client| client.get_number("speed"))
+      .ok()
+      .flatten()
+      .unwrap_or(DEFAULT_SPEED),
   }
 }
 
@@ -394,7 +468,7 @@ pub fn toggle_pause(state: tauri::State<'_, PlayerState>) -> Result<bool, String
   let paused = state.with_ipc(|client| client.get_bool("pause"))?.unwrap_or(false);
   let next = !paused;
 
-  state.with_ipc(|client| client.set_pause(next))?;
+  state.with_ipc(|client| client.set_flag("pause", next))?;
 
   Ok(next)
 }
@@ -403,6 +477,45 @@ pub fn toggle_pause(state: tauri::State<'_, PlayerState>) -> Result<bool, String
 #[tauri::command(async)]
 pub fn seek_to(state: tauri::State<'_, PlayerState>, position: f64) -> Result<(), String> {
   state.with_ipc(|client| client.seek_absolute(position))
+}
+
+/// 相对当前位置前后跳转，秒数为正表示前进。
+#[tauri::command(async)]
+pub fn seek_by(state: tauri::State<'_, PlayerState>, offset: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.seek_relative(offset))
+}
+
+/// 设置音量，范围限制在 mpv 允许的 0-150 之间。
+#[tauri::command(async)]
+pub fn set_volume(state: tauri::State<'_, PlayerState>, volume: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.set_number("volume", volume.clamp(0.0, 150.0)))
+}
+
+/// 静音开关，返回切换后的静音状态。
+#[tauri::command(async)]
+pub fn toggle_mute(state: tauri::State<'_, PlayerState>) -> Result<bool, String> {
+  let muted = state.with_ipc(|client| client.get_bool("mute"))?.unwrap_or(false);
+  let next = !muted;
+
+  state.with_ipc(|client| client.set_flag("mute", next))?;
+
+  Ok(next)
+}
+
+/// 设置播放倍速。
+#[tauri::command(async)]
+pub fn set_speed(state: tauri::State<'_, PlayerState>, speed: f64) -> Result<(), String> {
+  state.with_ipc(|client| client.set_number("speed", speed.clamp(0.25, 4.0)))
+}
+
+/// 切换全屏，返回切换后的全屏状态。
+#[tauri::command(async)]
+pub fn toggle_fullscreen(window: tauri::WebviewWindow) -> Result<bool, String> {
+  let next = !window.is_fullscreen().map_err(|error| error.to_string())?;
+
+  window.set_fullscreen(next).map_err(|error| error.to_string())?;
+
+  Ok(next)
 }
 
 #[cfg(test)]
@@ -564,10 +677,10 @@ mod tests {
 
     assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(true), "启动时应当是暂停的");
 
-    client.set_pause(false).expect("恢复播放");
+    client.set_flag("pause", false).expect("恢复播放");
     assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(false));
 
-    client.set_pause(true).expect("再次暂停");
+    client.set_flag("pause", true).expect("再次暂停");
     assert_eq!(client.get_bool("pause").expect("读暂停状态"), Some(true));
 
     // 暂停状态下跳转，读数才是确定的。目标取时长的一半，避免依赖具体素材长度。
@@ -578,6 +691,17 @@ mod tests {
       (position - target).abs() < 0.3,
       "跳转后位置应约为 {target} 秒，实际 {position}"
     );
+
+    client.set_number("volume", 42.0).expect("设置音量");
+    let volume = wait_for_number(&client, "volume", Duration::from_secs(5)).expect("应能读到音量");
+    assert!((volume - 42.0).abs() < 1.0, "音量应约为 42，实际 {volume}");
+
+    client.set_flag("mute", true).expect("静音");
+    assert_eq!(client.get_bool("mute").expect("读静音状态"), Some(true));
+
+    client.set_number("speed", 1.5).expect("设置倍速");
+    let speed = wait_for_number(&client, "speed", Duration::from_secs(5)).expect("应能读到倍速");
+    assert!((speed - 1.5).abs() < 0.01, "倍速应为 1.5，实际 {speed}");
 
     let _ = child.kill();
     let _ = child.wait();
