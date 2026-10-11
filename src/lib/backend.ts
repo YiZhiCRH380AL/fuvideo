@@ -30,6 +30,57 @@ export interface PlayerSnapshot {
   buffering: boolean
 }
 
+/** 一条轨道：视频、音频或字幕。 */
+export interface TrackInfo {
+  id: number
+  kind: string
+  title: string | null
+  lang: string | null
+  codec: string | null
+  selected: boolean
+  /** 外挂轨道（比如手动挂上的字幕文件）。 */
+  external: boolean
+  default: boolean
+}
+
+/** 播放详情：轨道表，以及当前真正生效的硬解后端。 */
+export interface PlayerDetails {
+  path: string | null
+  tracks: TrackInfo[]
+  hwdecCurrent: string | null
+}
+
+/**
+ * 全局播放偏好。
+ *
+ * `null` 表示「没设置过」——对应到 mpv 就是完全不传这个参数，
+ * 让 mpv 用自己的默认值。这和「设置成默认值」不是一回事。
+ */
+export interface PlayerSettings {
+  hwdec: string
+  savePosition: boolean
+  subAuto: string | null
+  subFontSize: number | null
+  audioChannels: string | null
+  audioDevice: string | null
+}
+
+/** 和 Rust 侧 `Settings::default()` 保持一致。 */
+export const DEFAULT_SETTINGS: PlayerSettings = {
+  hwdec: 'auto-safe',
+  savePosition: true,
+  subAuto: null,
+  subFontSize: null,
+  audioChannels: null,
+  audioDevice: null,
+}
+
+const IDLE_DETAILS: PlayerDetails = {
+  path: null,
+  tracks: [],
+  hwdecCurrent: null,
+}
+
 export type BrowseKind = 'directory' | 'video'
 
 export interface BrowseEntry {
@@ -124,6 +175,38 @@ export async function getPlayerState(): Promise<PlayerSnapshot> {
   }
 
   return invoke<PlayerSnapshot>('player_state')
+}
+
+/**
+ * 读取播放详情：轨道表与当前生效的硬解后端。
+ *
+ * 轨道表是数组，塞进 300ms 一次的高频快照会把轮询拖慢，所以单独开一条通道：
+ * 界面在需要的时候（比如展开音轨面板）才拉一次。
+ */
+export async function getPlayerDetails(): Promise<PlayerDetails> {
+  if (!isTauri()) {
+    return IDLE_DETAILS
+  }
+
+  return invoke<PlayerDetails>('player_details')
+}
+
+/** 读取全局偏好。读不到时退回默认值，不让界面卡在加载态。 */
+export async function readSettings(): Promise<PlayerSettings> {
+  if (!isTauri()) {
+    return DEFAULT_SETTINGS
+  }
+
+  return invoke<PlayerSettings>('read_settings')
+}
+
+/** 写入全局偏好，返回实际生效的取值（越界的值会被折回）。 */
+export async function writeSettings(settings: PlayerSettings): Promise<PlayerSettings> {
+  if (!isTauri()) {
+    throw new Error('设置需要在桌面应用中修改')
+  }
+
+  return invoke<PlayerSettings>('write_settings', { settings })
 }
 
 /** 在播放与暂停之间切换，返回切换后的暂停状态。 */

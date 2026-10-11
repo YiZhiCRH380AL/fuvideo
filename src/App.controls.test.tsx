@@ -426,6 +426,17 @@ describe('底部控制条', () => {
     expect(mocks.setSpeed).toHaveBeenCalledWith(1.5)
   })
 
+  it('倍速菜单按 Esc 收起', async () => {
+    await openPlayingVideo()
+
+    await userEvent.click(screen.getByRole('button', { name: '播放倍速' }))
+    expect(screen.getByRole('menuitemradio', { name: '1.5x' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByRole('menuitemradio', { name: '1.5x' })).not.toBeInTheDocument()
+  })
+
   it('全屏按钮调用全屏切换', async () => {
     await openPlayingVideo()
 

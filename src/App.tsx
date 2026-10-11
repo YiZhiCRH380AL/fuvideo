@@ -112,7 +112,13 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null)
   const [directoryBusy, setDirectoryBusy] = useState(false)
-  const [speedOpen, setSpeedOpen] = useState(false)
+  /**
+   * 当前展开的面板。
+   *
+   * 倍速菜单是第一个使用者，后面的音轨、字幕面板往这个联合类型里加就行：
+   * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
+   */
+  const [openPanel, setOpenPanel] = useState<'speed' | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
 
   /** 开屏走到哪一步：入场 → 收场（界面同时淡入）→ 卸载。 */
@@ -187,7 +193,7 @@ export default function App() {
   // 暂停、拖动进度、开着倍速菜单时保持显示。
   const chromeVisible = useIdleVisibility({
     delayMs: CHROME_IDLE_MS,
-    enabled: expanded && hasMedia && !paused && scrub === null && !speedOpen,
+    enabled: expanded && hasMedia && !paused && scrub === null && openPanel === null,
   })
 
   const reportError = useCallback((cause: unknown) => {
@@ -611,7 +617,7 @@ export default function App() {
   const handleSpeedChange = useCallback(
     (next: number) => {
       setSpeed(next).catch(reportError)
-      setSpeedOpen(false)
+      setOpenPanel(null)
     },
     [reportError],
   )
@@ -885,33 +891,6 @@ export default function App() {
     volume,
   ])
 
-  // 倍速菜单开着时，点别处或按 Esc 收起
-  useEffect(() => {
-    if (!speedOpen) {
-      return
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (!(event.target instanceof HTMLElement) || event.target.closest('.island__speed') === null) {
-        setSpeedOpen(false)
-      }
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSpeedOpen(false)
-      }
-    }
-
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [speedOpen])
-
   const kernelWarning = hasMedia && player !== null && !player.ipcReady ? '播放内核未连接，控制可能无效' : null
   // 桌面端一切正常时不显示内核版本，只在真出问题时开口
   const statusNotice = kernelWarning
@@ -1114,7 +1093,7 @@ export default function App() {
           scrub={scrub}
           preview={preview}
           previewImage={previewImage}
-          speedOpen={speedOpen}
+          speedOpen={openPanel === 'speed'}
           onTogglePause={() => void handleTogglePause()}
           onScrubChange={handleScrubChange}
           onScrubCommit={handleScrubCommit}
@@ -1122,7 +1101,8 @@ export default function App() {
           onProgressLeave={handleProgressLeave}
           onVolumeChange={handleVolumeChange}
           onToggleMute={handleToggleMute}
-          onToggleSpeedMenu={() => setSpeedOpen((open) => !open)}
+          onToggleSpeedMenu={() => setOpenPanel((open) => (open === 'speed' ? null : 'speed'))}
+          onCloseSpeedMenu={() => setOpenPanel(null)}
           onSelectSpeed={handleSpeedChange}
           onToggleFullscreen={handleToggleFullscreen}
           onCollapse={() => void collapseVideo()}

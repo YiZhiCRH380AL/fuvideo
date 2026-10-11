@@ -1035,9 +1035,13 @@
   transform: translateX(-50%);
 }
 
-/* ============ 倍速菜单 ============ */
+/* ============ 浮层面板 ============ */
 
-.speed-menu {
+/*
+ * 倍速菜单、以及后面要加的音轨/字幕面板都用这一套。
+ * 定位交给锚点（触发按钮所在的容器，position: relative），面板自己只管长相。
+ */
+.popover {
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
@@ -1065,7 +1069,7 @@
   }
 }
 
-.speed-menu__item {
+.popover__item {
   padding: 6px 10px;
   border: none;
   border-radius: 6px;
@@ -1078,35 +1082,35 @@
   animation: item-in 200ms var(--ease) backwards;
 }
 
-.speed-menu__item:hover {
+.popover__item:hover {
   background: var(--surface-hover);
 }
 
-.speed-menu__item[aria-checked='true'] {
+.popover__item[aria-checked='true'] {
   color: var(--accent);
 }
 
-.speed-menu__item:nth-child(1) {
+.popover__item:nth-child(1) {
   animation-delay: 24ms;
 }
 
-.speed-menu__item:nth-child(2) {
+.popover__item:nth-child(2) {
   animation-delay: 48ms;
 }
 
-.speed-menu__item:nth-child(3) {
+.popover__item:nth-child(3) {
   animation-delay: 72ms;
 }
 
-.speed-menu__item:nth-child(4) {
+.popover__item:nth-child(4) {
   animation-delay: 96ms;
 }
 
-.speed-menu__item:nth-child(5) {
+.popover__item:nth-child(5) {
   animation-delay: 120ms;
 }
 
-.speed-menu__item:nth-child(6) {
+.popover__item:nth-child(6) {
   animation-delay: 144ms;
 }
 
@@ -1181,8 +1185,8 @@
   .crumbs__item,
   .flash__ripple,
   .flash__badge,
-  .speed-menu,
-  .speed-menu__item,
+  .popover,
+  .popover__item,
   .buffering,
   .library__icon {
     animation: none;

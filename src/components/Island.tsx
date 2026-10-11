@@ -3,6 +3,7 @@ import { formatSpeed, SPEED_OPTIONS } from '../lib/playback'
 import { formatDuration } from '../lib/time'
 import HoverPreview from './HoverPreview'
 import PlayPauseIcon from './PlayPauseIcon'
+import Popover from './Popover'
 
 export interface IslandProps {
   title: string
@@ -31,6 +32,8 @@ export interface IslandProps {
   onVolumeChange: (volume: number) => void
   onToggleMute: () => void
   onToggleSpeedMenu: () => void
+  /** 倍速菜单自己收起时（点外面或按 Esc）通知外面。 */
+  onCloseSpeedMenu: () => void
   onSelectSpeed: (speed: number) => void
   onToggleFullscreen: () => void
   onCollapse: () => void
@@ -73,6 +76,7 @@ export default function Island({
   onToggleMute,
   onSelectSpeed,
   onToggleSpeedMenu,
+  onCloseSpeedMenu,
   onToggleFullscreen,
   onCollapse,
 }: IslandProps) {
@@ -166,22 +170,25 @@ export default function Island({
           >
             {formatSpeed(speed)}
           </button>
-          {speedOpen ? (
-            <div className="speed-menu" role="menu" aria-label="播放倍速">
-              {SPEED_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  className="speed-menu__item"
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={Math.abs(option - speed) < 0.01}
-                  onClick={() => onSelectSpeed(option)}
-                >
-                  {formatSpeed(option)}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <Popover
+            open={speedOpen}
+            onClose={onCloseSpeedMenu}
+            label="播放倍速"
+            anchorSelector=".island__speed"
+          >
+            {SPEED_OPTIONS.map((option) => (
+              <button
+                key={option}
+                className="popover__item"
+                type="button"
+                role="menuitemradio"
+                aria-checked={Math.abs(option - speed) < 0.01}
+                onClick={() => onSelectSpeed(option)}
+              >
+                {formatSpeed(option)}
+              </button>
+            ))}
+          </Popover>
         </div>
 
         <button
