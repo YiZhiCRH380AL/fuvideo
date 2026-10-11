@@ -146,6 +146,33 @@ describe('播放控制', () => {
     await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(42))
   })
 
+  it('松手后进度条停在目标位置，不会被尚未更新的状态拉回去', async () => {
+    await openPlayingVideo({ position: 10, duration: 100 })
+
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+    fireEvent.change(slider, { target: { value: '42' } })
+    fireEvent.pointerUp(slider)
+
+    await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(42))
+
+    // 状态仍然回报旧的 10 秒，但界面必须留在 42 秒，不能弹回去
+    expect(slider).toHaveValue('42')
+  })
+
+  it('真实位置追上目标后，进度条交还给播放位置', async () => {
+    await openPlayingVideo({ position: 10, duration: 100 })
+
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+    fireEvent.change(slider, { target: { value: '42' } })
+    fireEvent.pointerUp(slider)
+
+    await waitFor(() => expect(slider).toHaveValue('42'))
+
+    mocks.snapshot = { ...mocks.snapshot, position: 42.2 }
+
+    await waitFor(() => expect(slider).toHaveValue('42.2'), { timeout: 2000 })
+  })
+
   it('状态回报还没到位时，选好文件后控件就已经可用', async () => {
     // 曾经 Rust 序列化出的是 has_media，前端读 hasMedia 恒为 undefined，
     // 于是所有控件都被禁用。这条用例守住这个契约。

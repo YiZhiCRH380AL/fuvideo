@@ -40,11 +40,13 @@ export default function App() {
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [player, setPlayer] = useState<PlayerSnapshot | null>(null)
   const [scrub, setScrub] = useState<number | null>(null)
+  const [pendingSeek, setPendingSeek] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [overControls, setOverControls] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const scrubRef = useRef<number | null>(null)
+  const pendingTimer = useRef<number | null>(null)
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -93,6 +95,11 @@ export default function App() {
 
         if (!cancelled) {
           setPlayer(snapshot)
+          // 跳转目标已经被真实位置追上时，把显示权交还给播放状态，
+          // 否则进度条会一直停在目标点上不动
+          setPendingSeek((pending) =>
+            pending !== null && Math.abs(snapshot.position - pending) < 0.75 ? null : pending,
+          )
         }
       } catch (cause: unknown) {
         if (!cancelled) {
@@ -124,6 +131,7 @@ export default function App() {
 
       await playLocalVideo(path)
       setCurrentFile(path)
+      setPendingSeek(null)
     } catch (cause: unknown) {
       reportError(cause)
     }
@@ -145,7 +153,8 @@ export default function App() {
   const hasMedia = currentFile !== null
   const paused = player?.paused !== false
   const duration = player?.duration ?? 0
-  const shownPosition = scrub ?? player?.position ?? 0
+  // 松手后先停在目标位置，避免轮询把滑块拉回旧位置造成跳动
+  const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
   const fillPercent = duration > 0 ? Math.min(100, (shownPosition / duration) * 100) : 0
   const volume = player?.volume ?? 100
   const muted = player?.muted === true
@@ -198,8 +207,29 @@ export default function App() {
       return
     }
 
+    setPendingSeek(pending)
+
+    // 兜底：万一跳转没生效，两秒后也要把显示权还给真实位置
+    if (pendingTimer.current !== null) {
+      window.clearTimeout(pendingTimer.current)
+    }
+
+    pendingTimer.current = window.setTimeout(() => {
+      pendingTimer.current = null
+      setPendingSeek(null)
+    }, 2000)
+
     seekTo(pending).catch(reportError)
   }, [reportError])
+
+  useEffect(
+    () => () => {
+      if (pendingTimer.current !== null) {
+        window.clearTimeout(pendingTimer.current)
+      }
+    },
+    [],
+  )
 
   // 空闲一会儿自动收起控件；暂停、拖动进度、开着倍速菜单时保持显示
   const controlsVisible = useIdleVisibility({
