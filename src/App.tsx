@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -82,7 +83,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [directoryBusy, setDirectoryBusy] = useState(false)
-  const [overControls, setOverControls] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   /** 每次切换全屏递增，用来重放那一下过渡。 */
@@ -95,6 +95,8 @@ export default function App() {
   const previewTimer = useRef<number | null>(null)
   const previewCache = useRef(new Map<string, string>())
   const gridCache = useRef(new Map<string, string>())
+  const previewFrame = useRef<number | null>(null)
+  const hoveredPoint = useRef<{ fraction: number; seconds: number } | null>(null)
 
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
@@ -166,9 +168,10 @@ export default function App() {
     }
   }, [currentFile, reportError])
 
-  // 目录内容变了，方格页的缩略图逐个补上；换目录时中断上一轮
+  // 目录内容变了，方格页的缩略图逐个补上；换目录时中断上一轮。
+  // 进播放页就停下：抓帧是另一个 mpv 进程，会和播放抢 CPU/GPU，直接导致卡顿。
   useEffect(() => {
-    if (listing === null) {
+    if (listing === null || view !== 'library') {
       return
     }
 
@@ -213,7 +216,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [listing])
+  }, [listing, view])
 
   const playPath = useCallback(
     async (path: string, from?: DOMRect) => {
@@ -428,6 +431,13 @@ export default function App() {
   }, [reportError])
 
   const hasMedia = currentFile !== null
+  /** 方格点第二次时进播放页，并把方格矩形交给转场用。引用要稳定，方格才能 memo 住。 */
+  const handleOpenFromTile = useCallback(
+    (path: string, from: DOMRect) => {
+      void playPath(path, from)
+    },
+    [playPath],
+  )
   const paused = player?.paused !== false
   const duration = player?.duration ?? 0
   const shownPosition = scrub ?? pendingSeek ?? player?.position ?? 0
@@ -436,7 +446,12 @@ export default function App() {
   const muted = player?.muted === true
   const speed = player?.speed ?? 1
   const buffering = player?.buffering === true
-  const videos = listing?.entries.filter((entry) => entry.kind === 'video') ?? []
+  // 引用要稳定：VideoGrid 的 FLIP 依赖它，每次渲染都是新数组的话
+  // 会白白重测一遍所有方格的位置
+  const videos = useMemo(
+    () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
+    [listing],
+  )
 
   const loadPreview = useCallback(
     async (source: string, seconds: number) => {
@@ -470,9 +485,20 @@ export default function App() {
       const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
       const seconds = fraction * duration
 
-      setPreview({ fraction, seconds })
+      // 指针事件比屏幕刷新快得多，位置更新按帧来就够了
+      hoveredPoint.current = { fraction, seconds }
 
-      // 鼠标快速扫过时不值得每一帧都去截图
+      if (previewFrame.current === null) {
+        previewFrame.current = window.requestAnimationFrame(() => {
+          previewFrame.current = null
+
+          if (hoveredPoint.current !== null) {
+            setPreview(hoveredPoint.current)
+          }
+        })
+      }
+
+      // 抓帧比移动慢得多，快速扫过时只处理停下来的那个位置
       if (previewTimer.current !== null) {
         window.clearTimeout(previewTimer.current)
       }
@@ -491,15 +517,23 @@ export default function App() {
       previewTimer.current = null
     }
 
+    if (previewFrame.current !== null) {
+      window.cancelAnimationFrame(previewFrame.current)
+      previewFrame.current = null
+    }
+
+    hoveredPoint.current = null
     setPreview(null)
     setPreviewImage(null)
   }, [])
 
-  // 空闲一会儿自动收起控件；只在播放页生效
+  // 空闲一会儿自动收起控件；只在播放页生效。
+  // 注意不把「鼠标停在控件上」当作保持显示：那会让控件永远关不掉，
+  // 而且和常见播放器（鼠标不动就连同控件一起隐去）不一致。
   const controlsVisible = useIdleVisibility({
     delayMs: CONTROLS_IDLE_MS,
     enabled: view === 'player' && hasMedia && !paused && scrub === null && !speedOpen,
-    pinned: view === 'library' || overControls || !hasMedia || preview !== null,
+    pinned: view === 'library' || !hasMedia || preview !== null,
   })
 
   useEffect(
@@ -514,6 +548,10 @@ export default function App() {
 
       if (clickTimer.current !== null) {
         window.clearTimeout(clickTimer.current)
+      }
+
+      if (previewFrame.current !== null) {
+        window.cancelAnimationFrame(previewFrame.current)
       }
     },
     [],
@@ -758,11 +796,7 @@ export default function App() {
               )}
             </main>
 
-            <footer
-              className="controls"
-              onMouseEnter={() => setOverControls(true)}
-              onMouseLeave={() => setOverControls(false)}
-            >
+            <footer className="controls">
               <button
                 className="controls__button"
                 type="button"
@@ -914,7 +948,7 @@ export default function App() {
                 focusedPath={focusedPath}
                 currentPath={currentFile}
                 onFocus={setFocusedPath}
-                onOpen={(path, from) => void playPath(path, from)}
+                onOpen={handleOpenFromTile}
               />
             )}
           </main>

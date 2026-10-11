@@ -159,6 +159,15 @@ async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}): Promis
   await waitFor(() => expect(screen.getByRole('slider', { name: '播放进度' })).toBeEnabled(), {
     timeout: 3000,
   })
+
+  // 进度条可用只说明「已选中文件」，还要等状态真正拉回来，
+  // 否则依赖 volume/speed 的用例会拿到默认值
+  const shownVolume = mocks.snapshot.muted ? 0 : Math.round(mocks.snapshot.volume)
+
+  await waitFor(
+    () => expect(screen.getByRole('slider', { name: '音量' })).toHaveValue(String(shownVolume)),
+    { timeout: 3000 },
+  )
 }
 
 describe('目录页', () => {

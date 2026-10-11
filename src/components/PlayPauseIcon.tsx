@@ -3,38 +3,51 @@ import { useEffect, useRef } from 'react'
 /**
  * 播放与暂停图标之间的形变。
  *
- * 两个状态都写成 8 个顶点的多边形：命令结构一致，浏览器才能对路径做插值。
- * 三角形的两个重复顶点在暂停态对应两条竖条的外沿，看起来就是三角形
- * 从右侧裂开成两根竖条（反过来则合并）。
+ * 两个状态都写成「两个四边形」：结构一致，浏览器才能对路径做插值。
+ * 播放态是三角形沿 x=14.5 切成左右两半（各是一个四边形），
+ * 暂停态是两根竖条。于是形变看起来就是两半合拢成三角形、或者裂开成两根条。
+ *
+ * 注意不能把暂停画成一条 8 点闭合折线——那样第一根的左下角会直接连到
+ * 第二根的左上角，nonzero 填充下会变成自交的蝴蝶形，不是两根条。
  */
-const PLAY_POINTS: Array<[number, number]> = [
+const PLAY_LEFT: Array<[number, number]> = [
   [9, 5],
-  [20, 12],
-  [20, 12],
-  [20, 12],
+  [14.5, 8.5],
+  [14.5, 15.5],
   [9, 19],
-  [9, 19],
-  [9, 19],
-  [9, 5],
 ]
 
-const PAUSE_POINTS: Array<[number, number]> = [
+const PLAY_RIGHT: Array<[number, number]> = [
+  [14.5, 8.5],
+  [20, 12],
+  [20, 12],
+  [14.5, 15.5],
+]
+
+const PAUSE_LEFT: Array<[number, number]> = [
   [8, 5],
   [11, 5],
   [11, 19],
   [8, 19],
+]
+
+const PAUSE_RIGHT: Array<[number, number]> = [
   [16, 5],
   [19, 5],
   [19, 19],
   [16, 19],
 ]
 
-function toPath(points: Array<[number, number]>): string {
+function toQuad(points: Array<[number, number]>): string {
   return `M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} Z`
 }
 
-const PLAY_PATH = toPath(PLAY_POINTS)
-const PAUSE_PATH = toPath(PAUSE_POINTS)
+function toPath(left: Array<[number, number]>, right: Array<[number, number]>): string {
+  return `${toQuad(left)} ${toQuad(right)}`
+}
+
+const PLAY_PATH = toPath(PLAY_LEFT, PLAY_RIGHT)
+const PAUSE_PATH = toPath(PAUSE_LEFT, PAUSE_RIGHT)
 
 export interface PlayPauseIconProps {
   /** true 表示当前是暂停状态，图标应显示三角形。 */
@@ -58,8 +71,8 @@ export default function PlayPauseIcon({ paused }: PlayPauseIconProps) {
     }
 
     path.animate([{ d: `path("${from}")` }, { d: `path("${target}")` }], {
-      duration: 220,
-      easing: 'cubic-bezier(0.2, 0, 0, 1)',
+      duration: 240,
+      easing: 'cubic-bezier(0.34, 1.2, 0.5, 1)',
     })
   }, [paused])
 
