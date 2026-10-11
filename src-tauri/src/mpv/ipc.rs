@@ -142,6 +142,18 @@ impl MpvIpc {
     }
   }
 
+  /// 读取任意类型的属性（数组、字典等）。
+  ///
+  /// `track-list`、`audio-device-list` 这类列表只能是 JSON 值，
+  /// 上面那几个专用读取函数都接不住。属性尚未就绪时返回 `Ok(None)`。
+  pub fn get_value(&self, name: &str) -> Result<Option<Value>, IpcError> {
+    match self.request(json!(["get_property", name])) {
+      Ok(value) => Ok(Some(value)),
+      Err(IpcError::Rejected(_)) => Ok(None),
+      Err(other) => Err(other),
+    }
+  }
+
   /// 写入数值属性。
   pub fn set_number(&self, name: &str, value: f64) -> Result<(), IpcError> {
     self.request(json!(["set_property", name, value])).map(|_| ())
@@ -164,6 +176,46 @@ impl MpvIpc {
   /// 精确跳转（关键帧之间也定位），用于抓取指定时间点的画面。
   pub fn seek_exact(&self, seconds: f64) -> Result<(), IpcError> {
     self.request(json!(["seek", seconds, "absolute+exact"])).map(|_| ())
+  }
+
+  /// 换片。第二个参数用 `replace`：当前文件立刻停下，不会进播放列表。
+  ///
+  /// 常驻内核就是靠这条命令换片的——进程只启动一次，不再 kill 再重启。
+  pub fn load_file(&self, path: &str) -> Result<(), IpcError> {
+    self.request(json!(["loadfile", path, "replace"])).map(|_| ())
+  }
+
+  /// 停止播放但留住进程，下一次换片不用再等启动。
+  pub fn stop(&self) -> Result<(), IpcError> {
+    self.request(json!(["stop"])).map(|_| ())
+  }
+
+  /// 正常退出。mpv 会趁这个时候把 watch-later（播放位置、音轨、字幕选择）落盘，
+  /// 所以收尾时要发这条命令，而不是直接 kill。
+  pub fn quit(&self) -> Result<(), IpcError> {
+    self.request(json!(["quit"])).map(|_| ())
+  }
+}
+
+/// 反复尝试连接管道，直到超时。
+///
+/// mpv 建管道要几十到几百毫秒，刚 spawn 完立刻连必然失败，所以调用方
+/// 不该自己写重试循环。失败时返回最后一次的错误，方便定位是「没起来」
+/// 还是「起来了但管道连不上」。
+pub fn connect_with_retry(pipe_path: &str, timeout: Duration) -> Result<MpvIpc, String> {
+  let deadline = Instant::now() + timeout;
+
+  loop {
+    let error = match MpvIpc::connect(pipe_path) {
+      Ok(client) => return Ok(client),
+      Err(error) => error,
+    };
+
+    if Instant::now() >= deadline {
+      return Err(error);
+    }
+
+    thread::sleep(Duration::from_millis(150));
   }
 }
 
@@ -212,5 +264,27 @@ fn run_worker(file: File, jobs: Receiver<Job>, replies: Sender<Reply>) {
         }
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// 管道不存在时必须**到点就返回错误**，不能挂住调用方——
+  /// 这条路径正好是「mpv 没起来」的时候，界面还等着这个错误去提示用户。
+  #[test]
+  fn connect_with_retry_gives_up_at_the_deadline() {
+    let missing = r"\\.\pipe\fuvideo-ipc-tests-definitely-missing";
+    let started = Instant::now();
+
+    let outcome = connect_with_retry(missing, Duration::from_millis(300));
+
+    assert!(outcome.is_err(), "不存在的管道不该连上");
+    assert!(
+      started.elapsed() < Duration::from_secs(5),
+      "重试应该在超时附近就放弃，实际花了 {:?}",
+      started.elapsed()
+    );
   }
 }

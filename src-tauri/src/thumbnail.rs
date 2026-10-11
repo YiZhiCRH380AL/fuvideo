@@ -203,20 +203,9 @@ fn clear_directory(directory: &Path) {
   }
 }
 
+/// 等抓帧进程把管道建出来。重试逻辑和播放内核共用一份，别在这儿再写一遍。
 fn connect_with_retry(pipe: &str, timeout: Duration) -> Result<ipc::MpvIpc, String> {
-  let deadline = Instant::now() + timeout;
-  let mut last_error = String::from("抓帧进程没有建立通信管道");
-
-  while Instant::now() < deadline {
-    match ipc::MpvIpc::connect(pipe) {
-      Ok(client) => return Ok(client),
-      Err(error) => last_error = error,
-    }
-
-    std::thread::sleep(Duration::from_millis(150));
-  }
-
-  Err(last_error)
+  ipc::connect_with_retry(pipe, timeout)
 }
 
 /// 等 mpv 真正切到目标文件。换片时 duration 还是上一个文件的值，不能作为判据。

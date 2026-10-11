@@ -1,5 +1,6 @@
 mod library;
 mod mpv;
+mod settings;
 mod thumbnail;
 
 use tauri::Manager;
@@ -58,6 +59,7 @@ pub fn run() {
       mpv::play_video,
       mpv::stop_video,
       mpv::player_state,
+      mpv::player_details,
       mpv::toggle_pause,
       mpv::seek_to,
       mpv::seek_by,
@@ -65,6 +67,8 @@ pub fn run() {
       mpv::toggle_mute,
       mpv::set_speed,
       mpv::toggle_fullscreen,
+      settings::read_settings,
+      settings::write_settings,
       library::pick_directory,
       library::list_directory,
       library::list_drives,
@@ -84,6 +88,9 @@ pub fn run() {
 
   app.run(|app_handle, event| {
     if let tauri::RunEvent::Exit = event {
+      // 先让播放内核自己退出：它要趁这个时候把 watch-later（播放位置、
+      // 每片的音轨与字幕选择）落盘。直接 kill 掉就什么都留不下。
+      app_handle.state::<mpv::PlayerState>().shutdown();
       // 预览用的是独立 mpv 进程，不主动收掉会在应用退出后残留
       app_handle.state::<thumbnail::ThumbnailState>().shutdown();
     }

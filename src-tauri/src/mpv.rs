@@ -1,16 +1,22 @@
 //! mpv 播放内核的探测与进程管理。
 //!
-//! M0 的验证目标是打通「HTML 界面 + mpv 渲染」这条链路：mpv 作为子进程启动，
-//! 通过 `--wid` 嵌入主窗口，并把自己创建的窗口压到 z-order 底部，让透明的
-//! WebView 界面浮在画面之上。
+//! 结构是「HTML 界面 + mpv 渲染」：mpv 作为子进程启动，通过 `--wid` 嵌入主窗口，
+//! 并把自己创建的窗口压到 z-order 底部，让透明的 WebView 界面浮在画面之上。
+//!
+//! 播放进程是**常驻**的：第一次播放时启动，之后换片一律走 IPC 的 `loadfile`，
+//! 不再 kill 再重启。这样音频设备、字幕、画面这些偏好天然跨片保留，换片也不用
+//! 重新等启动。退出前发 `quit` 而不是 kill，mpv 才有机会把 watch-later 落盘。
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use serde_json::Value;
+
+use crate::settings::{self, Settings};
 
 pub(crate) mod ipc;
 
@@ -40,6 +46,13 @@ const MPV_FILE_CANDIDATES: &[&str] = &[
 
 const MPV_EXECUTABLE: &str = "mpv.exe";
 
+/// 等 mpv 建出子窗口的上限。建窗是异步的，只能轮询。
+const CHILD_WINDOW_TIMEOUT: Duration = Duration::from_secs(2);
+/// 等 IPC 管道出现的上限。冷启动时 mpv 要几十到几百毫秒才把管道建好。
+const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// 等 mpv 自己退出的上限，超过就强杀。收尾不能让应用关不掉。
+const QUIT_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// 随安装包一起分发的 mpv。有它就用它，不必要求用户自己装。
 static BUNDLED_MPV: OnceLock<PathBuf> = OnceLock::new();
 
@@ -63,42 +76,168 @@ pub struct PlayerState {
   current_path: Mutex<Option<String>>,
   child_window: Mutex<Option<isize>>,
   ipc_pipe: Mutex<Option<String>>,
+  /// 启动播放进程之前主窗口已经有的子窗口。
+  /// mpv 新建的那个就是「不在这个表里」的那一个，换片时可以照这个再找一次。
+  window_baseline: Mutex<Vec<isize>>,
 }
 
 impl PlayerState {
-  /// 换上一个新的播放进程，同时结束上一个，保证同一时间只跑一个 mpv。
-  fn replace(&self, child: Child, path: String, pipe: String) {
+  /// 结束进程并把状态清干净：句柄、管道、当前文件都不再有效。
+  fn clear_process(&self) {
     {
       let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-      if let Some(mut previous) = slot.take() {
-        let _ = previous.kill();
-        let _ = previous.wait();
+      if let Some(mut child) = slot.take() {
+        let _ = child.kill();
+        let _ = child.wait();
       }
-
-      *slot = Some(child);
-    }
-
-    // 换了进程，旧连接就作废了，交给 ensure_ipc 重新建立
-    *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
-    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pipe);
-  }
-
-  /// 停止当前播放。没有在播放时是空操作。
-  fn stop(&self) {
-    let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    if let Some(mut child) = slot.take() {
-      let _ = child.kill();
-      let _ = child.wait();
     }
 
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.window_baseline.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Vec::new();
+  }
+
+  /// 有没有一个还活着的播放进程；顺手把已经退出的那具清掉。
+  ///
+  /// mpv 有可能自己没了：被外部关掉、崩了，或者我们发过 `stop` 之后它没停在待机。
+  /// 这时状态里留着的句柄和管道都不能再用，必须当成「没有进程」处理。
+  fn reap_dead_child(&self) -> bool {
+    let mut slot = self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let Some(child) = slot.as_mut() else {
+      return false;
+    };
+
+    if matches!(child.try_wait(), Ok(None)) {
+      return true;
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    *slot = None;
+    drop(slot);
+
+    // 进程没了，连接和窗口句柄跟着作废
+    *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+
+    false
+  }
+
+  /// 确保常驻进程已经起来：没有就启动一个，有就直接复用。
+  ///
+  /// 窗口和管道都是异步就绪的，所以这里既等窗口也等管道。任何一步失败都把
+  /// 半成品收干净，免得留下一个连不上的 mpv 让后面每个操作都失败一次。
+  fn ensure_process(
+    &self,
+    executable: &Path,
+    window_handle: isize,
+    window_size: (u32, u32),
+    settings: &Settings,
+    config_dir: &Path,
+  ) -> Result<(), String> {
+    if self.reap_dead_child() {
+      return Ok(());
+    }
+
+    let pipe = next_pipe_name("mpv");
+    // mpv 建窗是异步的，先记录已有子窗口，启动后对比出它新建的那个
+    let before = win::child_windows(window_handle);
+    *self.window_baseline.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = before.clone();
+
+    let args = build_player_args(window_handle, &pipe, settings, config_dir);
+    let child = spawn_player(executable, &args)?;
+
+    *self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(child);
+    *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pipe.clone());
+
+    self.sync_embedded_window(window_handle, window_size);
+
+    match ipc::connect_with_retry(&pipe, IPC_CONNECT_TIMEOUT) {
+      Ok(client) => {
+        *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(client);
+        Ok(())
+      }
+      Err(error) => {
+        self.clear_process();
+        Err(error)
+      }
+    }
+  }
+
+  /// 把 mpv 的子窗口对齐到主窗口，并压到底层，让透明的 WebView 界面浮在画面之上。
+  ///
+  /// 建窗是异步的，而且 mpv 有可能等到第一个文件才建窗（`--idle` 下的行为
+  /// 跟版本有关）。所以找不到不是错误，换片之后再叫一次就行——这里返回
+  /// 「现在找到没有」，调用方不用关心是第几次。
+  fn sync_embedded_window(&self, window_handle: isize, window_size: (u32, u32)) -> Option<isize> {
+    let existing = self.child_window();
+
+    let handle = match existing {
+      Some(handle) => Some(handle),
+      None => {
+        let baseline = self
+          .window_baseline
+          .lock()
+          .unwrap_or_else(|poisoned| poisoned.into_inner())
+          .clone();
+        let found = wait_for_child_window(window_handle, &baseline, CHILD_WINDOW_TIMEOUT);
+
+        if found.is_some() {
+          self.set_child_window(found);
+        }
+
+        found
+      }
+    }?;
+
+    win::resize(handle, window_size.0 as i32, window_size.1 as i32);
+    win::send_to_bottom(handle);
+
+    Some(handle)
+  }
+
+  /// 停止播放但留住进程。没有在播放时是空操作。
+  ///
+  /// 常驻内核不走 kill：kill 掉下次换片又得等一次启动，而且 mpv 没有机会
+  /// 把 watch-later 落盘。
+  fn stop(&self) {
+    let _ = self.with_ipc(|client| client.stop());
+    self.set_current_path(None);
+  }
+
+  /// 退出前收尾：先让 mpv 自己退出，它会趁这个机会把 watch-later 落盘；
+  /// 超时还不走才强杀。应用退出时调用，别让它挂住。
+  pub fn shutdown(&self) {
+    if self.reap_dead_child() {
+      let _ = self.with_ipc(|client| client.quit());
+
+      let deadline = Instant::now() + QUIT_TIMEOUT;
+
+      while Instant::now() < deadline {
+        if !self.reap_dead_child() {
+          return;
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+      }
+    }
+
+    self.clear_process();
+  }
+
+  /// 记下当前正在播的文件。
+  ///
+  /// 换片走的是 IPC 的 `loadfile`，不像以前那样有「新进程」这个天然分界，
+  /// 所以当前文件由我们自己维护。
+  fn set_current_path(&self, path: Option<String>) {
+    *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = path;
   }
 
   fn current_path(&self) -> Option<String> {
@@ -261,20 +400,103 @@ fn read_version(executable: &Path) -> Option<String> {
   parse_version(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// 组装启动 mpv 的命令行参数。嵌进 `window_handle` 指定的窗口，并关掉 mpv 自己的界面。
-pub fn build_play_args(window_handle: isize, pipe_path: &str, path: &str) -> Vec<String> {
-  vec![
+/// 组装常驻 mpv 的命令行参数：嵌进 `window_handle` 指定的窗口，并关掉 mpv 自己的界面。
+///
+/// 这里**不带文件名**。进程启动后停在待机状态，第一次播放和之后每一次换片
+/// 都走 IPC 的 `loadfile`。
+///
+/// 设置里凡是 `None` 的项一律不传，让 mpv 用自己的默认值——「没设置过」
+/// 和「设成默认值」是两回事，不传才能保证开箱行为不变。
+pub fn build_player_args(
+  window_handle: isize,
+  pipe_path: &str,
+  settings: &Settings,
+  config_dir: &Path,
+) -> Vec<String> {
+  let mut args = vec![
     format!("--wid={window_handle}"),
     format!("--input-ipc-server={pipe_path}"),
     "--no-border".to_string(),
     "--force-window=yes".to_string(),
+    // 常驻：片子放完停在待机状态，别退出进程
+    "--idle=yes".to_string(),
     "--keep-open=no".to_string(),
-    "--hwdec=auto-safe".to_string(),
+    format!("--hwdec={}", settings.hwdec),
     "--osc=no".to_string(),
     "--input-default-bindings=no".to_string(),
     "--no-terminal".to_string(),
-    path.to_string(),
-  ]
+    // 退出前把播放位置连同这片的音轨、字幕、画面选择一起写进 watch-later
+    format!(
+      "--save-position-on-quit={}",
+      if settings.save_position { "yes" } else { "no" }
+    ),
+    format!("--watch-later-dir={}", watch_later_dir(config_dir).display()),
+  ];
+
+  if let Some(choice) = &settings.sub_auto {
+    args.push(format!("--sub-auto={choice}"));
+  }
+
+  if let Some(size) = settings.sub_font_size {
+    args.push(format!("--sub-font-size={size}"));
+  }
+
+  if let Some(choice) = &settings.audio_channels {
+    args.push(format!("--audio-channels={choice}"));
+  }
+
+  if let Some(device) = &settings.audio_device {
+    args.push(format!("--audio-device={device}"));
+  }
+
+  args
+}
+
+/// watch-later 的存放目录。
+///
+/// 放在应用配置目录里，不去动用户自己的 `%APPDATA%\mpv`：那里的 watch_later
+/// 属于用户手装的 mpv，跟这个应用无关。
+pub fn watch_later_dir(config_dir: &Path) -> PathBuf {
+  config_dir.join("watch-later")
+}
+
+/// 启动 mpv。参数由调用方决定，测试里可以只换参数不换逻辑。
+fn spawn_player(executable: &Path, args: &[String]) -> Result<Child, String> {
+  let mut command = Command::new(executable);
+  command.args(args);
+
+  #[cfg(windows)]
+  {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW);
+  }
+
+  command
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .map_err(|error| format!("启动 mpv 失败: {error}"))
+}
+
+/// 等 mpv 建出子窗口：它会新建一个我们之前没见过的子窗口。
+fn wait_for_child_window(parent: isize, before: &[isize], timeout: Duration) -> Option<isize> {
+  let deadline = Instant::now() + timeout;
+
+  loop {
+    if let Some(handle) = win::child_windows(parent)
+      .into_iter()
+      .find(|handle| !before.contains(handle))
+    {
+      return Some(handle);
+    }
+
+    if Instant::now() >= deadline {
+      return None;
+    }
+
+    std::thread::sleep(Duration::from_millis(100));
+  }
 }
 
 #[cfg(windows)]
@@ -387,72 +609,43 @@ pub fn pick_video_file() -> Result<Option<String>, String> {
   Ok(picked.map(|path| path.to_string_lossy().to_string()))
 }
 
-/// 用 mpv 播放指定视频，并把画面嵌进主窗口。
+/// 播放指定视频，把画面嵌进主窗口。
+///
+/// 第一次调用会启动常驻的 mpv 进程，之后每次换片都只是往同一个进程发
+/// `loadfile`，所以换片是立刻的，音频设备、字幕这些偏好也留得住。
 #[tauri::command(async)]
 pub fn play_video(
+  app: tauri::AppHandle,
   window: tauri::WebviewWindow,
   state: tauri::State<'_, PlayerState>,
   path: String,
 ) -> Result<(), String> {
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
   let window_handle = window.hwnd().map_err(|error| format!("获取窗口句柄失败: {error}"))?.0 as isize;
-  let pipe = next_pipe_name("mpv");
+  let size = window.inner_size().map_err(|error| format!("读取窗口尺寸失败: {error}"))?;
+  let config_dir = settings::config_dir(&app);
+  let settings = settings::load(&config_dir);
 
-  // mpv 建窗是异步的，先记录已有子窗口，启动后对比出 mpv 新建的那个。
-  let before = win::child_windows(window_handle);
+  state.ensure_process(
+    &executable,
+    window_handle,
+    (size.width, size.height),
+    &settings,
+    &config_dir,
+  )?;
 
-  let mut command = Command::new(&executable);
-  command.args(build_play_args(window_handle, &pipe, &path));
+  state.with_ipc(|client| client.load_file(&path))?;
+  state.set_current_path(Some(path));
 
-  #[cfg(windows)]
-  {
-    use std::os::windows::process::CommandExt;
-    command.creation_flags(CREATE_NO_WINDOW);
-  }
-
-  let child = command
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .spawn()
-    .map_err(|error| format!("启动 mpv 失败: {error}"))?;
-
-  state.replace(child, path, pipe);
-
-  // mpv 建窗是异步的，轮询找出它新建的那个子窗口。
-  let mut embedded = None;
-
-  for _ in 0..20 {
-    std::thread::sleep(Duration::from_millis(100));
-
-    if let Some(handle) = win::child_windows(window_handle)
-      .into_iter()
-      .find(|handle| !before.contains(handle))
-    {
-      embedded = Some(handle);
-      break;
-    }
-  }
-
-  if let Some(handle) = embedded {
-    // 对齐当前窗口尺寸，再压到底层，让透明的 WebView 界面浮在画面之上
-    if let Ok(size) = window.inner_size() {
-      win::resize(handle, size.width as i32, size.height as i32);
-    }
-
-    win::send_to_bottom(handle);
-  }
-
-  state.set_child_window(embedded);
+  // 首次播放时 mpv 可能还没把窗口建出来，载入文件后再补一次对齐
+  let _ = state.sync_embedded_window(window_handle, (size.width, size.height));
 
   Ok(())
 }
 
-/// 停止当前播放。
+/// 停止当前播放。进程留着，下次换片不用再等启动。
 #[tauri::command(async)]
-pub fn stop_video(
-  state: tauri::State<'_, PlayerState>,
-) {
+pub fn stop_video(state: tauri::State<'_, PlayerState>) {
   state.stop();
 }
 
@@ -581,6 +774,100 @@ pub fn toggle_fullscreen(window: tauri::WebviewWindow) -> Result<bool, String> {
   Ok(next)
 }
 
+/* ---------------- 播放详情 ---------------- */
+
+/// 一条轨道。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackInfo {
+  pub id: i64,
+  /// `video` / `audio` / `sub`，其余类型原样带出。
+  pub kind: String,
+  pub title: Option<String>,
+  pub lang: Option<String>,
+  pub codec: Option<String>,
+  pub selected: bool,
+  pub external: bool,
+  #[serde(rename = "default")]
+  pub is_default: bool,
+}
+
+/// 播放详情：轨道表，以及当前真正生效的硬解后端。
+///
+/// 这些是数组型数据。塞进 300ms 一次的高频快照会把轮询拖垮，所以单独开一条
+/// 通道，界面按需或低频拉取。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerDetails {
+  pub path: Option<String>,
+  pub tracks: Vec<TrackInfo>,
+  pub hwdec_current: Option<String>,
+}
+
+fn idle_details() -> PlayerDetails {
+  PlayerDetails {
+    path: None,
+    tracks: Vec::new(),
+    hwdec_current: None,
+  }
+}
+
+/// 把 mpv 的 `track-list` 数组解析成界面用的轨道表。
+///
+/// 每条轨道的字段都是可选的：外挂字幕没有语言，有些轨道没有 codec，
+/// 缺了就留空。但缺 `id` 或 `type` 的那条只能整条丢掉——界面上点不动它。
+pub fn parse_tracks(value: &Value) -> Vec<TrackInfo> {
+  let Some(items) = value.as_array() else {
+    return Vec::new();
+  };
+
+  items.iter().filter_map(parse_track).collect()
+}
+
+fn parse_track(item: &Value) -> Option<TrackInfo> {
+  Some(TrackInfo {
+    id: item.get("id")?.as_i64()?,
+    kind: item.get("type")?.as_str()?.to_string(),
+    title: text_field(item, "title"),
+    lang: text_field(item, "lang"),
+    codec: text_field(item, "codec"),
+    selected: flag_field(item, "selected"),
+    external: flag_field(item, "external"),
+    is_default: flag_field(item, "default"),
+  })
+}
+
+fn text_field(item: &Value, key: &str) -> Option<String> {
+  item
+    .get(key)
+    .and_then(Value::as_str)
+    .filter(|text| !text.is_empty())
+    .map(str::to_string)
+}
+
+fn flag_field(item: &Value, key: &str) -> bool {
+  item.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// 读取当前播放的详情。没在播放时返回空表。
+#[tauri::command(async)]
+pub fn player_details(state: tauri::State<'_, PlayerState>) -> PlayerDetails {
+  let Some(path) = state.current_path() else {
+    return idle_details();
+  };
+
+  PlayerDetails {
+    path: Some(path),
+    tracks: state
+      .with_ipc(|client| client.get_value("track-list"))
+      .ok()
+      .flatten()
+      .map(|value| parse_tracks(&value))
+      .unwrap_or_default(),
+    hwdec_current: state.with_ipc(|client| client.get_string("hwdec-current")).ok().flatten(),
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::thread;
@@ -627,14 +914,140 @@ mod tests {
   }
 
   #[test]
-  fn build_play_args_embeds_window_and_disables_mpv_ui() {
-    let args = build_play_args(4242, r"\\.\pipe\fuvideo-test", r"E:\clips\sample.mkv");
+  fn build_player_args_embeds_window_and_keeps_the_process_alive() {
+    let config_dir = PathBuf::from(r"E:\config");
+    let args = build_player_args(4242, r"\\.\pipe\fuvideo-test", &Settings::default(), &config_dir);
 
     assert!(args.contains(&"--wid=4242".to_string()));
     assert!(args.contains(&r"--input-ipc-server=\\.\pipe\fuvideo-test".to_string()));
     assert!(args.contains(&"--osc=no".to_string()));
+    assert!(args.contains(&"--force-window=yes".to_string()));
+    assert!(args.contains(&"--idle=yes".to_string()), "常驻进程要停在待机状态");
     assert!(args.contains(&"--hwdec=auto-safe".to_string()));
-    assert_eq!(args.last(), Some(&r"E:\clips\sample.mkv".to_string()));
+    assert!(args.contains(&format!(
+      "--watch-later-dir={}",
+      watch_later_dir(&config_dir).display()
+    )));
+    // 换片走 IPC，启动参数里不能再带文件名
+    assert!(
+      args.iter().all(|arg| arg.starts_with("--")),
+      "启动参数里不该出现裸路径: {args:?}"
+    );
+  }
+
+  /// 没设置过的项一律不传：传了就等于把 mpv 自己的默认值顶掉。
+  #[test]
+  fn build_player_args_omits_unset_options() {
+    let args = build_player_args(1, r"\\.\pipe\p", &Settings::default(), Path::new(r"E:\config"));
+
+    for option in ["--sub-auto=", "--sub-font-size=", "--audio-channels=", "--audio-device="] {
+      assert!(
+        !args.iter().any(|arg| arg.starts_with(option)),
+        "没设置过的 {option} 不该出现在启动参数里"
+      );
+    }
+
+    assert!(args.contains(&"--save-position-on-quit=yes".to_string()));
+  }
+
+  #[test]
+  fn build_player_args_carries_configured_options() {
+    let settings = Settings {
+      hwdec: "d3d11va".to_string(),
+      save_position: false,
+      sub_auto: Some("fuzzy".to_string()),
+      sub_font_size: Some(48.0),
+      audio_channels: Some("stereo".to_string()),
+      audio_device: Some("wasapi/{dev}".to_string()),
+    };
+    let args = build_player_args(1, r"\\.\pipe\p", &settings, Path::new(r"E:\config"));
+
+    assert!(args.contains(&"--hwdec=d3d11va".to_string()));
+    assert!(args.contains(&"--save-position-on-quit=no".to_string()));
+    assert!(args.contains(&"--sub-auto=fuzzy".to_string()));
+    assert!(args.contains(&"--sub-font-size=48".to_string()));
+    assert!(args.contains(&"--audio-channels=stereo".to_string()));
+    assert!(args.contains(&"--audio-device=wasapi/{dev}".to_string()));
+  }
+
+  /// watch-later 必须落在应用自己的配置目录里，不能去动用户手装 mpv 的那份。
+  #[test]
+  fn watch_later_lives_under_the_app_config_dir() {
+    assert_eq!(
+      watch_later_dir(Path::new(r"E:\config")),
+      PathBuf::from(r"E:\config\watch-later")
+    );
+  }
+
+  #[test]
+  fn parse_tracks_reads_mpv_track_list() {
+    let value = serde_json::json!([
+      { "id": 1, "type": "video", "codec": "h264", "selected": true, "default": true },
+      { "id": 2, "type": "audio", "codec": "aac", "lang": "jpn", "title": "日语", "selected": false },
+      { "id": 3, "type": "sub", "external": true, "selected": false }
+    ]);
+
+    let tracks = parse_tracks(&value);
+
+    assert_eq!(tracks.len(), 3);
+    assert_eq!(tracks[0].kind, "video");
+    assert!(tracks[0].selected);
+    assert!(tracks[0].is_default);
+    assert_eq!(tracks[1].lang.as_deref(), Some("jpn"));
+    assert_eq!(tracks[1].title.as_deref(), Some("日语"));
+    assert!(!tracks[1].selected);
+    assert!(tracks[2].external, "外挂字幕要标出来");
+    assert_eq!(tracks[2].codec, None);
+  }
+
+  #[test]
+  fn parse_tracks_drops_entries_without_id_or_type() {
+    let value = serde_json::json!([{ "type": "audio" }, { "id": 9 }, { "id": 4, "type": "audio" }]);
+
+    let tracks = parse_tracks(&value);
+
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].id, 4);
+  }
+
+  #[test]
+  fn parse_tracks_tolerates_a_missing_property() {
+    assert!(parse_tracks(&serde_json::Value::Null).is_empty());
+  }
+
+  /// 前端按 camelCase 读字段，名字一旦对不上，界面会静默拿到 undefined。
+  #[test]
+  fn details_serialize_camel_case_fields() {
+    let details = PlayerDetails {
+      path: Some(r"E:\clips\a.mkv".to_string()),
+      tracks: vec![TrackInfo {
+        id: 2,
+        kind: "audio".to_string(),
+        title: None,
+        lang: Some("jpn".to_string()),
+        codec: Some("aac".to_string()),
+        selected: true,
+        external: false,
+        is_default: false,
+      }],
+      hwdec_current: Some("d3d11va".to_string()),
+    };
+
+    let value = serde_json::to_value(details).expect("序列化播放详情");
+
+    assert!(value.get("hwdecCurrent").is_some());
+    assert!(value.get("path").is_some());
+
+    let track = &value["tracks"][0];
+
+    for key in ["id", "kind", "title", "lang", "codec", "selected", "external", "default"] {
+      assert!(track.get(key).is_some(), "轨道缺少字段 {key}");
+    }
+  }
+
+  #[test]
+  fn idle_details_have_no_tracks() {
+    assert_eq!(idle_details(), PlayerDetails { path: None, tracks: Vec::new(), hwdec_current: None });
   }
 
   #[test]
@@ -738,6 +1151,28 @@ mod tests {
 
     if PathBuf::from(r"C:\Program Files\MPV Player\mpv.exe").is_file() {
       assert!(resolved.is_some(), "本机装了 mpv，应该能落到它");
+    }
+  }
+
+  /// 等某个数值属性达到期望值。换片是异步的，只能轮询。
+  fn wait_for_number_value(
+    client: &ipc::MpvIpc,
+    name: &str,
+    expected: f64,
+    timeout: Duration,
+  ) -> bool {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+      if matches!(client.get_number(name), Ok(Some(value)) if (value - expected).abs() < 0.5) {
+        return true;
+      }
+
+      if Instant::now() >= deadline {
+        return false;
+      }
+
+      thread::sleep(Duration::from_millis(100));
     }
   }
 
@@ -854,5 +1289,148 @@ mod tests {
       Some(false)
     );
 
+  }
+
+  /// 常驻内核的核心行为：同一个进程连续换片。
+  ///
+  /// 这条链路坏了，换片就会退化成「每次冷启动 + 每片重新找窗口」，
+  /// 而这两种毛病在界面上都表现为「点了下一集要卡一下」。
+  #[test]
+  fn loadfile_swaps_files_without_restarting_mpv() {
+    let Some(executable) = find_mpv() else {
+      eprintln!("本机未安装 mpv，跳过常驻内核集成测试");
+      return;
+    };
+
+    let pipe = next_pipe_name("test-loadfile");
+
+    let child = Command::new(&executable)
+      .args([
+        format!("--input-ipc-server={pipe}"),
+        "--vo=null".to_string(),
+        "--ao=null".to_string(),
+        "--no-terminal".to_string(),
+        "--no-config".to_string(),
+        "--idle=yes".to_string(),
+        "--pause=yes".to_string(),
+      ])
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("启动 mpv 失败");
+
+    let mut guard = ChildGuard(child);
+    let client = ipc::connect_with_retry(&pipe, Duration::from_secs(20)).expect("连上 mpv 的 IPC 管道");
+
+    // 启动时是空转的：这正是不带文件名的常驻进程该有的样子
+    assert_eq!(
+      client.get_number("duration").expect("读时长"),
+      None,
+      "还没载入文件时不该有时长"
+    );
+
+    // 两个源用不同画幅，换片成没成看画面尺寸最实在：
+    // lavfi 的 duration 在暂停态下只是个估算值，不能拿它当判据。
+    client
+      .load_file("av://lavfi:testsrc=duration=4:size=320x240:rate=30")
+      .expect("载入第一个文件");
+    client.set_flag("pause", false).expect("开始播放，解码器才会报出画面尺寸");
+
+    assert!(
+      wait_for_number_value(&client, "width", 320.0, Duration::from_secs(20)),
+      "第一个文件应该按 320 宽解码"
+    );
+
+    // 换片：同一个进程，只是换了文件
+    client
+      .load_file("av://lavfi:testsrc=duration=9:size=640x480:rate=30")
+      .expect("载入第二个文件");
+
+    assert!(
+      wait_for_number_value(&client, "width", 640.0, Duration::from_secs(20)),
+      "换片后应该按 640 宽解码"
+    );
+
+    assert!(
+      guard.0.try_wait().ok().flatten().is_none(),
+      "换片不该重启 mpv 进程"
+    );
+  }
+
+  /// 优雅退出：发 `quit` 而不是 kill，mpv 才有机会把 watch-later 落盘。
+  ///
+  /// 这是 P4「记忆播放位置」的地基——进程被 kill 掉的话，mpv 根本没有
+  /// 写文件的机会，界面再怎么记也没用。
+  #[test]
+  fn shutdown_lets_mpv_write_watch_later() {
+    let Some(executable) = find_mpv() else {
+      eprintln!("本机未安装 mpv，跳过优雅退出集成测试");
+      return;
+    };
+
+    let config_dir = std::env::temp_dir().join(format!("fuvideo-shutdown-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&config_dir);
+
+    let watch_later = watch_later_dir(&config_dir);
+    std::fs::create_dir_all(&watch_later).expect("建 watch-later 目录");
+
+    let pipe = next_pipe_name("test-quit");
+
+    let child = Command::new(&executable)
+      .args([
+        format!("--input-ipc-server={pipe}"),
+        "--vo=null".to_string(),
+        "--ao=null".to_string(),
+        "--no-terminal".to_string(),
+        "--no-config".to_string(),
+        "--idle=yes".to_string(),
+        "--pause=yes".to_string(),
+        "--save-position-on-quit=yes".to_string(),
+        format!("--watch-later-dir={}", watch_later.display()),
+      ])
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("启动 mpv 失败");
+
+    let state = PlayerState::default();
+    *state.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(child);
+    *state.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pipe.clone());
+
+    let client = ipc::connect_with_retry(&pipe, Duration::from_secs(20)).expect("连上 mpv 的 IPC 管道");
+    *state.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(client);
+
+    let source = "av://lavfi:testsrc=duration=30:size=320x240:rate=30";
+    state.with_ipc(|client| client.load_file(source)).expect("载入文件");
+    state.set_current_path(Some(source.to_string()));
+
+    // 等文件真的载进来，再跳到 3 秒：停在 0 秒的话 mpv 不会写 watch-later
+    let deadline = Instant::now() + Duration::from_secs(20);
+
+    while Instant::now() < deadline {
+      if state.with_ipc(|client| client.get_number("duration")).ok().flatten().is_some() {
+        break;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+
+    state.with_ipc(|client| client.seek_absolute(3.0)).expect("跳转");
+
+    state.shutdown();
+
+    assert!(!state.reap_dead_child(), "收尾之后不该还留着 mpv 进程");
+
+    let written: Vec<PathBuf> = std::fs::read_dir(&watch_later)
+      .expect("列 watch-later 目录")
+      .filter_map(Result::ok)
+      .map(|entry| entry.path())
+      .collect();
+
+    assert!(!written.is_empty(), "退出时应该写出 watch-later 记录");
+
+    let _ = std::fs::remove_dir_all(&config_dir);
   }
 }
