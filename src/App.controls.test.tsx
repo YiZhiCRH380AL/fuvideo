@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
       volume: 100,
       muted: false,
       speed: 1,
+      buffering: false,
     } as PlayerSnapshot,
     togglePause: vi.fn(async () => false),
     seekTo: vi.fn(async (_position: number) => {}),
@@ -92,6 +93,7 @@ beforeEach(() => {
     volume: 100,
     muted: false,
     speed: 1,
+    buffering: false,
   }
 
   for (const fn of [
@@ -142,6 +144,7 @@ async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}): Promis
     volume: 50,
     muted: false,
     speed: 1,
+    buffering: false,
     ...overrides,
   }
 
@@ -483,6 +486,113 @@ describe('侧边栏', () => {
 
     expect(await sidebar().findByText('这个目录里没有子目录或视频文件')).toBeInTheDocument()
     expect(sidebar().getByRole('button', { name: '上一级' })).toBeDisabled()
+  })
+})
+
+describe('动效', () => {
+  function stageElement(): HTMLElement {
+    const stage = document.querySelector('.stage')
+
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error('找不到舞台元素')
+    }
+
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 400,
+      right: 800,
+      bottom: 400,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    return stage
+  }
+
+  it('播放暂停按钮用的是形变图标', async () => {
+    await openPlayingVideo()
+
+    expect(screen.getByRole('button', { name: '暂停' }).querySelector('svg')).toBeInTheDocument()
+  })
+
+  it('单击视频区域切换播放暂停', async () => {
+    await openPlayingVideo()
+
+    fireEvent.click(stageElement())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+
+    expect(mocks.togglePause).toHaveBeenCalledTimes(1)
+  })
+
+  it('双击右半屏快进 10 秒并浮出提示', async () => {
+    await openPlayingVideo({ position: 0, duration: 100 })
+
+    const stage = stageElement()
+    fireEvent.click(stage, { clientX: 700, clientY: 200 })
+    fireEvent.doubleClick(stage, { clientX: 700, clientY: 200 })
+
+    expect(mocks.seekBy).toHaveBeenCalledWith(10)
+    expect(screen.getByText('+10s')).toBeInTheDocument()
+    expect(screen.getByTestId('flash-ripple')).toBeInTheDocument()
+    // 双击应该把待处理的单击取消掉，不能顺带暂停一次
+    expect(mocks.togglePause).not.toHaveBeenCalled()
+  })
+
+  it('双击左半屏快退 10 秒', async () => {
+    await openPlayingVideo({ position: 30, duration: 100 })
+
+    fireEvent.doubleClick(stageElement(), { clientX: 120, clientY: 200 })
+
+    expect(mocks.seekBy).toHaveBeenCalledWith(-10)
+    expect(screen.getByText('-10s')).toBeInTheDocument()
+  })
+
+  it('拖动进度条时浮出时间气泡，松手后收起', async () => {
+    await openPlayingVideo({ position: 10, duration: 100 })
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+
+    fireEvent.change(slider, { target: { value: '42' } })
+
+    expect(screen.getByTestId('scrub-bubble')).toHaveTextContent('0:42')
+
+    fireEvent.pointerUp(slider)
+
+    await waitFor(() => expect(screen.queryByTestId('scrub-bubble')).not.toBeInTheDocument())
+  })
+
+  it('从方格进播放页时有一层幕布展开', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    const tile = grid().getByRole('button', { name: 'demo.mp4' })
+    await userEvent.click(tile)
+    await userEvent.click(tile)
+
+    expect(await screen.findByTestId('curtain')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('curtain')).not.toBeInTheDocument(), { timeout: 2000 })
+  })
+
+  it('缓冲时舞台中央出现呼吸圈', async () => {
+    await openPlayingVideo({ buffering: true })
+
+    await waitFor(() => expect(screen.getByTestId('buffering')).toBeInTheDocument())
+  })
+
+  it('不缓冲时没有呼吸圈', async () => {
+    await openPlayingVideo()
+
+    expect(screen.queryByTestId('buffering')).not.toBeInTheDocument()
+  })
+
+  it('空状态有引导图标', async () => {
+    render(<App />)
+
+    expect(document.querySelector('.library__icon')).not.toBeNull()
   })
 })
 

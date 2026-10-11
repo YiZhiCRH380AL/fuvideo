@@ -27,6 +27,7 @@ export interface PlayerSnapshot {
   volume: number
   muted: boolean
   speed: number
+  buffering: boolean
 }
 
 export type BrowseKind = 'directory' | 'video'
@@ -54,6 +55,7 @@ const IDLE_SNAPSHOT: PlayerSnapshot = {
   volume: 100,
   muted: false,
   speed: 1,
+  buffering: false,
 }
 
 /** 是否跑在 Tauri 外壳里。浏览器里打开时返回 false。 */

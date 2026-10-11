@@ -59,12 +59,19 @@
   opacity: 0;
   pointer-events: none;
   transform: translateY(-8px);
+  /* 收起时不回弹，回弹只属于「出现」 */
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
 }
 
 .app[data-controls='hidden'] .controls {
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
 }
 
 .app__bar {
@@ -75,8 +82,8 @@
   padding: 12px 16px;
   background: var(--chrome);
   transition:
-    opacity var(--dur-normal) var(--ease),
-    transform var(--dur-normal) var(--ease);
+    opacity var(--dur-normal) var(--ease-spring),
+    transform var(--dur-normal) var(--ease-spring);
 }
 
 .app__wordmark {
@@ -146,9 +153,11 @@
 }
 
 .stage {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 0;
+  overflow: hidden;
 }
 
 .stage__empty {
@@ -191,8 +200,8 @@
   padding: 10px 16px 16px;
   background: var(--chrome);
   transition:
-    opacity var(--dur-normal) var(--ease),
-    transform var(--dur-normal) var(--ease);
+    opacity var(--dur-normal) var(--ease-spring),
+    transform var(--dur-normal) var(--ease-spring);
 }
 
 .controls__button {
@@ -830,9 +839,285 @@
   transition: width var(--dur-normal) var(--ease);
 }
 
+/* ---- 图标 ---- */
+
+.icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* ---- 双击左右半屏：涟漪 + 中央提示 ---- */
+
+.flash {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.flash__ripple {
+  position: absolute;
+  top: var(--y, 50%);
+  left: var(--x, 50%);
+  width: 200px;
+  height: 200px;
+  margin: -100px 0 0 -100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 255 255 / 20%), transparent 70%);
+  animation: ripple-out 620ms var(--ease) forwards;
+}
+
+@keyframes ripple-out {
+  from {
+    transform: scale(0.2);
+    opacity: 0.9;
+  }
+
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.flash__badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  animation: badge-float 700ms var(--ease) forwards;
+}
+
+@keyframes badge-float {
+  0% {
+    transform: translate(-50%, -40%) scale(0.9);
+    opacity: 0;
+  }
+
+  25% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-50%, -92%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---- 拖动进度条：轨道抬起 + 时间气泡跟随 ---- */
+
+.controls__progress::-webkit-slider-runnable-track {
+  transition:
+    height var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.controls__progress-wrap[data-scrubbing='true'] .controls__progress::-webkit-slider-runnable-track {
+  height: 6px;
+  box-shadow:
+    0 0 0 1px rgb(110 168 255 / 25%),
+    0 0 14px rgb(110 168 255 / 45%);
+}
+
+.controls__bubble {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 82%);
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+/* ---- 倍速菜单：整体缩放弹出，条目逐项错开 ---- */
+
+.speed-menu {
+  transform-origin: bottom right;
+  animation: menu-in 190ms var(--ease-spring);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.speed-menu__item {
+  animation: item-in 200ms var(--ease) backwards;
+}
+
+.speed-menu__item:nth-child(1) {
+  animation-delay: 24ms;
+}
+
+.speed-menu__item:nth-child(2) {
+  animation-delay: 48ms;
+}
+
+.speed-menu__item:nth-child(3) {
+  animation-delay: 72ms;
+}
+
+.speed-menu__item:nth-child(4) {
+  animation-delay: 96ms;
+}
+
+.speed-menu__item:nth-child(5) {
+  animation-delay: 120ms;
+}
+
+.speed-menu__item:nth-child(6) {
+  animation-delay: 144ms;
+}
+
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- 从方格进播放页的幕布 ---- */
+
+.curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--bg);
+  pointer-events: none;
+}
+
+/* ---- 缓冲：舞台中央的呼吸圈 + 进度条的脉动 ---- */
+
+.buffering {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border: 2px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: buffering-breathe 1.4s var(--ease) infinite;
+}
+
+@keyframes buffering-breathe {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.3;
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+}
+
+.controls__progress-wrap[data-buffering='true'] .controls__progress::-webkit-slider-runnable-track {
+  animation: track-pulse 1.3s var(--ease) infinite;
+}
+
+@keyframes track-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(110 168 255 / 0%);
+  }
+
+  50% {
+    box-shadow: 0 0 12px rgb(110 168 255 / 55%);
+  }
+}
+
+/* ---- 全屏切换：一下淡出，暗示画面重新排布 ---- */
+
+.screen-pulse {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #000;
+  pointer-events: none;
+  animation: screen-pulse 420ms var(--ease) forwards;
+}
+
+@keyframes screen-pulse {
+  from {
+    opacity: 0.5;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---- 空状态的引导图标 ---- */
+
+.library__icon {
+  display: block;
+  width: 56px;
+  height: 56px;
+  color: var(--accent);
+  animation: guide-float 3.6s var(--ease) infinite;
+}
+
+.library__icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+@keyframes guide-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.9;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app[data-stage='empty']::before,
-  .tile__placeholder {
+  .tile__placeholder,
+  .flash__ripple,
+  .flash__badge,
+  .speed-menu,
+  .speed-menu__item,
+  .buffering,
+  .library__icon,
+  .screen-pulse {
+    animation: none;
+  }
+
+  .controls__progress-wrap[data-buffering='true'] .controls__progress::-webkit-slider-runnable-track {
     animation: none;
   }
 

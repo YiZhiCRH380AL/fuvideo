@@ -1,4 +1,5 @@
 import { formatDuration } from '../lib/time'
+import PlayPauseIcon from './PlayPauseIcon'
 
 export interface IslandProps {
   title: string
@@ -26,7 +27,7 @@ export default function Island({ title, position, duration, paused, onOpen, onTo
           onClick={onTogglePause}
           aria-label={paused ? '播放' : '暂停'}
         >
-          {paused ? '▶' : '❚❚'}
+          <PlayPauseIcon paused={paused} />
         </button>
 
         <button

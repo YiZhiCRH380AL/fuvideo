@@ -16,6 +16,8 @@
   --dur-fast: 140ms;
   --dur-normal: 220ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* 带一点回弹的曲线，用在「出现」而不是「消失」上 */
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.5, 1);
 
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;

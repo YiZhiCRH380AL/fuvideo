@@ -8,7 +8,7 @@ export interface VideoGridProps {
   focusedPath: string | null
   currentPath: string | null
   onFocus: (path: string) => void
-  onOpen: (path: string) => void
+  onOpen: (path: string, from: DOMRect) => void
 }
 
 /**
@@ -99,7 +99,9 @@ export default function VideoGrid({
             type="button"
             title={video.name}
             aria-pressed={focused}
-            onClick={() => (focused ? onOpen(video.path) : onFocus(video.path))}
+            onClick={(event) =>
+              focused ? onOpen(video.path, event.currentTarget.getBoundingClientRect()) : onFocus(video.path)
+            }
           >
             {thumbnail === undefined ? (
               <span className="tile__placeholder" />

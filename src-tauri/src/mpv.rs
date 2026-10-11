@@ -450,6 +450,7 @@ pub struct PlayerSnapshot {
   pub volume: f64,
   pub muted: bool,
   pub speed: f64,
+  pub buffering: bool,
 }
 
 /// mpv 的默认音量与倍速，用作属性尚未就绪时的兜底。
@@ -467,6 +468,7 @@ fn idle_snapshot() -> PlayerSnapshot {
     volume: DEFAULT_VOLUME,
     muted: false,
     speed: DEFAULT_SPEED,
+    buffering: false,
   }
 }
 
@@ -496,6 +498,11 @@ pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
       .ok()
       .flatten()
       .unwrap_or(DEFAULT_SPEED),
+    buffering: state
+      .with_ipc(|client| client.get_bool("paused-for-cache"))
+      .ok()
+      .flatten()
+      .unwrap_or(false),
   }
 }
 
@@ -636,6 +643,7 @@ mod tests {
       "volume",
       "muted",
       "speed",
+      "buffering",
     ] {
       assert!(snapshot.get(key).is_some(), "快照缺少字段 {key}");
     }
@@ -778,6 +786,12 @@ mod tests {
     client.set_number("speed", 1.5).expect("设置倍速");
     let speed = wait_for_number(&client, "speed", Duration::from_secs(5)).expect("应能读到倍速");
     assert!((speed - 1.5).abs() < 0.01, "倍速应为 1.5，实际 {speed}");
+
+    // 本地文件不该处于缓冲等待
+    assert_eq!(
+      client.get_bool("paused-for-cache").expect("读缓冲状态"),
+      Some(false)
+    );
 
     let _ = child.kill();
     let _ = child.wait();
