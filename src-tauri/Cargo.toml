@@ -1,0 +1,27 @@
+[package]
+name = "fuvideo"
+version = "0.1.0"
+description = "futurevideo - 界面简洁、动效流畅的桌面视频播放器"
+authors = ["YiZhiCRH380AL"]
+license = "MIT"
+repository = "https://github.com/YiZhiCRH380AL/fuvideo"
+edition = "2024"
+rust-version = "1.90"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "fuvideo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.2" }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.12.3" }
+tauri-plugin-log = "2"
+rfd = "0.17.2"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

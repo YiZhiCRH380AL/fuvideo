@@ -1,0 +1,125 @@
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.app__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--chrome);
+}
+
+.app__wordmark {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.app__backend {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.app__error {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.stage {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+/* 只有浏览器里才需要自己铺底色，桌面端要露出 mpv 的画面 */
+html[data-shell='browser'] .stage {
+  background: var(--stage);
+}
+
+.stage__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.stage__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.stage__file {
+  max-width: 60ch;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.button:disabled {
+  opacity: 0.45;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 16px;
+  background: var(--chrome);
+}
+
+.controls__button {
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.controls__button:disabled {
+  opacity: 0.45;
+}
+
+.controls__time {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.controls__track {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--track);
+}
+
+.controls__track-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}

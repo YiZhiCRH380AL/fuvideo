@@ -48,6 +48,12 @@ tmp/
 temp/
 out/
 
+# ---- 测试产物 ----
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # ---- 媒体大文件（如不需要可删除本段）----
 *.mp4
 *.mov
