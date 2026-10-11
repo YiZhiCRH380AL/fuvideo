@@ -2,6 +2,109 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 下一步：P2 音频进阶（交接说明）
+
+> 写给接手的人：这一节是「接下来做什么、怎么做、哪里会踩坑」。已经做完的部分在下面的「上一阶段」里，
+> 每节末尾都有验证命令。动手前先读仓库根目录的 `AGENTS.md`（先在 GitHub 找可参考的仓库、每步都要有测试、
+> 每步都要提交并推送、改完回来更新本文件）。
+
+### 起点在哪
+
+- **播放内核**：mpv **常驻进程** + Windows 命名管道上的 JSON IPC，用 `--wid` 把画面嵌进主窗口。
+  入口是 [mpv.rs](src-tauri/src/mpv.rs)，管道读写是 [mpv/ipc.rs](src-tauri/src/mpv/ipc.rs)。
+  进程只启动一次，换片走 `loadfile`；退出前发 `quit`，好让 watch-later 落盘。
+- **全局偏好**：[settings.rs](src-tauri/src/settings.rs)，落在应用配置目录的 `settings.json`。
+- **界面**：React 覆盖在 mpv 画面之上。控制条（灵动岛）是 [Island.tsx](src/components/Island.tsx)，
+  浮层统一走 [Popover.tsx](src/components/Popover.tsx)（倍速菜单 `role=menu`，音轨与字幕面板 `role=dialog`），
+  面板内容在 [MediaPanel.tsx](src/components/MediaPanel.tsx)。
+- **详情通道**：`player_details` 返回轨道表与各项当前值；面板每次改动都是「发命令 → 重读真实状态」，
+  不在前端自己推演结果。新增功能请沿用这个模式。
+
+### P2 的目标
+
+给音频加一层「滤镜链」能力，对标 PotPlayer 的音效页：
+
+| 功能 | mpv 侧 |
+| --- | --- |
+| 均衡器 | `af` + `lavfi=[superequalizer=1b=3:2b=0:...]`（18 段） |
+| 响度归一化 | 静态：`--replaygain` / `--replaygain-preamp`（靠文件里的标签）；动态：`lavfi=[dynaudnorm]` 或 `lavfi=[loudnorm]` |
+| 变速不变调 | `audio-pitch-correction`（默认已开）+ `scaletempo2` |
+| 立体声扩展 / 环绕上混 | `lavfi=[extrastereo]`、`lavfi=[surround]`、`lavfi=[stereotools]` |
+| 声道重映射 | `audio-channel-map`，或 `lavfi=[pan]` / `lavfi=[channelmap]` |
+| 透传 | `--audio-spdif=ac3,dts,eac3,truehd,dts-hd` |
+| 采样率 / 位深 | `--audio-samplerate`、`--audio-format` |
+
+已经在本机核实过：`af`、`af-command`、`change-list` 三条命令存在（`mpv --input-cmdlist`），
+`superequalizer` / `equalizer` / `loudnorm` / `dynaudnorm` / `scaletempo2` / `rubberband` /
+`surround` / `channelmap` / `pan` / `stereotools` / `extrastereo` 这些滤镜存在（`mpv --af=help`）。
+
+### 动手前要先想清楚的四件事
+
+1. **滤镜链只能有一个组装点**。正确做法是「读设置 → 拼成一条有序的滤镜列表 → `af set`」，
+   或者 `change-list af clr` 之后逐条 `append`。不要让每个开关各改一次 `af`——两个功能一叠加
+   就会互相覆盖。顺序也有讲究（增益类应该排在动态压缩之前），把顺序的理由写进注释里。
+2. **实时调参是难点**。`af-command` 只对实现了命令接口的滤镜有效，`lavfi=[...]` 桥接过来的
+   ffmpeg 滤镜**大概率不支持**（这一条**没实测**，动手第一件事就是验证）。
+   不支持就只能重建滤镜链，代价是**一次立刻能听出来的瞬断**：所以如果做滑块，
+   必须节流——拖动过程中只更新界面，松手才提交。
+3. **透传和滤镜互斥**。开了 `audio-spdif` 之后音频不再经过滤镜链，均衡器、响度归一化全部失效。
+   界面上要互斥提示，否则用户会以为「开了没反应」是 BUG。
+4. **每片还是全局要想清楚**。`watch-later-options` 的默认列表里包含 `af`，也就是说滤镜链天然
+   会「跟着片子走」。但均衡器其实是耳机/音箱的事，不是某一部片子的事，做成全局偏好更符合直觉。
+   如果按全局做，就要在 `play_video` 载入文件之后重新应用一遍全局设置，别被 watch-later 的旧值盖住。
+
+### 需要用户拍板的（开工前先问，别自己定）
+
+**界面形态**：只给几个开关（响度归一化、虚拟环绕、变速不变调），还是「预设 + 高级展开」
+（音乐 / 电影 / 夜间模式，展开后是 18 段滑块）？后者工作量大得多，而且直接决定上面第 2 点的复杂度。
+用户还没回答这个问题。
+
+### 可以参考的开源实现（AGENTS.md 要求先找现成的）
+
+GitHub 上有现成的 mpv 均衡器脚本，滤镜怎么挂、预设怎么组织可以直接看，不必从零设计：
+
+- `akFace/equalizer-gui`：mpv 的 10 段均衡器 GUI 脚本，带自动保存与持久化。
+- `mrffr/mpv-headphone-eq`：按耳机型号切换 EQ 的脚本。
+- `mfcc64/mpv-scripts`：mpv 脚本合集（星标最多的那一批）。
+
+它们是跑在 mpv 内部的 Lua 脚本，和我们的「外部进程 + IPC」架构不同，但**滤镜链的拼法与预设的组织方式可以直接借鉴**。
+
+### 测试怎么写
+
+沿用现有两种套路：
+
+- **纯函数单测**：预设 → band 参数的映射、滤镜链的拼接顺序、设置项规范化。放在 Rust 侧
+  （照 `parse_tracks` / `clamp_range` 的样子）或前端 `src/lib/` 里。
+- **真实 mpv 的集成测试**：`mpv.rs` 的测试模块里已经有 `spawn_headless` 辅助函数可以复用——
+  挂上滤镜后读 `af` 属性，断言链上确实出现了那个滤镜；读 `audio-format` / `audio-samplerate`
+  断言设置生效。这类测试跑在 `--ao=null` 下**不会出声**；
+  **不要**在测试里改音频输出设备，那会在真机上真的切走声音。
+
+### 交付标准
+
+和 P0、P1 一样：`npm run typecheck`、`npm run lint`、`npm run test:run`、`npm run test:e2e`、
+`npm run build`、`cd src-tauri && cargo test` 全绿；按功能拆成几个 commit 推到 GitHub；
+最后把「做完了什么 + 下一个阶段」更新回本文件。
+
+## 上一阶段：教程补上音轨与字幕（已完成）
+
+P1 加的东西教程里没讲，这次补上：
+
+- **教程多一屏**：[Tutorial.tsx](src/components/Tutorial.tsx) 在「底部的灵动岛」之后插入
+  「音轨、字幕在这里换」，讲清音频页有什么、外挂字幕怎么挂、双语字幕与延迟字号在哪，
+  以及「选过的音轨和字幕会跟着这个视频记住」。步骤结构新增 `points` 字段：键帽那一列回答
+  「按哪个键」，这一列回答「能做什么」，视觉上也分开——见 [Tutorial.css](src/components/Tutorial.css)
+  里那个圆点列表。
+- **[README](README.md) 同步**：控制条那张表补上「音轨与字幕」一行，新增一节讲这两页怎么用，
+  并把「已知限制」里已经过期的「字幕、记忆播放位置还在计划中」改掉——这两样现在都能用了。
+- **测试**：教程用例原先写死翻 3 页，改成「看按钮在不在」来翻页，以后加减步骤不会再假失败；
+  新增一条断言这一屏确实讲了外挂字幕；e2e 的教程用例改成逐屏断言内容（也顺带盯住了步骤顺序）。
+
+验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（150 个）、`npm run test:e2e`（7 个）、
+`npm run build`、`cd src-tauri && cargo test`（53 个）全绿。
+
+**下一步**：见文件开头的「P2 音频进阶（交接说明）」。
+
 ## 上一阶段：P1 音频与字幕（已完成）
 
 把播放中最常用的两件事接了出来：换音轨、换输出设备、调声道，以及外挂字幕。
@@ -41,10 +144,8 @@
 **还没验证到的**：面板在真机上的视觉与手感（列表长度、面板高度、窄窗口下会不会挤），
 需要 `npm run tauri dev` 实际点一遍；切换输出设备时的断音与失败回退也只有真机能感受到。
 
-**下一步（P2）**：均衡器（18 段 `superequalizer`）、响度归一化（`loudnorm` / `dynaudnorm`）、
-变速不变调（`scaletempo2` + `audio-pitch-correction`）、立体声扩展与环绕上混、透传
-（`audio-spdif`）、采样率与位深。P2 全是音频滤镜链，动手前要先定滤镜链的界面形态
-（预设 + 高级展开，还是只给几个开关）。
+**下一步（P2）**：音频滤镜链（均衡器、响度归一化、变速不变调、环绕上混、透传、采样率与位深）。
+完整的交接说明在文件开头的「下一步：P2 音频进阶（交接说明）」。
 
 ## 上一阶段：P0 地基（已完成）
 
@@ -269,6 +370,8 @@ e2e 覆盖「打开面板时界面不会隐去」。
 风险：切换输出设备会重建音频管线，有短暂断音，个别驱动下可能失败——需要提示与回退。
 
 ### P2 音频进阶
+
+（下一步就是它，动手前先看文件开头的「P2 音频进阶（交接说明）」）
 
 - 均衡器 `superequalizer`（18 段）+ 预设；响度归一化 `loudnorm` / `dynaudnorm`。
 - 变速不变调 `scaletempo2` / `rubberband` + `audio-pitch-correction`。
