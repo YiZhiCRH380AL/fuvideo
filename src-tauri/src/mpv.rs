@@ -151,6 +151,8 @@ impl PlayerState {
     let args = build_player_args(window_handle, &pipe, settings, config_dir);
     let child = spawn_player(executable, &args)?;
 
+    prepare_watch_later_dir(settings, config_dir);
+
     *self.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(child);
     *self.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
@@ -458,6 +460,20 @@ pub fn build_player_args(
 /// 属于用户手装的 mpv，跟这个应用无关。
 pub fn watch_later_dir(config_dir: &Path) -> PathBuf {
   config_dir.join("watch-later")
+}
+
+/// 提前把 watch-later 目录建出来。
+///
+/// mpv 写不进去是**静默失败**的，表现就是「记住播放位置」莫名其妙不生效，
+/// 所以目录由我们自己保证存在，不指望 mpv 顺手创建。关掉记住位置就不必建。
+fn prepare_watch_later_dir(settings: &Settings, config_dir: &Path) -> Option<PathBuf> {
+  if !settings.save_position {
+    return None;
+  }
+
+  let directory = watch_later_dir(config_dir);
+
+  std::fs::create_dir_all(&directory).ok().map(|()| directory)
 }
 
 /// 启动 mpv。参数由调用方决定，测试里可以只换参数不换逻辑。
@@ -977,6 +993,26 @@ mod tests {
       watch_later_dir(Path::new(r"E:\config")),
       PathBuf::from(r"E:\config\watch-later")
     );
+  }
+
+  #[test]
+  fn watch_later_directory_is_created_up_front() {
+    let config_dir = std::env::temp_dir().join(format!("fuvideo-watch-later-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&config_dir);
+
+    let created = prepare_watch_later_dir(&Settings::default(), &config_dir);
+
+    assert_eq!(created, Some(watch_later_dir(&config_dir)));
+    assert!(watch_later_dir(&config_dir).is_dir(), "目录要真的建出来");
+
+    // 关掉「退出时记住位置」就不必建，免得留下一堆用不上的目录
+    let without_saving = Settings {
+      save_position: false,
+      ..Settings::default()
+    };
+    assert_eq!(prepare_watch_later_dir(&without_saving, &config_dir), None);
+
+    let _ = std::fs::remove_dir_all(&config_dir);
   }
 
   #[test]

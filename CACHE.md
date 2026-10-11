@@ -13,6 +13,7 @@
   建出来，载入文件之后会再补一次。
 - **优雅退出**：应用退出时先发 `quit` 再回收进程（超时 3 秒才强杀），mpv 才有机会把
   watch-later 落盘。watch-later 目录指向应用配置目录，不去动用户自己那份 `%APPDATA%\mpv`。
+  目录在启动播放进程时提前建好——mpv 写不进去是静默失败，不建就等于「记住播放位置」悄悄失效。
   由此开启了「退出时记住播放位置」：同一个文件下次打开会从上次的位置接着播。
 - **设置存储**：[settings.rs](src-tauri/src/settings.rs)。应用配置目录下的 `settings.json`，
   目前覆盖硬解、是否记住位置、字幕自动加载、字幕字号、声道布局、音频设备。
@@ -40,7 +41,7 @@
 - `src/lib/backend.test.ts`：浏览器环境下详情与设置的兜底。
 
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（119 个）、
-`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（44 个）全绿。
+`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（45 个）全绿。
 
 **还没验证到的**：窗口嵌入属于原生子窗口那一层，自动化测试覆盖不到。这次改的是「什么时候
 去找那个窗口」，需要真机 `npm run tauri dev` 点开一个视频确认画面正常。
