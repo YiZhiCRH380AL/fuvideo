@@ -64,6 +64,9 @@
 }
 
 .app__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -73,6 +76,10 @@
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
+}
+
+.app__toggle-label {
+  font-size: 12px;
 }
 
 .app__toggle:hover {

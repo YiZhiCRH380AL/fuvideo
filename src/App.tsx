@@ -460,7 +460,8 @@ export default function App() {
             aria-expanded={sidebarOpen}
             aria-label="视频库"
           >
-            ☰
+            <span aria-hidden="true">☰</span>
+            <span className="app__toggle-label">视频库</span>
           </button>
           <span className="app__wordmark">futurevideo</span>
           {currentFile ? (
