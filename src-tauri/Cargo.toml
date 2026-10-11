@@ -1,6 +1,6 @@
 [package]
 name = "fuvideo"
-version = "0.1.0-Alpha"
+version = "0.1.1-Alpha"
 description = "futurevideo - 界面简洁、动效流畅的桌面视频播放器"
 authors = ["YiZhiCRH380AL"]
 license = "MIT"

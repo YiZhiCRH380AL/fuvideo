@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "fuvideo",
-  "version": "0.1.0-Alpha",
+  "version": "0.1.1-Alpha",
   "identifier": "com.fuvideo.desktop",
   "build": {
     "frontendDist": "../dist",
