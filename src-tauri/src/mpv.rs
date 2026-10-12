@@ -80,6 +80,11 @@ pub struct PlayerState {
   /// 启动播放进程之前主窗口已经有的子窗口。
   /// mpv 新建的那个就是「不在这个表里」的那一个，换片时可以照这个再找一次。
   window_baseline: Mutex<Vec<isize>>,
+  /// 播放中记下的片子时长。
+  ///
+  /// 播完之后 mpv 会把文件卸掉进入待机，`duration` / `time-pos` 都读不出来了；
+  /// 没有这个兜底，界面上会从片尾一下子跳回 0:00。
+  last_duration: Mutex<f64>,
 }
 
 impl PlayerState {
@@ -99,6 +104,7 @@ impl PlayerState {
     *self.child_window.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     *self.window_baseline.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Vec::new();
+    *self.last_duration.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0.0;
   }
 
   /// 有没有一个还活着的播放进程；顺手把已经退出的那具清掉。
@@ -241,6 +247,21 @@ impl PlayerState {
   /// 所以当前文件由我们自己维护。
   fn set_current_path(&self, path: Option<String>) {
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = path;
+  }
+
+  /// 播放中记下时长；播完之后靠它告诉界面「停在片尾」。
+  fn remember_duration(&self, duration: f64) {
+    if duration > 0.0 {
+      *self.last_duration.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = duration;
+    }
+  }
+
+  fn last_duration(&self) -> f64 {
+    *self.last_duration.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+  }
+
+  fn forget_duration(&self) {
+    *self.last_duration.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = 0.0;
   }
 
   fn current_path(&self) -> Option<String> {
@@ -681,6 +702,9 @@ pub fn play_video(
     let _ = state.with_ipc(|client| client.write_watch_later());
   }
 
+  // 换片：上一个文件的时长不能再拿来兜底了
+  state.forget_duration();
+
   state.with_ipc(|client| client.load_file(&path))?;
   state.set_current_path(Some(path));
 
@@ -714,6 +738,9 @@ pub struct PlayerSnapshot {
   pub muted: bool,
   pub speed: f64,
   pub buffering: bool,
+  /// mpv 当前处于待机：片子播完了（文件被卸掉），或者还没载入过文件。
+  /// 播放列表靠它判断「这一集看完了，该下一个了」。
+  pub idle_active: bool,
 }
 
 /// mpv 的默认音量与倍速，用作属性尚未就绪时的兜底。
@@ -732,6 +759,7 @@ fn idle_snapshot() -> PlayerSnapshot {
     muted: false,
     speed: DEFAULT_SPEED,
     buffering: false,
+    idle_active: false,
   }
 }
 
@@ -742,13 +770,58 @@ pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
     return idle_snapshot();
   };
 
+  let ipc_ready = state.ipc_ready();
+  // 放在最后取，让前面几次调用有机会把连接懒建立起来
+  let idle = state
+    .with_ipc(|client| client.get_bool("idle-active"))
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+
+  if idle {
+    /*
+     * 播完一个文件之后 mpv 会把它卸掉进入待机，`duration` / `time-pos` 都读不出来。
+     * 直接报 0 的话界面会从片尾跳回 0:00，所以这里报「停在片尾」。
+     */
+    let duration = state.last_duration();
+
+    return PlayerSnapshot {
+      has_media: true,
+      ipc_ready,
+      path: Some(path),
+      position: duration,
+      duration,
+      paused: true,
+      volume: state
+        .with_ipc(|client| client.get_number("volume"))
+        .ok()
+        .flatten()
+        .unwrap_or(DEFAULT_VOLUME),
+      muted: state.with_ipc(|client| client.get_bool("mute")).ok().flatten().unwrap_or(false),
+      speed: state
+        .with_ipc(|client| client.get_number("speed"))
+        .ok()
+        .flatten()
+        .unwrap_or(DEFAULT_SPEED),
+      buffering: false,
+      idle_active: true,
+    };
+  }
+
+  let duration = state
+    .with_ipc(|client| client.get_number("duration"))
+    .ok()
+    .flatten()
+    .unwrap_or(0.0);
+
+  state.remember_duration(duration);
+
   PlayerSnapshot {
     has_media: true,
-    // 放在最后取，让前面几次调用有机会把连接懒建立起来
-    ipc_ready: state.ipc_ready(),
+    ipc_ready,
     path: Some(path),
     position: state.with_ipc(|client| client.get_number("time-pos")).ok().flatten().unwrap_or(0.0),
-    duration: state.with_ipc(|client| client.get_number("duration")).ok().flatten().unwrap_or(0.0),
+    duration,
     paused: state.with_ipc(|client| client.get_bool("pause")).ok().flatten().unwrap_or(false),
     volume: state
       .with_ipc(|client| client.get_number("volume"))
@@ -766,6 +839,7 @@ pub fn player_state(state: tauri::State<'_, PlayerState>) -> PlayerSnapshot {
       .ok()
       .flatten()
       .unwrap_or(false),
+    idle_active: false,
   }
 }
 
@@ -1740,6 +1814,7 @@ mod tests {
       "muted",
       "speed",
       "buffering",
+      "idleActive",
     ] {
       assert!(snapshot.get(key).is_some(), "快照缺少字段 {key}");
     }

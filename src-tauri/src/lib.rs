@@ -1,4 +1,5 @@
 mod audio;
+mod collections;
 mod library;
 mod mpv;
 mod sample;
@@ -94,6 +95,10 @@ pub fn run() {
       settings::read_settings,
       settings::write_settings,
       sample::prepare_sample_folder,
+      collections::read_collections,
+      collections::toggle_playlist,
+      collections::shift_in_playlist,
+      collections::toggle_favorite,
       library::pick_directory,
       library::list_directory,
       library::list_drives,
