@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileName, pathSegments } from './path'
+import { fileName, parentDirectory, pathSegments } from './path'
 
 describe('fileName', () => {
   it('取出 Windows 路径的文件名', () => {
@@ -60,3 +60,22 @@ describe('pathSegments', () => {
     expect(pathSegments('   ')).toEqual([])
   })
 })
+describe('parentDirectory', () => {
+  it('取文件所在的目录', () => {
+    expect(parentDirectory(String.raw`E:\clips\anime\ep01.mkv`)).toBe(String.raw`E:\clips\anime`)
+  })
+
+  it('盘符根目录下的文件，父目录就是盘符根目录', () => {
+    expect(parentDirectory(String.raw`E:\demo.mp4`)).toBe('E:\\')
+  })
+
+  it('混用分隔符也能取对', () => {
+    expect(parentDirectory('E:/clips/anime/ep01.mkv')).toBe(String.raw`E:\clips\anime`)
+  })
+
+  it('只有文件名时没有目录', () => {
+    expect(parentDirectory('demo.mp4')).toBe('')
+    expect(parentDirectory('')).toBe('')
+  })
+})
+

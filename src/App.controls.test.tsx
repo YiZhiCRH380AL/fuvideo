@@ -9,6 +9,7 @@ import { markTutorialSeen } from './lib/tutorial'
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
 const DEMO = String.raw`E:\clips\demo.mp4`
+const OTHER = String.raw`E:\clips\other.mkv`
 const IDLE: PlayerSnapshot = {
   hasMedia: false,
   ipcReady: false,
@@ -20,6 +21,7 @@ const IDLE: PlayerSnapshot = {
   muted: false,
   speed: 1,
   buffering: false,
+  idleActive: false,
 }
 
 // vi.hoisted 保证这些 mock 在模块导入之前就已经就绪
@@ -59,6 +61,12 @@ const mocks = vi.hoisted(() => {
     /** 后端把自带的示例文件复制到这里，再当作普通目录打开。 */
     sampleFolder: String.raw`C:\Users\zhan2\AppData\Roaming\com.fuvideo.desktop\示例视频`,
     prepareSampleFolder: vi.fn(),
+    /** 播放列表与收藏夹：mock 里也要真的改，界面才拿得到「改完之后」的列表。 */
+    collections: { playlist: [] as string[], favorites: [] as string[] },
+    getCollections: vi.fn(),
+    togglePlaylist: vi.fn(),
+    shiftInPlaylist: vi.fn(),
+    toggleFavorite: vi.fn(),
     // 设置页要用的一份设置：字段和 Rust 侧对齐，少一个字段界面就会读成 undefined
     settings: {
       hwdec: 'auto-safe',
@@ -116,6 +124,10 @@ vi.mock('./lib/backend', () => ({
   toggleFullscreen: () => mocks.toggleFullscreen(),
   pickDirectory: () => mocks.pickDirectory(),
   prepareSampleFolder: () => mocks.prepareSampleFolder(),
+  getCollections: () => mocks.getCollections(),
+  togglePlaylist: (path: string) => mocks.togglePlaylist(path),
+  shiftInPlaylist: (path: string, delta: number) => mocks.shiftInPlaylist(path, delta),
+  toggleFavorite: (path: string) => mocks.toggleFavorite(path),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
   listDrives: () => mocks.listDrives(),
   thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
@@ -197,6 +209,10 @@ beforeEach(() => {
     mocks.listDrives,
     mocks.thumbnailAt,
     mocks.prepareSampleFolder,
+    mocks.getCollections,
+    mocks.togglePlaylist,
+    mocks.shiftInPlaylist,
+    mocks.toggleFavorite,
   ]) {
     fn.mockClear()
   }
@@ -210,6 +226,42 @@ beforeEach(() => {
   )
   mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,AAAA')
   mocks.prepareSampleFolder.mockResolvedValue(mocks.sampleFolder)
+
+  // 列表的 mock 要真的增删改，界面拿返回值更新自己
+  mocks.collections = { playlist: [], favorites: [] }
+  mocks.getCollections.mockImplementation(async () => mocks.collections)
+  mocks.togglePlaylist.mockImplementation(async (path: string) => {
+    const contains = mocks.collections.playlist.includes(path)
+    const playlist = contains
+      ? mocks.collections.playlist.filter((item) => item !== path)
+      : [...mocks.collections.playlist, path]
+
+    mocks.collections = { ...mocks.collections, playlist }
+    return mocks.collections
+  })
+  mocks.shiftInPlaylist.mockImplementation(async (path: string, delta: number) => {
+    const playlist = [...mocks.collections.playlist]
+    const index = playlist.indexOf(path)
+    const target = index + delta
+
+    if (index >= 0 && target >= 0 && target < playlist.length) {
+      const moved = playlist[index]
+      playlist[index] = playlist[target]
+      playlist[target] = moved
+    }
+
+    mocks.collections = { ...mocks.collections, playlist }
+    return mocks.collections
+  })
+  mocks.toggleFavorite.mockImplementation(async (path: string) => {
+    const contains = mocks.collections.favorites.includes(path)
+    const favorites = contains
+      ? mocks.collections.favorites.filter((item) => item !== path)
+      : [...mocks.collections.favorites, path]
+
+    mocks.collections = { ...mocks.collections, favorites }
+    return mocks.collections
+  })
 })
 
 const grid = () => within(screen.getByTestId('video-grid'))
@@ -235,6 +287,7 @@ async function openPlayingVideo(overrides: Partial<PlayerSnapshot> = {}): Promis
     muted: false,
     speed: 1,
     buffering: false,
+    idleActive: false,
     ...overrides,
   }
 
@@ -901,3 +954,103 @@ describe('进度条悬停预览', () => {
     expect(mocks.thumbnailAt.mock.calls.length).toBe(before)
   })
 })
+describe('播放列表与收藏夹', () => {
+  it('方格上那两颗按钮是加列表和收藏', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    expect(screen.getByRole('button', { name: '把 demo.mp4 加入播放列表' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '收藏 demo.mp4' })).toBeInTheDocument()
+  })
+
+  it('点一下加进播放列表，按钮跟着变成「移出」', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    await userEvent.click(screen.getByRole('button', { name: '把 demo.mp4 加入播放列表' }))
+
+    await waitFor(() => expect(mocks.togglePlaylist).toHaveBeenCalledWith(DEMO))
+    // 拿后端返回的列表更新界面：它已经在里面了
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '把 demo.mp4 移出播放列表' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+  })
+
+  it('收藏之后按钮变成已收藏', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    await userEvent.click(screen.getByRole('button', { name: '收藏 demo.mp4' }))
+
+    await waitFor(() => expect(mocks.toggleFavorite).toHaveBeenCalledWith(DEMO))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '取消收藏 demo.mp4' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+  })
+
+  it('右上角的按钮打开播放列表，能调顺序、能移出', async () => {
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+
+    const list = within(await screen.findByTestId('playlist-list'))
+
+    expect(list.getAllByRole('listitem')).toHaveLength(2)
+    // 第一条不能再往上挪
+    expect(list.getByRole('button', { name: '把 demo.mp4 上移' })).toBeDisabled()
+
+    await userEvent.click(list.getByRole('button', { name: '把 demo.mp4 下移' }))
+    await waitFor(() => expect(mocks.shiftInPlaylist).toHaveBeenCalledWith(DEMO, 1))
+
+    await userEvent.click(list.getByRole('button', { name: '把 demo.mp4 从播放列表移出' }))
+    await waitFor(() => expect(mocks.togglePlaylist).toHaveBeenCalledWith(DEMO))
+  })
+
+  it('播放列表空着的时候告诉用户怎么加进来', async () => {
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+
+    expect(await screen.findByTestId('playlist-empty')).toHaveTextContent('鼠标移到方格上')
+  })
+
+  it('收藏夹里点那行小字：跳到所在目录，并把那一格高亮出来', async () => {
+    mocks.collections = { playlist: [], favorites: [DEMO] }
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '收藏夹' }))
+
+    const list = within(await screen.findByTestId('favorites-list'))
+    await userEvent.click(list.getByRole('button', { name: String.raw`跳到 E:\clips` }))
+
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS))
+
+    const tile = grid().getByRole('button', { name: 'demo.mp4' }).closest('.tile')
+    await waitFor(() => expect(tile).toHaveAttribute('data-highlight', 'true'))
+  })
+
+  it('当前视频播完（mpv 进入待机）就自动播列表里的下一个', async () => {
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+
+    await openPlayingVideo({ idleActive: true })
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(OTHER))
+  })
+
+  it('列表里没有下一个就停在原地', async () => {
+    mocks.collections = { playlist: [DEMO], favorites: [] }
+
+    await openPlayingVideo({ idleActive: true })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    // 只有点方格那一次播放
+    expect(mocks.playLocalVideo).toHaveBeenCalledTimes(1)
+  })
+})
+

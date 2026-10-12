@@ -28,6 +28,8 @@ export interface PlayerSnapshot {
   muted: boolean
   speed: number
   buffering: boolean
+  /** mpv 正在待机：片子播完了，或者还没载入过文件。自动连播靠它判断「这一集看完了」。 */
+  idleActive: boolean
 }
 
 /** 一条轨道：视频、音频或字幕。 */
@@ -179,6 +181,13 @@ const IDLE_SNAPSHOT: PlayerSnapshot = {
   muted: false,
   speed: 1,
   buffering: false,
+  idleActive: false,
+}
+
+/** 播放列表与收藏夹。两个都是一串路径，顺序就是播放顺序。 */
+export interface Collections {
+  playlist: string[]
+  favorites: string[]
 }
 
 /** 是否跑在 Tauri 外壳里。浏览器里打开时返回 false。 */
@@ -422,6 +431,26 @@ export function setAudioFormat(format: string | null): Promise<PlayerSettings> {
 /** 音频透传。开着的时候所有滤镜都会失效。 */
 export function setAudioSpdif(enabled: boolean): Promise<PlayerSettings> {
   return settingsCommand('set_audio_spdif', { enabled })
+}
+
+/** 读播放列表与收藏夹。 */
+export function getCollections(): Promise<Collections> {
+  return playerCommand<Collections>('read_collections')
+}
+
+/** 把视频加进播放列表；已经在里面就移出。返回改完之后的列表。 */
+export function togglePlaylist(path: string): Promise<Collections> {
+  return playerCommand<Collections>('toggle_playlist', { path })
+}
+
+/** 在播放列表里挪一格：`delta` 为负是往上。 */
+export function shiftInPlaylist(path: string, delta: number): Promise<Collections> {
+  return playerCommand<Collections>('shift_in_playlist', { path, delta })
+}
+
+/** 收藏 / 取消收藏某个视频。 */
+export function toggleFavorite(path: string): Promise<Collections> {
+  return playerCommand<Collections>('toggle_favorite', { path })
 }
 
 /** 跳转到指定秒数。 */

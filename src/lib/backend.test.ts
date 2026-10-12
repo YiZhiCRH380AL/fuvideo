@@ -4,6 +4,7 @@ import {
   addSubtitleFile,
   describeProbe,
   getAudioOptions,
+  getCollections,
   getAudioDevices,
   getBackendStatus,
   getPlayerDetails,
@@ -15,6 +16,9 @@ import {
   setAudioSpdif,
   setAudioTrack,
   setEqualizerPreset,
+  shiftInPlaylist,
+  toggleFavorite,
+  togglePlaylist,
   writeSettings,
 } from './backend'
 
@@ -88,5 +92,12 @@ describe('播放控制类命令', () => {
 
   it('示例文件夹要在桌面端才能准备', async () => {
     await expect(prepareSampleFolder()).rejects.toThrow('桌面应用')
+  })
+
+  it('播放列表与收藏夹也要在桌面端才能读写', async () => {
+    await expect(getCollections()).rejects.toThrow('桌面应用')
+    await expect(togglePlaylist('E:\\clips\\demo.mp4')).rejects.toThrow('桌面应用')
+    await expect(shiftInPlaylist('E:\\clips\\demo.mp4', 1)).rejects.toThrow('桌面应用')
+    await expect(toggleFavorite('E:\\clips\\demo.mp4')).rejects.toThrow('桌面应用')
   })
 })

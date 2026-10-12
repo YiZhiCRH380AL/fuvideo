@@ -711,6 +711,87 @@
   outline-offset: 2px;
 }
 
+/*
+ * 打开那一格。卡片本身（.tile）只是个容器：动作按钮不能嵌进按钮里，
+ * 所以「打开」是单独一颗铺满整卡的按钮。
+ */
+.tile__open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tile__open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 鼠标移到方格上（或键盘焦点进来）才浮出来的两个动作 */
+.tile__actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.tile:hover .tile__actions,
+.tile:focus-within .tile__actions {
+  opacity: 1;
+}
+
+.tile__action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 62%);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.tile__action:hover {
+  background: rgb(0 0 0 / 85%);
+}
+
+.tile__action[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+/* 从收藏夹跳过来时把这一格晃两下，扫一眼就能找到 */
+.tile[data-highlight='true'] {
+  border-color: var(--accent);
+  animation: tile-highlight 1.1s var(--ease) 2;
+}
+
+@keyframes tile-highlight {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgb(110 168 255 / 30%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgb(110 168 255 / 55%);
+  }
+}
+
 /* 画面区：定住 16:9，缩略图在里面自己缩放，卡片本身不动 */
 .tile__frame {
   position: relative;
@@ -1109,6 +1190,118 @@
   transform: translateX(-50%);
 }
 
+/* 顶栏上带浮层的按钮：自己就是浮层的定位锚点 */
+.app__collection {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
+/* 播放列表 / 收藏夹的面板 */
+.paths {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.paths__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.paths__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.paths__name {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.paths__name:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.paths__tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.paths__tool {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.paths__tool:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.paths__tool:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* 收藏夹里那行小字：点它跳到文件所在的目录，而不是播放 */
+.paths__where {
+  overflow: hidden;
+  padding: 0 8px 4px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.paths__where:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.paths__empty {
+  margin: 0;
+  max-width: 260px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
 /* ============ 浮层面板 ============ */
 
 /*
@@ -1117,6 +1310,8 @@
  */
 .popover {
   position: absolute;
+  /* 要盖住底下的方格墙：顶栏的浮层得比它高一层 */
+  z-index: 5;
   right: 0;
   bottom: calc(100% + 8px);
   display: flex;
@@ -1200,6 +1395,13 @@
   gap: 10px;
   padding: 10px;
   overflow-y: auto;
+}
+
+/* 从顶栏展开的面板：挂在按钮下面，而不是像灵动岛那样往上弹 */
+.popover--down {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform-origin: top right;
 }
 
 .media {

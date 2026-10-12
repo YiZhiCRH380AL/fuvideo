@@ -10,15 +10,18 @@ import {
 } from 'react'
 import './App.css'
 import Crumbs from './components/Crumbs'
+import CollectionsPanel from './components/CollectionsPanel'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
 import MediaPanel from './components/MediaPanel'
+import Popover from './components/Popover'
 import SettingsPage from './components/SettingsPage'
 import Splash from './components/Splash'
 import Tutorial from './components/Tutorial'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
   getBackendStatus,
+  getCollections,
   getPlayerState,
   isTauri,
   listDirectory,
@@ -31,15 +34,19 @@ import {
   seekTo,
   setSpeed,
   setVolume,
+  shiftInPlaylist,
   thumbnailAt,
+  toggleFavorite,
   toggleFullscreen,
   toggleMute,
   togglePause,
+  togglePlaylist,
   type BackendStatus,
+  type Collections,
   type DirectoryListing,
   type PlayerSnapshot,
 } from './lib/backend'
-import { fileName } from './lib/path'
+import { fileName, parentDirectory } from './lib/path'
 import {
   JUMP_STEP,
   SEEK_STEP,
@@ -64,6 +71,8 @@ const MAX_STRIP_FRAMES = 24
 const STRIP_FRAME_GAP_MS = 120
 /** 缩略图带的帧间隔目标（秒）。 */
 const STRIP_STEP_SECONDS = 10
+/** 从收藏夹跳过来之后，高亮停留多久。 */
+const HIGHLIGHT_MS = 2600
 
 /** 「此电脑」这一层的显示名。盘符根目录再往上就是它。 */
 const DRIVES_ROOT = '此电脑'
@@ -121,7 +130,13 @@ export default function App() {
    * 倍速菜单是第一个使用者，后面的音轨、字幕面板往这个联合类型里加就行：
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
-  const [openPanel, setOpenPanel] = useState<'speed' | 'media' | null>(null)
+  const [openPanel, setOpenPanel] = useState<'speed' | 'media' | 'playlist' | 'favorites' | null>(
+    null,
+  )
+  /** 播放列表与收藏夹。两者都只是一串路径，顺序就是播放顺序。 */
+  const [collections, setCollections] = useState<Collections>({ playlist: [], favorites: [] })
+  /** 刚从收藏夹跳过来的那一个，会在方格墙上高亮一下。 */
+  const [highlightPath, setHighlightPath] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 用户点过方格没有。
@@ -257,6 +272,34 @@ export default function App() {
       cancelled = true
     }
   }, [reportError])
+
+  // 播放列表与收藏夹读一次就够；之后每次改动都用后端返回的那份更新
+  useEffect(() => {
+    let cancelled = false
+
+    getCollections()
+      .then((next) => {
+        if (!cancelled) {
+          setCollections(next)
+        }
+      })
+      // 浏览器里没有后端：保持空列表就好，不必为这个弹错误
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 高亮只是「提醒一下」，看过就散
+  useEffect(() => {
+    if (highlightPath === null) {
+      return
+    }
+
+    const timer = window.setTimeout(() => setHighlightPath(null), HIGHLIGHT_MS)
+    return () => window.clearTimeout(timer)
+  }, [highlightPath])
 
   /*
    * 主窗口是隐藏着创建出来的，等开屏画好再让它露面。
@@ -584,6 +627,75 @@ export default function App() {
       reportError(cause)
     }
   }, [loadDirectory, reportError])
+
+  /** 加进 / 移出播放列表：后端返回改完之后的列表，界面直接换掉。 */
+  const handleTogglePlaylist = useCallback(
+    (path: string) => {
+      togglePlaylist(path).then(setCollections).catch(reportError)
+    },
+    [reportError],
+  )
+
+  const handleShiftPlaylist = useCallback(
+    (path: string, delta: number) => {
+      shiftInPlaylist(path, delta).then(setCollections).catch(reportError)
+    },
+    [reportError],
+  )
+
+  const handleToggleFavorite = useCallback(
+    (path: string) => {
+      toggleFavorite(path).then(setCollections).catch(reportError)
+    },
+    [reportError],
+  )
+
+  const handlePlayFromList = useCallback(
+    (path: string) => {
+      setOpenPanel(null)
+      void playPath(path)
+    },
+    [playPath],
+  )
+
+  /**
+   * 收藏夹里点那行小字：跳回视频所在的目录，再把那一格高亮出来。
+   *
+   * 先切目录再高亮：方格墙是换目录之后才铺出来的，顺序反了就没有格子可指。
+   */
+  const handleRevealFavorite = useCallback(
+    async (path: string) => {
+      setOpenPanel(null)
+      await loadDirectory(parentDirectory(path))
+      setHighlightPath(path)
+    },
+    [loadDirectory],
+  )
+
+  /** 同一个文件只推进一次：待机状态会在轮询里反复出现，不记着就会一直往下跳。 */
+  const advancedFrom = useRef<string | null>(null)
+
+  /**
+   * 播完自动播下一个。
+   *
+   * mpv 播完会把文件卸掉进入待机（`idle-active` 从 false 翻成 true），拿它当判据最可靠：
+   * 实测 `eof-reached` 在进入待机之后就整个读不到了。
+   * 同一个文件只推进一次，靠 ref 记着——待机状态会在轮询里反复出现，不记就会一直往下跳。
+   */
+  useEffect(() => {
+    if (player?.idleActive !== true || currentFile === null || advancedFrom.current === currentFile) {
+      return
+    }
+
+    advancedFrom.current = currentFile
+
+    const index = collections.playlist.indexOf(currentFile)
+    const next = index >= 0 ? collections.playlist[index + 1] : undefined
+
+    if (next !== undefined) {
+      void playPath(next)
+    }
+  }, [collections.playlist, currentFile, playPath, player?.idleActive])
 
   /** 上下集：直接换片，沿用原来那套「载入 + 展开」的流程，不用再点方格。 */
   const handlePlayEpisode = useCallback(
@@ -992,6 +1104,70 @@ export default function App() {
           </div>
 
           <div className="app__tools">
+            <div className="app__collection app__playlist">
+              <button
+                className="app__tool"
+                type="button"
+                onClick={() => setOpenPanel((open) => (open === 'playlist' ? null : 'playlist'))}
+                aria-haspopup="dialog"
+                aria-expanded={openPanel === 'playlist'}
+                aria-label="播放列表"
+                title="播放列表"
+              >
+                ≡
+              </button>
+
+              <Popover
+                open={openPanel === 'playlist'}
+                onClose={() => setOpenPanel(null)}
+                label="播放列表"
+                anchorSelector=".app__playlist"
+                className="popover--panel popover--down"
+                role="dialog"
+              >
+                <CollectionsPanel
+                  kind="playlist"
+                  paths={collections.playlist}
+                  onPlay={handlePlayFromList}
+                  onRemove={handleTogglePlaylist}
+                  onShift={handleShiftPlaylist}
+                  onReveal={handleRevealFavorite}
+                />
+              </Popover>
+            </div>
+
+            <div className="app__collection app__favorites">
+              <button
+                className="app__tool"
+                type="button"
+                onClick={() => setOpenPanel((open) => (open === 'favorites' ? null : 'favorites'))}
+                aria-haspopup="dialog"
+                aria-expanded={openPanel === 'favorites'}
+                aria-label="收藏夹"
+                title="收藏夹"
+              >
+                ★
+              </button>
+
+              <Popover
+                open={openPanel === 'favorites'}
+                onClose={() => setOpenPanel(null)}
+                label="收藏夹"
+                anchorSelector=".app__favorites"
+                className="popover--panel popover--down"
+                role="dialog"
+              >
+                <CollectionsPanel
+                  kind="favorites"
+                  paths={collections.favorites}
+                  onPlay={handlePlayFromList}
+                  onRemove={handleToggleFavorite}
+                  onShift={handleShiftPlaylist}
+                  onReveal={handleRevealFavorite}
+                />
+              </Popover>
+            </div>
+
             <button
               className="app__tool"
               type="button"
@@ -1139,7 +1315,12 @@ export default function App() {
                   expandedPath={expanded ? currentFile : null}
                   flash={flash}
                   buffering={buffering}
+                  playlist={collections.playlist}
+                  favorites={collections.favorites}
+                  highlightPath={highlightPath}
                   onOpen={handleOpenFromTile}
+                  onTogglePlaylist={handleTogglePlaylist}
+                  onToggleFavorite={handleToggleFavorite}
                   onTogglePlay={() => void handleTogglePause()}
                   onSeekBy={(offset) => {
                     handleSeekBy(offset)

@@ -11,6 +11,17 @@ export interface PathSegment {
 }
 
 /**
+ * 取文件所在的目录；只有文件名（不带分隔符）时返回空串。
+ *
+ * 复用 `pathSegments` 的拆解规则，省得把盘符、根目录、混用分隔符那些边界再写一遍。
+ */
+export function parentDirectory(path: string): string {
+  const segments = pathSegments(path)
+
+  return segments.length >= 2 ? segments[segments.length - 2].path : ''
+}
+
+/**
  * 把路径拆成能逐层点回去的层级，给目录区的面包屑用。
  *
  * `E:\clips\anime` → `E:` / `clips` / `anime`。

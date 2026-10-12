@@ -1,5 +1,6 @@
 import {
   memo,
+  useEffect,
   useLayoutEffect,
   useRef,
   type CSSProperties,
@@ -22,7 +23,15 @@ export interface VideoGridProps {
   /** 双击放大画面时浮出的涟漪提示。 */
   flash: GridFlash | null
   buffering: boolean
+  /** 播放列表里的路径。 */
+  playlist: string[]
+  /** 收藏夹里的路径。 */
+  favorites: string[]
+  /** 刚从收藏夹跳过来要高亮的那一格；没有则为 null。 */
+  highlightPath: string | null
   onOpen: (path: string, from: DOMRect) => void
+  onTogglePlaylist: (path: string) => void
+  onToggleFavorite: (path: string) => void
   onTogglePlay: () => void
   onSeekBy: (offset: number) => void
 }
@@ -35,7 +44,12 @@ interface TileProps {
   expanded: boolean
   flash: GridFlash | null
   buffering: boolean
+  inPlaylist: boolean
+  favorite: boolean
+  highlighted: boolean
   onOpen: (path: string, from: DOMRect) => void
+  onTogglePlaylist: (path: string) => void
+  onToggleFavorite: (path: string) => void
   onTogglePlay: () => void
   onSeekBy: (offset: number) => void
 }
@@ -47,7 +61,12 @@ const Tile = memo(function Tile({
   expanded,
   flash,
   buffering,
+  inPlaylist,
+  favorite,
+  highlighted,
   onOpen,
+  onTogglePlaylist,
+  onToggleFavorite,
   onTogglePlay,
   onSeekBy,
 }: TileProps) {
@@ -95,28 +114,62 @@ const Tile = memo(function Tile({
   }
 
   return (
-    <button
+    <div
       className="tile"
       data-tile={video.path}
-      type="button"
-      title={video.name}
+      data-highlight={highlighted ? 'true' : undefined}
       style={{ '--i': index } as CSSProperties}
-      onClick={(event) => onOpen(video.path, event.currentTarget.getBoundingClientRect())}
     >
-      <span className="tile__frame">
-        {thumbnail === undefined ? (
-          <span className="tile__placeholder" />
-        ) : (
-          <img className="tile__image" src={thumbnail} alt="" loading="lazy" decoding="async" />
-        )}
+      {/*
+        打开和「加进列表」必须是两颗不同的按钮，而按钮不能嵌按钮，
+        所以外面这层是普通容器，打开动作单独一颗铺满整格的按钮。
+      */}
+      <button
+        className="tile__open"
+        type="button"
+        title={video.name}
+        onClick={(event) => onOpen(video.path, event.currentTarget.getBoundingClientRect())}
+      >
+        <span className="tile__frame">
+          {thumbnail === undefined ? (
+            <span className="tile__placeholder" />
+          ) : (
+            <img className="tile__image" src={thumbnail} alt="" loading="lazy" decoding="async" />
+          )}
 
-        <span className="tile__play" aria-hidden="true">
-          ▶
+          <span className="tile__play" aria-hidden="true">
+            ▶
+          </span>
         </span>
-      </span>
 
-      <span className="tile__name">{video.name}</span>
-    </button>
+        <span className="tile__name">{video.name}</span>
+      </button>
+
+      {/* 鼠标移到方格上（或者键盘焦点进来）才浮出来的两个动作 */}
+      <div className="tile__actions">
+        <button
+          className="tile__action"
+          type="button"
+          aria-pressed={inPlaylist}
+          aria-label={inPlaylist ? `把 ${video.name} 移出播放列表` : `把 ${video.name} 加入播放列表`}
+          title={inPlaylist ? '已在播放列表，点击移出' : '加入播放列表'}
+          onClick={() => onTogglePlaylist(video.path)}
+        >
+          {inPlaylist ? '✓' : '≡'}
+        </button>
+
+        <button
+          className="tile__action"
+          type="button"
+          aria-pressed={favorite}
+          aria-label={favorite ? `取消收藏 ${video.name}` : `收藏 ${video.name}`}
+          title={favorite ? '已收藏，点击取消' : '加入收藏夹'}
+          onClick={() => onToggleFavorite(video.path)}
+        >
+          {favorite ? '★' : '☆'}
+        </button>
+      </div>
+    </div>
   )
 })
 
@@ -135,12 +188,36 @@ export default function VideoGrid({
   expandedPath,
   flash,
   buffering,
+  playlist,
+  favorites,
+  highlightPath,
   onOpen,
+  onTogglePlaylist,
+  onToggleFavorite,
   onTogglePlay,
   onSeekBy,
 }: VideoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const previousRects = useRef(new Map<string, DOMRect>())
+
+  /** 从收藏夹跳过来时，把那一格滚进视野；高亮本身由 CSS 的 data-highlight 负责。 */
+  useEffect(() => {
+    const container = containerRef.current
+
+    if (highlightPath === null || container === null) {
+      return
+    }
+
+    // 用 dataset 找而不是拼选择器：Windows 路径里的反斜杠在 CSS 选择器里要转义，太容易出错
+    const tile = Array.from(container.querySelectorAll<HTMLElement>('[data-tile]')).find(
+      (element) => element.dataset.tile === highlightPath,
+    )
+
+    // jsdom 没实现 scrollIntoView，测试里跳过这一段
+    if (typeof tile?.scrollIntoView === 'function') {
+      tile.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  }, [highlightPath, videos])
 
   useLayoutEffect(() => {
     const container = containerRef.current
@@ -231,7 +308,12 @@ export default function VideoGrid({
           expanded={video.path === expandedPath}
           flash={video.path === expandedPath ? flash : null}
           buffering={video.path === expandedPath && buffering}
+          inPlaylist={playlist.includes(video.path)}
+          favorite={favorites.includes(video.path)}
+          highlighted={video.path === highlightPath}
           onOpen={onOpen}
+          onTogglePlaylist={onTogglePlaylist}
+          onToggleFavorite={onToggleFavorite}
           onTogglePlay={onTogglePlay}
           onSeekBy={onSeekBy}
         />

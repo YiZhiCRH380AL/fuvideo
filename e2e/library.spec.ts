@@ -42,6 +42,13 @@ async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } 
     /** 自带的示例文件夹：示例目录打开的是一个真实目录，这里也给它一份内容。 */
     const sample = 'C:\\Users\\tester\\AppData\\Roaming\\com.fuvideo.desktop\\示例视频'
 
+    /** 播放列表与收藏夹：假后端也要真的增删改，界面才看得到结果。 */
+    const collections = { playlist: [] as string[], favorites: [] as string[] }
+    const copyCollections = () => ({
+      playlist: [...collections.playlist],
+      favorites: [...collections.favorites],
+    })
+
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
       value: {
@@ -61,6 +68,22 @@ async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } 
                 : { directory: args.directory, parent: null, entries: [] }
             case 'thumbnail_at':
               return pixel
+            case 'read_collections':
+              return copyCollections()
+            case 'toggle_playlist': {
+              const path = args.path as string
+              collections.playlist = collections.playlist.includes(path)
+                ? collections.playlist.filter((item) => item !== path)
+                : [...collections.playlist, path]
+              return copyCollections()
+            }
+            case 'toggle_favorite': {
+              const path = args.path as string
+              collections.favorites = collections.favorites.includes(path)
+                ? collections.favorites.filter((item) => item !== path)
+                : [...collections.favorites, path]
+              return copyCollections()
+            }
             default:
               return null
           }
@@ -164,6 +187,37 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
   expect(new Set(drives!.cards.map((card) => card.height)).size).toBe(1)
   expect(drives!.cards.every((card) => card.cover === 92)).toBe(true)
 
+})
+
+test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  const tile = page.locator('.tile').first()
+  const actions = tile.locator('.tile__actions')
+
+  // 没碰它的时候是透明的：这就是「鼠标触碰才出现」
+  await expect(actions).toHaveCSS('opacity', '0')
+
+  await tile.hover()
+  await expect(actions).toHaveCSS('opacity', '1')
+
+  // 加进播放列表，再从右上角打开面板看它
+  await tile.getByRole('button', { name: /加入播放列表/ }).click()
+  // 名字要精确匹配：方格上那几颗「加入播放列表」也含这几个字
+  await page.getByRole('button', { name: '播放列表', exact: true }).click()
+
+  const list = page.getByTestId('playlist-list')
+  await expect(list).toBeVisible()
+  await expect(list).toContainText('demo-1.mp4')
+
+  // 面板是淡入的，等动画走完再截图，否则拍到的是一张近乎透明的图
+  await expect(page.getByTestId('popover')).toHaveCSS('opacity', '1')
+  await page.screenshot({ path: 'test-results/shots/playlist.png' })
 })
 
 test('教程能带着用户真的走一遍：看示例 → 点方格播放', async ({ page }) => {
