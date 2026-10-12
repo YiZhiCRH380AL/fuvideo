@@ -8,6 +8,11 @@
   z-index: 40;
   display: grid;
   place-items: center;
+  /*
+   * 整层不吃点击事件：被指到的那颗按钮要能真的按下去。
+   * 只有底衬和提示卡片自己把点击收回来。
+   */
+  pointer-events: none;
 }
 
 .tutorial__backdrop {
@@ -15,6 +20,7 @@
   inset: 0;
   background: rgb(4 4 6 / 66%);
   backdrop-filter: blur(3px);
+  pointer-events: auto;
   animation: tutorial-veil 220ms var(--ease) both;
 }
 
@@ -40,7 +46,64 @@
   border-radius: 18px;
   background: rgb(21 21 26 / 97%);
   box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  pointer-events: auto;
   animation: tutorial-in 320ms var(--ease-spring) both;
+}
+
+/*
+ * 打光框：四周铺一层很宽的阴影，中间留出那个洞。
+ * 位置会随布局变化（缩略图到达、方格 FLIP），所以位移做了过渡，别跳。
+ */
+.tutorial__spotlight {
+  position: fixed;
+  z-index: 1;
+  border: 1px solid rgb(110 168 255 / 55%);
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgb(4 4 6 / 62%);
+  pointer-events: none;
+  animation: tutorial-veil 220ms var(--ease) both;
+  transition:
+    left 180ms var(--ease),
+    top 180ms var(--ease),
+    width 180ms var(--ease),
+    height 180ms var(--ease);
+}
+
+/* 贴着高亮块的那张提示卡片 */
+.tutorial__coach {
+  position: fixed;
+  z-index: 2;
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 32px));
+  padding: 22px 22px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgb(21 21 26 / 97%);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  /* 横向靠 translateX 居中，所以入场动画要带上它，不能直接用 tutorial-in */
+  transform: translateX(-50%);
+  pointer-events: auto;
+  animation: tutorial-coach-in 260ms var(--ease-spring) both;
+}
+
+@keyframes tutorial-coach-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* 等用户操作时的提示，用强调色，一眼能看出「现在轮到你」 */
+.tutorial__wait {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @keyframes tutorial-in {
@@ -221,8 +284,14 @@
 @media (prefers-reduced-motion: reduce) {
   .tutorial__backdrop,
   .tutorial__panel,
-  .tutorial__step {
+  .tutorial__step,
+  .tutorial__spotlight,
+  .tutorial__coach {
     animation: none;
+  }
+
+  .tutorial__spotlight {
+    transition: none;
   }
 
   .tutorial__dot {

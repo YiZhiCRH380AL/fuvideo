@@ -190,14 +190,31 @@ export default function App() {
     return video === undefined ? null : { path: video.path, name: video.name }
   }, [episodeIndex, videos])
 
+  /** 教程要盯的那几件事。做成稳定引用，免得每渲染一次就重新判断一遍「做到了没」。 */
+  const tutorialProgress = useMemo(
+    () => ({
+      hasDirectory: listing !== null || atDrives,
+      hasVideos: videos.length > 0,
+      hasMedia,
+    }),
+    [atDrives, hasMedia, listing, videos.length],
+  )
+
   const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
 
   // 画面展开播放时，空闲一会儿把顶栏和底栏一起隐去。
   // 暂停、拖动进度、开着倍速菜单时保持显示。
   const chromeVisible = useIdleVisibility({
     delayMs: CHROME_IDLE_MS,
+    // 教程开着时界面不能自己隐去：它正指着顶栏和灵动岛上的按钮
     enabled:
-      expanded && hasMedia && !paused && scrub === null && openPanel === null && !settingsOpen,
+      expanded &&
+      hasMedia &&
+      !paused &&
+      scrub === null &&
+      openPanel === null &&
+      !settingsOpen &&
+      !tutorialOpen,
   })
 
   const reportError = useCallback((cause: unknown) => {
@@ -1137,7 +1154,7 @@ export default function App() {
 
       {/* 开屏没走完之前不弹教程，不然两层浮层会叠在一起 */}
       {splash === 'done' && tutorialOpen ? (
-        <Tutorial onClose={() => setTutorialOpen(false)} />
+        <Tutorial onClose={() => setTutorialOpen(false)} progress={tutorialProgress} />
       ) : null}
 
       {settingsOpen ? (

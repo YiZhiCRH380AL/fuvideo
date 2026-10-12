@@ -26,25 +26,33 @@ async function waitForBoot(page: Page): Promise<void> {
   await expect(page.getByTestId('splash')).toHaveCount(0)
 }
 
-test('首次进入的教程会自动弹出，看过之后不再弹', async ({ page }) => {
+// 注意：名字里必须留着「首次进入的教程」，上面的 beforeEach 靠它决定要不要先标记成看过
+test('首次进入的教程是交互式的，走过一次不再弹', async ({ page }) => {
   await page.goto('/')
   await waitForBoot(page)
 
   const tutorial = page.getByTestId('tutorial')
   await expect(tutorial).toBeVisible()
-  await expect(tutorial).toContainText('先把视频铺成方格')
 
-  await page.getByRole('button', { name: '下一步' }).click()
-  await expect(tutorial).toContainText('点一下方格就放大播放')
+  // 前两步是真的要动手：第一步高亮「选择目录」并等用户去点。
+  // 浏览器里选不了目录，所以走「跳过这步」。
+  await expect(tutorial).toContainText('先挑一个放视频的文件夹')
+  await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
+  await page.getByRole('button', { name: '跳过这步' }).click()
 
-  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(tutorial).toContainText('点一格，放大播放')
+  await page.getByRole('button', { name: '跳过这步' }).click()
+
   await expect(tutorial).toContainText('底部的灵动岛')
-
   await page.getByRole('button', { name: '下一步' }).click()
+
   await expect(tutorial).toContainText('音轨、字幕在这里换')
   await expect(tutorial).toContainText('加载字幕文件')
-
   await page.getByRole('button', { name: '下一步' }).click()
+
+  await expect(tutorial).toContainText('右上角是设置')
+  await page.getByRole('button', { name: '下一步' }).click()
+
   await expect(tutorial).toContainText('键盘也能用')
 
   await page.getByRole('button', { name: '开始使用' }).click()
