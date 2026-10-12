@@ -31,7 +31,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "binaries/mpv/*"
+      "binaries/mpv/*",
+      "resources/sample/*"
     ],
     "icon": [
       "icons/32x32.png",

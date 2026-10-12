@@ -1,6 +1,7 @@
 mod audio;
 mod library;
 mod mpv;
+mod sample;
 mod settings;
 mod thumbnail;
 
@@ -92,6 +93,7 @@ pub fn run() {
       mpv::toggle_fullscreen,
       settings::read_settings,
       settings::write_settings,
+      sample::prepare_sample_folder,
       library::pick_directory,
       library::list_directory,
       library::list_drives,

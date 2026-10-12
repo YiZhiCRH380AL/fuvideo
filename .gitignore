@@ -64,3 +64,6 @@ src-tauri/binaries/
 *.mkv
 *.flv
 *.webm
+
+# 自带的示例视频要进仓库：示例文件夹靠它，只有一百多 KB
+!src-tauri/resources/sample/*.mp4
