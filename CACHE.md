@@ -2,7 +2,74 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
-## 下一步：P2 音频进阶（交接说明）
+## 下一步：P3 画面（交接说明）
+
+> 写给接手的人：这一节是「接下来做什么、怎么做、哪里会踩坑」。已经做完的部分在下面的「上一阶段」里，
+> 每节末尾都有验证命令。动手前先读仓库根目录的 `AGENTS.md`（先在 GitHub 找可参考的仓库、每步都要有测试、
+> 每步都要提交并推送、改完回来更新本文件）。
+
+### 起点在哪
+
+- **播放内核**：mpv 常驻进程 + 命名管道 JSON IPC，`--wid` 嵌入主窗口，换片走 `loadfile`。
+  见 [mpv.rs](src-tauri/src/mpv.rs)、[mpv/ipc.rs](src-tauri/src/mpv/ipc.rs)。
+- **设置怎么写**：[settings.rs](src-tauri/src/settings.rs) 存 `settings.json`，
+  [audio.rs](src-tauri/src/audio.rs) 负责把设置拼成 mpv 参数和滤镜链。P3 照这个结构新开一个
+  `video.rs`，别都堆进 mpv.rs。
+- **界面**：[SettingsPage.tsx](src/components/SettingsPage.tsx) 是右上角齿轮打开的设置浮层，
+  音效那一节已经有「简单 / 高级」两种模式。P3 的「画面」应该是它的第二节，模式那套直接照抄。
+- **详情通道**：`player_details` 返回各项当前值；界面每次改动都是「发命令 → 重读真实状态」，
+  不在前端推演结果。新增画面项时沿用。
+
+### P3 的目标
+
+| 功能 | mpv 侧 |
+| --- | --- |
+| 缩放与画幅 | `video-zoom`、`panscan`、`video-aspect-override`、`video-align-x/y` |
+| 色彩 | `brightness`、`contrast`、`saturation`、`hue`、`gamma` |
+| 几何 | `video-rotate`、`hflip` / `vflip`、`crop`、`cropdetect` |
+| 画质档位 | `deband`、`sharpen`、`interpolation`、`tscale`、`icc-profile-auto` |
+| 硬解 | `hwdec` 下拉 + 用 `hwdec-current` 显示**实际生效**的后端 |
+| HDR | `tone-mapping`、`target-peak`、`hdr-contrast-recovery` |
+| 快照 | `screenshot` 命令（jpg/png/webp/jxl/avif，可带或不带字幕） |
+| 可选 | `v360` 做 360° 视角（VR 头显不支持） |
+
+### 动手前要知道的四件事
+
+1. **画面滤镜是同一个坑**。`vf` 和 `af` 一样是整体替换的语义，而且 P2 实测过
+   `af-command` 对 `lavfi=[...]` 桥接的滤镜不可用（`vf-command` 大概率也一样）。
+   所以裁切、旋转、降噪这些走 `vf` 链的东西，同样要「一个组装点 + 松手才提交」，
+   别做实时拖拽。色彩那几个（`brightness` 之类）是 mpv 自己的属性，可以直接实时写。
+2. **切硬解会重建视频输出**，画面会闪一下；有些后端在本机根本不可用
+   （本机是 4090 + AMD 核显，`qsv` 没有 Intel 核显可依附）。界面上要显示 `hwdec-current`
+   报出来的**真正生效**的那个，别把 `--hwdec=help` 里那一百多个名字铺出来。
+3. **watch-later 会记画面状态**：`video-zoom`、`brightness`、`vf` 都在它的默认记录列表里。
+   和 P2 的处理一样：做成「全局偏好」的项要在 `play_video` 载入文件之后重新压一遍，
+   否则换到一部以前调过画面的片子会被它带走。
+4. **快照要落在用户找得到的地方**。`screenshot` 默认写当前工作目录，要用 `--screenshot-dir`
+   指到「视频同目录」之类的位置，并在界面上告诉用户存到哪了。
+
+### 参考实现
+
+沿用 P2 的路子：在 GitHub 上找 mpv 的画面配置合集、以及 mpv.net / IINA 的画面设置页，
+看它们暴露了哪几项、怎么分组。抄结构可以，但别把它们的设置树整个搬过来——
+这个应用的设计语言是「少而准」。
+
+### 测试怎么写
+
+- 纯函数单测：设置 → 启动参数 / `vf` 链的拼接（照 [audio.rs](src-tauri/src/audio.rs) 的测试写），
+  放在新的 `video.rs` 里。
+- 真实 mpv 集成测试：复用 `mpv.rs` 的 `spawn_headless`——挂上 `vf` 之后读 `vf` 属性断言链上有它，
+  色彩类写完读回来断言。跑在 `--vo=null` 下不会开窗。
+- 界面测试照 [SettingsPage.test.tsx](src/components/SettingsPage.test.tsx)：mock 后端、
+  断言每个控件发出的命令，以及「拖动不发请求、松手才提交」。
+
+### 交付标准
+
+和 P0/P1/P2 一样：`npm run typecheck`、`npm run lint`、`npm run test:run`、`npm run test:e2e`、
+`npm run build`、`cd src-tauri && cargo test` 全绿；按功能拆成几个 commit 推到 GitHub；
+最后把「做完了什么 + 下一个阶段」更新回本文件。
+
+## 上一阶段：P2 音频进阶（已完成，以下是当时的交接说明）
 
 > 写给接手的人：这一节是「接下来做什么、怎么做、哪里会踩坑」。已经做完的部分在下面的「上一阶段」里，
 > 每节末尾都有验证命令。动手前先读仓库根目录的 `AGENTS.md`（先在 GitHub 找可参考的仓库、每步都要有测试、
@@ -85,6 +152,80 @@ GitHub 上有现成的 mpv 均衡器脚本，滤镜怎么挂、预设怎么组�
 和 P0、P1 一样：`npm run typecheck`、`npm run lint`、`npm run test:run`、`npm run test:e2e`、
 `npm run build`、`cd src-tauri && cargo test` 全绿；按功能拆成几个 commit 推到 GitHub；
 最后把「做完了什么 + 下一个阶段」更新回本文件。
+
+## 上一阶段：P2 音频进阶与设置页（已完成）
+
+给音频加了一层滤镜链，并为此做了一个独立的设置页。
+
+**先说一条实测结论，它决定了整套实现方式**：`af-command` 对 `lavfi=[...]` 桥接过来的滤镜
+**不支持**——裸参数回 `invalid parameter`，带 `av-command` 回 `error running command`。
+也就是说调任何一个参数都要**重建整条滤镜链**，所以界面上所有滑块都是「拖动只改界面、
+松手才提交」。（用真机 IPC 探针验证的，命令和返回都记在上面 P2 那段交接说明里。）
+
+**均衡器没用 `superequalizer`**：它号称 18 段，但各段的中心频率没有公开，滑块根本标不出
+「这一段调的是多少 Hz」，用户只能盲调、预设也无从谈起。改成串联 ffmpeg 的 `equalizer`
+（峰值滤波器）之后频点自己定，于是有了标准的 10 段图形均衡器：31 / 62 / 125 / 250 / 500 /
+1k / 2k / 4k / 8k / 16k，每段都能标频点，预设（音乐 / 电影 / 夜间 / 人声 / 低音增强）才有意义。
+
+- **滤镜链只有一个组装点**：[audio.rs](src-tauri/src/audio.rs) 的 `build_filter_chain`。
+  顺序是「均衡 → 响度归一化 → 立体声扩展 → 环绕」，理由写在代码注释里。
+  零增益的频段会被跳过（少一次运算，回读的链也干净）；**透传开着时整条链是空的**——
+  mpv 的透传不经过滤镜，挂着只会让人以为开关坏了。
+- **两种模式**（就是这次确认的做法）：简单模式三个开关（响度归一化 `dynaudnorm`、
+  虚拟环绕 `surround`、立体声扩展 `extrastereo`）；高级模式给预设 + 10 段滑块 +
+  输出采样率 / 位深 + 透传。
+- **设置页**：整窗浮层（[SettingsPage.tsx](src/components/SettingsPage.tsx)），
+  入口是标题栏**右上角的齿轮**。选项表（频点、预设、位深、采样率）由后端
+  `audio_options` 给，标签只有一份来源，前端不抄。
+- **新增的设置项**（都在 `settings.json` 里）：`audioFilterMode`、`loudnessNormalization`、
+  `virtualSurround`、`stereoWidening`、`equalizerPreset`、`equalizerBands`（10 个 dB 值，
+  越界折回 ±12、长度补齐）、`audioSamplerate`、`audioFormat`、`audioSpdif`。
+  沿用 P0 的约定：默认值等于 mpv 默认行为的项写成 `Option`，`None` 就完全不传。
+
+覆盖到的测试：
+
+- `src-tauri/src/audio.rs`：每个预设的段数与幅度上限、低音预设只动低频、平坦曲线不产生滤镜、
+  频点出现在滤镜串里、链的顺序、透传清空整条链、界面选项 id 都能活过设置的白名单。
+- `src-tauri/src/settings.rs`：新项的类型、越界与长度归一化、采样率 0 等价于跟随源。
+- `src-tauri/src/mpv.rs`：启动参数带上采样率/位深/透传；**真实 mpv 的集成用例**——
+  把链挂上去之后回读 `af` 属性，断言标签和顺序是 `eq00 / norm / wide`，清空之后链上什么都没有。
+- `src/components/SettingsPage.test.tsx`：两种模式各自的控件、预设置信、开关透传后滤镜禁用并给出说明、
+  拖滑块过程中不发请求（松手才提交）、采样率与位深的切换。
+
+验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（161 个）、
+`npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（68 个）全绿。
+
+## 上一阶段：交互教程与目录外观（已完成）
+
+两件事：教程从「图文说明」改成能真动手，文件夹和磁盘改成和方格同一套卡片。
+
+- **交互教程**（[Tutorial.tsx](src/components/Tutorial.tsx)）：要讲的按钮直接从页面上量位置，
+  打光框四周铺阴影、中间留一个洞。整层浮层**不吃点击事件**（只有提示卡片吃），
+  所以被指到的那颗按钮能真的按下去；做完那件事（目录选好、视频放起来）就自动翻页。
+  六屏的顺序是：选目录 → 点方格播放 → 灵动岛 → 音轨与字幕 → 右上角设置 → 快捷键。
+  - 等操作的步骤主按钮是灰的，永远配一个「跳过这步」；找不到目标元素时退回居中的卡片。
+    教程不该把人困住。
+  - 从标题栏的「?」重新打开时，「打开时就已满足」的步骤不再拦人，直接可以点下一步。
+  - 为此 `Tutorial` 多了一个 `progress` 属性（App 传「有没有目录 / 有没有视频 / 有没有在播」），
+    界面空闲隐藏的条件也加上了 `!tutorialOpen`——否则它正指着的那颗按钮会自己隐去。
+- **目录外观**（[FolderStrip.tsx](src/components/FolderStrip.tsx) + `App.css`）：文件夹和磁盘
+  改成和方格一样的卡片——上面 16:9 的封面区（放一个大图标），名字在下面，同样的圆角、描边、
+  悬停抬起。子目录特别多时文件夹那一行自己滚，不会把方格墙挤没。
+  顺手删掉了一条早就没用的 `.folder--up` 样式（组件用的是 `.folder--parent`）。
+
+覆盖到的测试：
+
+- `src/components/Tutorial.test.tsx`：指向「选择目录」并等操作、选好目录后自动翻页、
+  已满足的步骤不再拦人、找不到目标时退回居中卡片、跳过这步、做到之后按钮恢复可用、
+  最后一屏与「开始使用」、Esc / ✕ 关闭。
+- `e2e/smoke.spec.ts`：走完整套交互流程（浏览器里选不了目录，前两步走「跳过这步」），
+  刷新之后不再弹。**注意**：这条用例的名字里必须留着「首次进入的教程」这几个字，
+  上面的 beforeEach 靠它决定要不要先把教程标记成看过。
+
+验证：`npm run typecheck`、`npm run lint`（有 1 条 `react(set-state-in-effect)` 警告，
+是「用户做到之后自动翻页」那个 effect，属于有意为之，lint 仍然退出 0）、
+`npm run test:run`（165 个）、`npm run test:e2e`（7 个）、`npm run build`、
+`cd src-tauri && cargo test`（68 个）全绿。
 
 ## 上一阶段：教程补上音轨与字幕（已完成）
 
@@ -298,6 +439,10 @@ P1 加的东西教程里没讲，这次补上：
 
 ## 当前产物（0.1.1-Alpha）
 
+> **版本号待办**：从 P0 到 P2 加了常驻内核、设置存储、音轨/字幕面板、设置页与交互教程，
+> 但 `package.json` / `Cargo.toml` / `tauri.conf.json` 里的版本号还停在 `0.1.1-Alpha`。
+> 下次发版前要一起定个新版本号（三处要同步改），并重新打一次 NSIS 包。
+
 版本号带 `-Alpha`，MSI 目标不接受非数字的预发布号，所以只打 NSIS：
 
 ```
@@ -312,7 +457,7 @@ npm run tauri build -- --bundles nsis
 `target/` 在 `.gitignore` 里，产物不进仓库；要发布得手动传到 Releases
 （本机没装 `gh`，走网页上传，或者装上 `gh` 之后 `gh release create`）。
 
-## 路线图：播放器能力扩展（P0、P1 已完成，下一步 P2）
+## 路线图：播放器能力扩展（P0、P1、P2 已完成，下一步 P3）
 
 目标：把 mpv 已经具备、但界面没有暴露出来的播放器能力分批接出来，功能面对标 PotPlayer；
 **但不改画面渲染链，也不改现有外观与动效**。这一节是路线图，动手前先看下面的调研结论和设计约束。
@@ -339,8 +484,12 @@ npm run tauri build -- --bundles nsis
 ### 设计约束（每个阶段都要守）
 
 - 画面由 mpv 原生子窗口渲染，字幕由 libass 画在视频层；新功能一律走 HTML 覆盖层，不碰这两条链路。
-- 新面板复用现有倍速菜单（`.speed-menu`）的浮层形态与 CSS 变量；`prefers-reduced-motion` 下动画关掉。
-- 新面板必须接进 `useIdleVisibility` 的判据（现在只有 `!speedOpen`），否则鼠标停在面板上界面会自己隐去。
+- 浮层一律走 [Popover.tsx](src/components/Popover.tsx)（点外面收、Esc 收；倍速菜单 `role=menu`，
+  音轨与字幕面板 `role=dialog`），需要占地方的就做成整窗浮层（设置页、教程）；
+  `prefers-reduced-motion` 下动画关掉。
+- 新面板必须接进 `useIdleVisibility` 的判据。现在那条条件是
+  `openPanel === null && !settingsOpen && !tutorialOpen`，加新浮层时别忘了往里补一项，
+  否则鼠标停在面板上界面会自己隐去。
 - 高频快照 `player_state` 不再加字段；轨道表、设备表这类列表数据走独立的低频通道。
 
 ### P0 地基（已完成，见上面「上一阶段：P0 地基」）
@@ -369,16 +518,14 @@ e2e 覆盖「打开面板时界面不会隐去」。
 
 风险：切换输出设备会重建音频管线，有短暂断音，个别驱动下可能失败——需要提示与回退。
 
-### P2 音频进阶
-
-（下一步就是它，动手前先看文件开头的「P2 音频进阶（交接说明）」）
+### P2 音频进阶（已完成，见上面「P2 音频进阶与设置页」）
 
 - 均衡器 `superequalizer`（18 段）+ 预设；响度归一化 `loudnorm` / `dynaudnorm`。
 - 变速不变调 `scaletempo2` / `rubberband` + `audio-pitch-correction`。
 - 立体声扩展 `extrastereo`、环绕上混 `surround`、声道重映射 `channelmap` / `pan`。
 - 透传 `audio-spdif`（AC3/DTS/EAC3/TrueHD/DTS-HD）；采样率与位深 `audio-samplerate` / `audio-format`。
 
-### P3 画面
+### P3 画面（下一步就是它，动手前先看文件开头的「P3 画面（交接说明）」）
 
 - 缩放与画幅：`video-zoom` / `panscan` / `video-aspect-override` / `video-align-x,y`。
 - 色彩：`brightness` / `contrast` / `saturation` / `hue` / `gamma`。
