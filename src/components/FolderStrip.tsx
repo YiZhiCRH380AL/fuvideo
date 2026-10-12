@@ -42,14 +42,14 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
             <span className="folder__glyph" aria-hidden="true">
               {parent.icon === 'up' ? (
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 19V6" />
-                  <path d="M6 12l6-6 6 6" />
+                <path className="glyph__stroke" d="M12 19V6" />
+                <path className="glyph__stroke" d="M6 12l6-6 6 6" />
                 </svg>
               ) : (
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3" y="6" width="18" height="12" rx="2.4" />
-                  <path d="M7 14.5h4" />
-                  <path d="M16.5 9.5h.01" />
+                <rect className="glyph__stroke" x="3" y="6" width="18" height="12" rx="2.4" />
+                <path className="glyph__stroke" d="M7 14.5h4" />
+                <path className="glyph__stroke" d="M16.5 9.5h.01" />
                 </svg>
               )}
             </span>
@@ -69,8 +69,12 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
         >
           <span className="folder__frame">
             <span className="folder__glyph" aria-hidden="true">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M3 8.6A2.6 2.6 0 0 1 5.6 6h3.1a2 2 0 0 1 1.6.8l1 1.3h7.1A2.6 2.6 0 0 1 21 10.7v5.7A2.6 2.6 0 0 1 18.4 19H5.6A2.6 2.6 0 0 1 3 16.4z" />
+              <svg viewBox="0 0 48 48" aria-hidden="true">
+                <path
+                  className="glyph__back"
+                  d="M7 14.5A3.5 3.5 0 0 1 10.5 11h8.6a3 3 0 0 1 2.4 1.2l2.3 2.9h13.7A3.5 3.5 0 0 1 41 18.6V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z"
+                />
+                <path className="glyph__front" d="M7 19.4h34V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z" />
               </svg>
             </span>
           </span>

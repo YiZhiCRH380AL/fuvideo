@@ -449,13 +449,23 @@
   display: grid;
   grid-row: 1;
   box-sizing: border-box;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  /*
+   * 单行横着排，目录多了横向滚。
+   *
+   * 不用「折行 + max-height」是因为那样行高会被容器高度上限挤扁：
+   * overflow: hidden 的卡片会把封面裁掉一截，看起来就是「高度不完全」。
+   * 单行的话行高只由内容决定，不会再被压。
+   */
+  grid-auto-flow: column;
+  grid-auto-columns: 168px;
   gap: 12px;
-  align-content: start;
-  /* 子目录特别多的时候只让它自己滚，别把下面的方格墙挤没了 */
-  max-height: 186px;
-  padding: 14px 20px 4px;
-  overflow-y: auto;
+  /*
+   * 底下留 10px：卡片入场时是从下往上浮 6px 的，余量不够的话
+   * overflow-y: hidden 会在动画期间把卡片底边裁掉。
+   */
+  padding: 14px 20px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-gutter: stable;
   transition:
     opacity var(--dur-normal) var(--ease),
@@ -508,7 +518,8 @@
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  /* 固定高度而不是 16:9：卡片高度可预测，行高也不会被容器挤扁 */
+  height: 92px;
   background:
     radial-gradient(120% 100% at 50% 0%, rgb(110 168 255 / 14%), transparent 62%),
     linear-gradient(160deg, #1a1a20, #101014);
@@ -517,8 +528,8 @@
 .folder__glyph {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 52px;
+  height: 52px;
   color: var(--accent);
   transition: transform var(--dur-normal) var(--ease);
 }
@@ -532,14 +543,28 @@
   color: var(--text-muted);
 }
 
+/* 图标分两种笔法：底色块用填充，箭头那种线性图标用描边 */
 .folder__glyph svg {
   width: 100%;
   height: 100%;
+}
+
+.folder__glyph .glyph__stroke {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* 文件夹是两层的：后面那片（标签 + 顶边）淡一点，前面那片实一点 */
+.folder__glyph .glyph__back {
+  fill: currentColor;
+  opacity: 0.42;
+}
+
+.folder__glyph .glyph__front {
+  fill: currentColor;
 }
 
 /* 名字和方格一样放在封面下面 */
@@ -564,6 +589,8 @@
   grid-row: 2;
   box-sizing: border-box;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  /* 行高只由卡片决定，别被容器高度拉扁 */
+  grid-auto-rows: max-content;
   gap: 16px;
   align-content: start;
   padding: 12px 20px 24px;
@@ -571,10 +598,6 @@
   scrollbar-gutter: stable;
 }
 
-.folder--drive .folder__glyph {
-  width: 42px;
-  height: 42px;
-}
 
 @keyframes folder-in {
   from {
