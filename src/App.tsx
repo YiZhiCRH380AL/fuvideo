@@ -984,12 +984,14 @@ export default function App() {
                   style={{ '--i': index } as CSSProperties}
                   onClick={() => void loadDirectory(drive)}
                 >
-                  <span className="folder__glyph" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <rect x="3" y="6" width="18" height="12" rx="2.4" />
-                      <path d="M7 14.5h4" />
-                      <path d="M16.5 9.5h.01" />
-                    </svg>
+                  <span className="folder__frame">
+                    <span className="folder__glyph" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="6" width="18" height="12" rx="2.4" />
+                        <path d="M7 14.5h4" />
+                        <path d="M16.5 9.5h.01" />
+                      </svg>
+                    </span>
                   </span>
                   <span className="folder__name">{drive}</span>
                 </button>

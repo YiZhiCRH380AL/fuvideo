@@ -438,28 +438,39 @@
   transform: translateY(-1px);
 }
 
-/* ============ 文件夹条 ============ */
+/* ============ 文件夹与磁盘 ============ */
 
+/*
+ * 和方格同一套卡片：上面一块 16:9 的封面区，名字在下面。
+ * 文件夹没有画面可预览，封面区就放一个大图标——这样「文件夹 → 视频」
+ * 在视觉上是同一种东西，只是大小差一档。
+ */
 .folders {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   grid-row: 1;
-  gap: 8px;
+  box-sizing: border-box;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  align-content: start;
+  /* 子目录特别多的时候只让它自己滚，别把下面的方格墙挤没了 */
+  max-height: 186px;
   padding: 14px 20px 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   transition:
     opacity var(--dur-normal) var(--ease),
     transform var(--dur-normal) var(--ease);
 }
 
 .folder {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  max-width: 220px;
-  padding: 7px 12px 7px 9px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
@@ -472,13 +483,13 @@
   transition:
     transform var(--dur-normal) var(--ease),
     border-color var(--dur-normal) var(--ease),
-    background var(--dur-normal) var(--ease);
+    box-shadow var(--dur-normal) var(--ease);
 }
 
 .folder:hover:not(:disabled) {
   border-color: rgb(255 255 255 / 18%);
-  background: var(--surface-hover);
-  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 45%);
+  transform: translateY(-3px);
 }
 
 .folder:focus-visible {
@@ -491,16 +502,33 @@
   cursor: default;
 }
 
-.folder__glyph {
+/* 封面区：没有缩略图，用一块带光的底衬一个大图标 */
+.folder__frame {
+  position: relative;
   display: grid;
-  flex: none;
   place-items: center;
-  width: 17px;
-  height: 17px;
-  color: var(--accent);
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgb(110 168 255 / 14%), transparent 62%),
+    linear-gradient(160deg, #1a1a20, #101014);
 }
 
-.folder--up .folder__glyph {
+.folder__glyph {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
+  transition: transform var(--dur-normal) var(--ease);
+}
+
+.folder:hover:not(:disabled) .folder__glyph {
+  transform: scale(1.08);
+}
+
+/* 「上一级」是往回走，不该和「进这个文件夹」一样抢眼 */
+.folder--parent .folder__glyph {
   color: var(--text-muted);
 }
 
@@ -509,13 +537,17 @@
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
+/* 名字和方格一样放在封面下面 */
 .folder__name {
+  display: block;
   overflow: hidden;
+  padding: 8px 10px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -526,29 +558,22 @@
   color: var(--text-muted);
 }
 
-/* 「此电脑」：盘符铺成卡片，比在文件夹条里挤一排更好点 */
+/* 「此电脑」：盘符铺成和方格一样大的卡片，尺寸和间距都对齐方格墙 */
 .drives {
   display: grid;
   grid-row: 2;
   box-sizing: border-box;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  gap: 16px;
   align-content: start;
-  padding: 16px 20px 24px;
+  padding: 12px 20px 24px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
-.drives .folder {
-  max-width: none;
-  padding: 14px 16px;
-  border-radius: 12px;
-  font-size: 13px;
-}
-
 .folder--drive .folder__glyph {
-  width: 20px;
-  height: 20px;
+  width: 42px;
+  height: 42px;
 }
 
 @keyframes folder-in {

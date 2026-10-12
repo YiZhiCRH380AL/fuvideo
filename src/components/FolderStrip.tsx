@@ -38,19 +38,21 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
           aria-label={parent.label}
           title={parent.label}
         >
-          <span className="folder__glyph" aria-hidden="true">
-            {parent.icon === 'up' ? (
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 19V6" />
-                <path d="M6 12l6-6 6 6" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="6" width="18" height="12" rx="2.4" />
-                <path d="M7 14.5h4" />
-                <path d="M16.5 9.5h.01" />
-              </svg>
-            )}
+          <span className="folder__frame">
+            <span className="folder__glyph" aria-hidden="true">
+              {parent.icon === 'up' ? (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 19V6" />
+                  <path d="M6 12l6-6 6 6" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="6" width="18" height="12" rx="2.4" />
+                  <path d="M7 14.5h4" />
+                  <path d="M16.5 9.5h.01" />
+                </svg>
+              )}
+            </span>
           </span>
           <span className="folder__name">{parent.label}</span>
         </button>
@@ -65,10 +67,12 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
           style={{ '--i': index + 1 } as CSSProperties}
           onClick={() => onOpen(folder.path)}
         >
-          <span className="folder__glyph" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 8.6A2.6 2.6 0 0 1 5.6 6h3.1a2 2 0 0 1 1.6.8l1 1.3h7.1A2.6 2.6 0 0 1 21 10.7v5.7A2.6 2.6 0 0 1 18.4 19H5.6A2.6 2.6 0 0 1 3 16.4z" />
-            </svg>
+          <span className="folder__frame">
+            <span className="folder__glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 8.6A2.6 2.6 0 0 1 5.6 6h3.1a2 2 0 0 1 1.6.8l1 1.3h7.1A2.6 2.6 0 0 1 21 10.7v5.7A2.6 2.6 0 0 1 18.4 19H5.6A2.6 2.6 0 0 1 3 16.4z" />
+              </svg>
+            </span>
           </span>
           <span className="folder__name">{folder.name}</span>
         </button>
