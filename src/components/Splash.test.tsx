@@ -34,7 +34,7 @@ describe('开屏浮层', () => {
 
     expect(splash()).toHaveAttribute('data-leaving', 'false')
     expect(splash().querySelector('.splash__logo')).not.toBeNull()
-    expect(splash().querySelector('.splash__name')).toHaveTextContent('futurevideo')
+    expect(splash().querySelector('.splash__name')).toHaveTextContent('FutureVideo')
   })
 
   it('环境没探完就一直等，不会自己先走', async () => {

@@ -115,7 +115,7 @@ export default function Splash({ ready, onLeave, onDone }: SplashProps) {
       </span>
 
       <span className="splash__name" aria-hidden="true">
-        futurevideo
+        FutureVideo
       </span>
 
       <span className="splash__bar" aria-hidden="true" />

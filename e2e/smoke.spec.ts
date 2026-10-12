@@ -77,7 +77,9 @@ test('播放器外壳能加载并显示运行环境', async ({ page }) => {
   await page.goto('/')
   await waitForBoot(page)
 
-  await expect(page.locator('.app__wordmark')).toHaveText('futurevideo')
+  await expect(page.locator('.app__wordmark')).toContainText('FutureVideo')
+  // 版本号在字标右下角，跟着 package.json 走
+  await expect(page.getByTestId('app-version')).toHaveText(/^\d+\.\d+/)
   await expect(page.getByTestId('backend-status')).toContainText('浏览器')
   await expect(page.getByText('选一个目录，把里面的视频铺成方格')).toBeVisible()
 })

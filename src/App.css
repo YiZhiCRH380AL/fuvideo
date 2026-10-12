@@ -224,9 +224,21 @@
 }
 
 .app__wordmark {
+  position: relative;
   font-size: 14px;
   letter-spacing: 0.08em;
   color: var(--text);
+}
+
+/* 版本号挂在字标的右下角：小到不抢注意力，但一眼能找到 */
+.app__version {
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 .app__backend {

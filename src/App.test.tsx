@@ -6,7 +6,9 @@ describe('App（浏览器环境，走真实后端模块）', () => {
   it('渲染应用名与目录页提示', () => {
     const { container } = render(<App />)
 
-    expect(container.querySelector('.app__wordmark')).toHaveTextContent('futurevideo')
+    expect(container.querySelector('.app__wordmark')).toHaveTextContent('FutureVideo')
+    // 版本号挂在字标右下角，内容跟着 package.json 走
+    expect(container.querySelector('.app__version')?.textContent).toMatch(/^\d+\.\d+/)
     expect(screen.getByText('选一个目录，把里面的视频铺成方格')).toBeInTheDocument()
   })
 

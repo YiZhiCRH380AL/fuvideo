@@ -123,6 +123,13 @@ export default function App() {
    */
   const [openPanel, setOpenPanel] = useState<'speed' | 'media' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * 用户点过方格没有。
+   *
+   * 教程第二步只认这个：点下去就算走过了，不等播放内核把画面挂上来——
+   * 首次播放要起进程、找窗口，等一两秒是常事，拿「已经在播」当判据会让人以为点不动。
+   */
+  const [openedVideo, setOpenedVideo] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
 
   /** 开屏走到哪一步：入场 → 收场（界面同时淡入）→ 卸载。 */
@@ -197,8 +204,9 @@ export default function App() {
       hasDirectory: listing !== null || atDrives,
       hasVideos: videos.length > 0,
       hasMedia,
+      openedVideo,
     }),
-    [atDrives, hasMedia, listing, videos.length],
+    [atDrives, hasMedia, listing, openedVideo, videos.length],
   )
 
   const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
@@ -443,6 +451,8 @@ export default function App() {
   const playPath = useCallback(
     async (path: string, from?: DOMRect) => {
       setError(null)
+      // 点下去就算「这一步做过了」，后面起内核要多久都不影响教程推进
+      setOpenedVideo(true)
 
       try {
         await playLocalVideo(path)
@@ -954,7 +964,12 @@ export default function App() {
       <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
-            <span className="app__wordmark">futurevideo</span>
+            <span className="app__wordmark">
+              FutureVideo
+              <span className="app__version" data-testid="app-version">
+                {__APP_VERSION__}
+              </span>
+            </span>
 
             {/*
               目录区往上层走的路都在这里，不再单开关一个侧边栏。

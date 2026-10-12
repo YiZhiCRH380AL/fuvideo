@@ -17,6 +17,13 @@ export interface TutorialProgress {
   hasVideos: boolean
   /** 有视频正在播放。 */
   hasMedia: boolean
+  /**
+   * 用户已经点过方格（不管后来有没有真的播起来）。
+   *
+   * 第二步只认这个：点下去的时候播放内核可能还要一秒多才把画面挂上，
+   * 拿「已经在播」当判据的话，用户点完什么反馈都没有，只能去按跳过。
+   */
+  openedVideo: boolean
 }
 
 interface Step {
@@ -63,7 +70,7 @@ const STEPS: Step[] = [
     title: '点一格，放大播放',
     body: '点任意一个方格，它会放大成铺满窗口的画面并开始播放；再看画面时点一下是播放/暂停，双击左半屏快退 10 秒、右半屏快进 10 秒。',
     target: '.grid .tile:not(.tile--expanded)',
-    done: (progress) => progress.hasMedia,
+    done: (progress) => progress.openedVideo,
     waitHint: '点一下方格就会自动继续',
     art: (
       <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -372,7 +379,17 @@ export default function Tutorial({ onClose, progress }: TutorialProps) {
       aria-modal={spotlightRect === null ? 'true' : undefined}
       aria-labelledby="tutorial-title"
     >
-      {spotlightRect === null ? <div className="tutorial__backdrop" onClick={close} /> : null}
+      {/*
+        等用户操作的那一屏，底衬不能吃点击——它只是压暗，用户要点的东西在它下面。
+        （真机上踩过：目标一时找不到时，这层会把整页的点击都吞掉，只剩「跳过这步」能按。）
+      */}
+      {spotlightRect === null ? (
+        <div
+          className="tutorial__backdrop"
+          data-pass-through={waiting ? 'true' : undefined}
+          onClick={close}
+        />
+      ) : null}
 
       {spotlight}
 

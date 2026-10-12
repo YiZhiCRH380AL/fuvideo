@@ -5,9 +5,19 @@ import { hasSeenTutorial } from '../lib/tutorial'
 import Tutorial, { type TutorialProgress } from './Tutorial'
 
 /** 什么都没做过的状态。 */
-const NOTHING: TutorialProgress = { hasDirectory: false, hasVideos: false, hasMedia: false }
+const NOTHING: TutorialProgress = {
+  hasDirectory: false,
+  hasVideos: false,
+  hasMedia: false,
+  openedVideo: false,
+}
 /** 目录已经打开、视频也放起来了。 */
-const PLAYING: TutorialProgress = { hasDirectory: true, hasVideos: true, hasMedia: true }
+const PLAYING: TutorialProgress = {
+  hasDirectory: true,
+  hasVideos: true,
+  hasMedia: true,
+  openedVideo: true,
+}
 
 /** 教程是从页面上量打光位置的，所以测试里得先把目标元素挂上。 */
 function mountInto(parentClass: string, childClass: string): HTMLElement {
@@ -84,7 +94,7 @@ describe('交互教程', () => {
     // 目录早打开了：这一步不该再用「等你操作」把人拦住
     mountSampleEntry()
 
-    renderTutorial({ hasDirectory: true, hasVideos: true, hasMedia: false })
+    renderTutorial({ ...PLAYING, hasMedia: false })
 
     expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '跳过这步' })).not.toBeInTheDocument()
@@ -93,7 +103,7 @@ describe('交互教程', () => {
 
   it('找不到打光目标时退回居中的卡片，而不是卡住', async () => {
     // 一个目标元素都没挂：没有东西可以打光
-    renderTutorial({ hasDirectory: true, hasVideos: false, hasMedia: false })
+    renderTutorial({ ...PLAYING, hasVideos: false, hasMedia: false })
 
     expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
     expect(screen.queryByTestId('tutorial-spotlight')).not.toBeInTheDocument()
@@ -109,6 +119,26 @@ describe('交互教程', () => {
     await userEvent.click(screen.getByRole('button', { name: '跳过这步' }))
 
     await waitFor(() => expect(screen.getByText('点一格，放大播放')).toBeInTheDocument())
+  })
+
+  /**
+   * 真机上踩过：第二步的目标一时找不到（方格还没铺出来），底衬就把整页的点击吞了，
+   * 用户点方格没反应，只能按「跳过这步」。等操作的那一屏，底衬必须让点击穿过去。
+   */
+  it('等操作时底衬不吃点击，用户的点击能落到页面上', async () => {
+    const tile = mountInto('grid', 'tile')
+    const clicked = vi.fn()
+    tile.addEventListener('click', clicked)
+
+    // 什么都不满足：第一步在等操作，同时页面上没有它的目标元素
+    renderTutorial()
+
+    const backdrop = document.querySelector('.tutorial__backdrop')
+    expect(backdrop).toHaveAttribute('data-pass-through', 'true')
+
+    await userEvent.click(tile)
+
+    expect(clicked).toHaveBeenCalledTimes(1)
   })
 
   it('一步步做下去：先等看示例，再等点方格，最后不再拦人', async () => {

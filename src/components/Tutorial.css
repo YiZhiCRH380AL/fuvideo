@@ -24,6 +24,14 @@
   animation: tutorial-veil 220ms var(--ease) both;
 }
 
+/*
+ * 等用户操作的那一屏，底衬只负责压暗，不吃点击。
+ * 否则目标元素一时找不到时，用户点哪儿都没反应，只能去按「跳过这步」。
+ */
+.tutorial__backdrop[data-pass-through='true'] {
+  pointer-events: none;
+}
+
 @keyframes tutorial-veil {
   from {
     opacity: 0;
