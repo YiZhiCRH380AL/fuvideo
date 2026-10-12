@@ -2,6 +2,76 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：播放列表、收藏夹与两个 bug 修复（已完成）
+
+### 播放列表
+
+- **加进列表**：鼠标移到方格上，右上角浮出两颗动作按钮（`≡` 加列表、`☆` 收藏），再点一次移出。
+  为此把方格从一颗 `<button>` 改成了「容器 + 打开按钮 + 动作按钮」——按钮不能嵌按钮，
+  所以 `.tile` 现在是普通容器，`.tile__open` 才是铺满整卡的那颗按钮（[VideoGrid.tsx](src/components/VideoGrid.tsx)）。
+- **面板**：标题栏右上角新增 `≡` 入口，复用 [Popover.tsx](src/components/Popover.tsx)，
+  这次给它加了 `.popover--down`（顶栏的浮层挂在按钮**下面**，不像灵动岛那样往上弹）。
+  面板内容 [CollectionsPanel.tsx](src/components/CollectionsPanel.tsx)：↑ ↓ 调顺序、✕ 移出、点文件名直接播。
+- **看完自动播下一个**：判据是 mpv 的 **`idle-active`**。这里有一条实测结论值得记下来——
+  `--idle=yes` 下片子播完 mpv 会把文件**卸掉**，`eof-reached` 直接变成**不可用**，
+  只有 `idle-active` 会从 false 翻成 true（探针结果：pos/dur 一起消失、idle=true）。
+  所以 `PlayerSnapshot` 多了 `idleActive`，界面在轮询里看到它翻真就接上列表里的下一个；
+  同一个文件只推进一次（用 ref 记着），否则待机会在每次轮询里反复出现、一直往下跳。
+- **顺带修掉一个老问题**：进入待机之后 `duration` / `time-pos` 读不出来，
+  界面会从片尾跳回 `0:00`。现在 [mpv.rs](src-tauri/src/mpv.rs) 在播放时记下时长，
+  待机时报「停在片尾」（`PlayerState::last_duration`，换片时清掉）。
+
+### 收藏夹
+
+- 同样在方格上悬停加收藏（`☆` / `★`）。
+- 面板里点文件名是**播放**，点下面那行**小字**是**跳回它所在的目录**并把那一格高亮两下
+  （`data-highlight` + CSS 动画 + `scrollIntoView`）。两件事分开，用户才找得回原处。
+- 目录是从路径推出来的（[path.ts](src/lib/path.ts) 的 `parentDirectory`，复用 `pathSegments` 的规则，
+  盘符根目录、混用分隔符这些边界不用再写一遍）。
+
+### 两个 bug
+
+1. **品牌名与版本号**：左上角改成 `FutureVideo`，右下角挂版本小字。
+   版本号只在 `vite.config.ts` 里从 `package.json` 注入一次（`__APP_VERSION__`），
+   界面上不手写——不然迟早和实际发出去的版本对不上。开屏的字标、窗口标题、`index.html` 的
+   `<title>` 一并改成 `FutureVideo`。
+2. **教程第二步点方格不前进**：两个原因叠在一起，都堵掉了。
+   - 判据错了：第二步原本等 `hasMedia`（= 真播起来了），而首次播放要起 mpv 进程、找窗口、
+     连管道，一两秒内什么反馈都没有，用户只会去按「跳过这步」。
+     现在新增 `openedVideo`——**点下去就算走过**，不等画面挂上来。
+   - 底衬会吞掉点击：找不到打光目标时退回居中的卡片，那层 `.tutorial__backdrop` 是
+     `pointer-events: auto` 的，整页点击都被它吃了。现在等操作的那一屏给它标
+     `data-pass-through`，只负责压暗、不吃点击。
+
+### 存储
+
+播放列表与收藏夹存成配置目录下的 **`collections.json`**（[collections.rs](src-tauri/src/collections.rs)），
+**不和 `settings.json` 混在一起**：设置是偶尔改一次，列表是点一下就写一次。
+归一化时会去掉空路径与重复项——同一个视频在列表里出现两遍，自动连播会原地打转。
+
+### 覆盖到的测试
+
+- `src-tauri/src/collections.rs`：空/坏文件的兜底、去重、开关、挪格到边界不动、往返。
+- `src-tauri/src/mpv.rs`：快照多了 `idleActive` 字段（camelCase 那条用例里也钉住了）。
+- `src/lib/path.test.ts`：`parentDirectory`（普通路径、盘符根目录、混用分隔符、只有文件名）。
+- `src/App.controls.test.tsx`：方格上的两颗按钮、加/移出后按钮状态跟着后端返回值变、
+  面板里调顺序与移出、收藏夹点小字会跳到目录并高亮那一格、
+  **播完自动播下一个**以及「没有下一个就停在原地」。
+- `e2e/library.spec.ts`：在真浏览器里断言**不悬停时动作按钮是透明的、悬停后 opacity 变 1**，
+  加进列表后从右上角打开面板能看到它，并截图 `test-results/shots/playlist.png`。
+
+验证：`npm run typecheck`、`npm run lint`（2 条 `react(set-state-in-effect)` 警告，
+分别在教程「做到之后自动翻页」和这里的「播完自动下一个」，都属于「和外部系统同步」，
+有意保留）、`npm run test:run`（181 个）、`npm run test:e2e`（11 个）、`npm run build`、
+`cd src-tauri && cargo test`（79 个）全绿。
+
+**还没验证到的**：真机上从列表自动连播的观感（换片那一下的衔接）、
+收藏夹高亮在长列表里滚动定位的效果。
+
+**下一步**：仍然是文末路线图里的 **P3 画面**（缩放画幅、色彩、几何、画质档位、硬解、HDR、快照），
+交接说明见文件开头。另外版本号三处（`package.json` / `tauri.conf.json` / `Cargo.toml`）
+还是 `0.1.1-Alpha`，下次发版要一起定个新的。
+
 ## 上一阶段：修目录区被压扁、换封面图标、内置示例视频（已完成）
 
 三件事凑在一起，都是「真机上看才发现」的那一类。顺手补上了**在真浏览器里量布局**的手段，
@@ -594,9 +664,13 @@ e2e 覆盖「打开面板时界面不会隐去」。
 - 快照：`screenshot`（jpg/png/webp/jxl/avif，可带或不带字幕），可指定保存目录。
 - 可选：`v360` 做 360° 视角（VR 头显不支持）。
 
-### P4 播放控制与应用层
+### P4 播放控制与应用层（播放列表、书签已经提前做完）
 
-- 播放列表与队列 `playlist*` / `loadlist`；循环与随机 `loop-file` / `loop-playlist` / `shuffle`。
+- ~~播放列表与队列~~：已按「用户提的需求」提前做完（见上面「播放列表、收藏夹与两个 bug 修复」）：
+  方格悬停加列表、右上角面板调顺序与移出、看完自动播下一个。**没用 mpv 自己的 playlist**，
+  而是应用自己存一份（`collections.json`）再驱动 `loadfile`——因为列表要跨重启保留，
+  顺序和界面状态本来就是应用的事。
+- 还没做的：循环与随机 `loop-file` / `loop-playlist` / `shuffle`。
 - 章节 `chapter-list` / `chapter`；逐帧 `frame-step` / `frame-back-step`。
 - AB 循环 `ab-loop-a` / `ab-loop-b` / `ab-loop-count`。
 - 记忆播放位置与播放历史（依赖 P0 的 watch-later）；书签（mpv 无此能力，应用层自己存）。
