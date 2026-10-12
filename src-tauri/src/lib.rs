@@ -1,3 +1,4 @@
+mod audio;
 mod library;
 mod mpv;
 mod settings;
@@ -80,6 +81,14 @@ pub fn run() {
       mpv::set_audio_channels,
       mpv::set_audio_device,
       mpv::set_audio_exclusive,
+      mpv::audio_options,
+      mpv::set_audio_filter_mode,
+      mpv::set_audio_effect,
+      mpv::set_equalizer_preset,
+      mpv::set_equalizer_band,
+      mpv::set_audio_samplerate,
+      mpv::set_audio_format,
+      mpv::set_audio_spdif,
       mpv::toggle_fullscreen,
       settings::read_settings,
       settings::write_settings,

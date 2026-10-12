@@ -27,6 +27,21 @@ pub const AUDIO_CHANNELS: &[&str] = &["auto-safe", "auto", "mono", "stereo", "2.
 /// 允许的 ASS 字幕样式覆盖模式，对应 mpv 的 `--sub-ass-override`。
 pub const SUB_ASS_OVERRIDE_MODES: &[&str] = &["no", "yes", "scale", "force", "strip"];
 
+/// 音频效果的呈现模式：简单模式只给几个开关，高级模式给预设与均衡器。
+pub const AUDIO_FILTER_MODES: &[&str] = &["simple", "advanced"];
+
+/// 允许的输出位深。`None` 表示跟随源。
+pub const AUDIO_FORMATS: &[&str] = &["s16", "s32", "float"];
+
+/// 均衡器的频段数。10 段是图形均衡器的常见规格，界面上正好一排能放下。
+pub const EQUALIZER_BANDS: usize = 10;
+
+/// 单个频段的增益上限（dB），和 [crate::audio] 保持一致。
+const EQUALIZER_GAIN_LIMIT: f64 = 12.0;
+
+/// 采样率上限，跟 mpv 的 `--audio-samplerate` 对齐。
+const SAMPLERATE_LIMIT: u32 = 768_000;
+
 /// 默认硬解模式。和加设置之前写死在启动参数里的那个保持一致。
 pub const DEFAULT_HWDEC: &str = "auto-safe";
 
@@ -43,6 +58,11 @@ fn default_hwdec() -> String {
 /// 退出时默认记住播放位置。
 fn default_save_position() -> bool {
   true
+}
+
+/// 默认走简单模式：刚上手的人不该先看到一排滑块。
+fn default_filter_mode() -> String {
+  "simple".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -66,6 +86,24 @@ pub struct Settings {
   pub sub_position: Option<f64>,
   /// ASS 字幕的样式覆盖模式；`None` 表示不传，交给 mpv 自己的默认值（`scale`）。
   pub sub_ass_override: Option<String>,
+  /// 音频效果的呈现模式，见 [AUDIO_FILTER_MODES]。
+  pub audio_filter_mode: String,
+  /// 响度归一化（动态）：把忽大忽小的对白拉平，夜里看片用。
+  pub loudness_normalization: bool,
+  /// 虚拟环绕：在立体声设备上模拟出包围感。
+  pub virtual_surround: bool,
+  /// 立体声扩展：拉开左右声道的差异。
+  pub stereo_widening: bool,
+  /// 均衡器预设，见 [crate::audio::PRESETS]。`custom` 表示用户手调过。
+  pub equalizer_preset: Option<String>,
+  /// 均衡器各段的增益（dB）。长度会被归一化成 [EQUALIZER_BANDS]。
+  pub equalizer_bands: Option<Vec<f64>>,
+  /// 输出采样率；`None` 表示跟随源。
+  pub audio_samplerate: Option<u32>,
+  /// 输出位深；`None` 表示跟随源。
+  pub audio_format: Option<String>,
+  /// 音频透传：把 AC3/DTS/TrueHD 原样交给功放。开着的时候滤镜链是空的。
+  pub audio_spdif: bool,
 }
 
 impl Default for Settings {
@@ -80,6 +118,15 @@ impl Default for Settings {
       audio_exclusive: false,
       sub_position: None,
       sub_ass_override: None,
+      audio_filter_mode: default_filter_mode(),
+      loudness_normalization: false,
+      virtual_surround: false,
+      stereo_widening: false,
+      equalizer_preset: None,
+      equalizer_bands: None,
+      audio_samplerate: None,
+      audio_format: None,
+      audio_spdif: false,
     }
   }
 }
@@ -113,6 +160,35 @@ impl Settings {
       .filter(|name| !name.is_empty());
 
     self.sub_ass_override = keep_choice(self.sub_ass_override, SUB_ASS_OVERRIDE_MODES);
+
+    if !AUDIO_FILTER_MODES.contains(&self.audio_filter_mode.as_str()) {
+      self.audio_filter_mode = default_filter_mode();
+    }
+
+    self.audio_format = keep_choice(self.audio_format, AUDIO_FORMATS);
+    self.equalizer_preset = keep_choice(self.equalizer_preset, crate::audio::PRESETS);
+
+    // 0 就是 mpv 的「跟随源」，和 None 是同一件事，统一成 None 免得界面上多一个状态
+    self.audio_samplerate = self
+      .audio_samplerate
+      .filter(|rate| *rate > 0 && *rate <= SAMPLERATE_LIMIT);
+
+    // 频段数固定：少一段界面上就会缺一根滑块，多出来的直接丢掉
+    self.equalizer_bands = self.equalizer_bands.map(|bands| {
+      let mut normalized: Vec<f64> = bands
+        .into_iter()
+        .map(|gain| {
+          if gain.is_finite() {
+            gain.clamp(-EQUALIZER_GAIN_LIMIT, EQUALIZER_GAIN_LIMIT)
+          } else {
+            0.0
+          }
+        })
+        .collect();
+
+      normalized.resize(EQUALIZER_BANDS, 0.0);
+      normalized
+    });
 
     self
   }
@@ -197,6 +273,15 @@ mod tests {
     assert_eq!(settings.audio_device, None);
     assert!(!settings.audio_exclusive, "独占模式默认关：开着会抢占设备");
     assert_eq!(settings.sub_position, None);
+    assert_eq!(settings.audio_filter_mode, "simple", "默认走简单模式");
+    assert!(!settings.loudness_normalization);
+    assert!(!settings.virtual_surround);
+    assert!(!settings.stereo_widening);
+    assert_eq!(settings.equalizer_preset, None);
+    assert_eq!(settings.equalizer_bands, None);
+    assert_eq!(settings.audio_samplerate, None);
+    assert_eq!(settings.audio_format, None);
+    assert!(!settings.audio_spdif, "透传默认关：它会让音频绕过所有滤镜");
   }
 
   #[test]
@@ -228,6 +313,15 @@ mod tests {
       audio_exclusive: true,
       sub_position: Some(92.0),
       sub_ass_override: Some("force".to_string()),
+      audio_filter_mode: "advanced".to_string(),
+      loudness_normalization: true,
+      virtual_surround: true,
+      stereo_widening: false,
+      equalizer_preset: Some("music".to_string()),
+      equalizer_bands: Some(vec![3.0, 2.5, 1.5, 0.5, -0.5, -1.0, 0.0, 1.5, 2.5, 3.0]),
+      audio_samplerate: Some(48000),
+      audio_format: Some("float".to_string()),
+      audio_spdif: false,
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -337,8 +431,65 @@ mod tests {
       "audioExclusive",
       "subPosition",
       "subAssOverride",
+      "audioFilterMode",
+      "loudnessNormalization",
+      "virtualSurround",
+      "stereoWidening",
+      "equalizerPreset",
+      "equalizerBands",
+      "audioSamplerate",
+      "audioFormat",
+      "audioSpdif",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
+  }
+
+  #[test]
+  fn equalizer_bands_are_clamped_and_resized_to_the_fixed_width() {
+    let short = Settings {
+      equalizer_bands: Some(vec![99.0, -99.0]),
+      ..Settings::default()
+    }
+    .normalized();
+    let long = Settings {
+      equalizer_bands: Some(vec![0.0; 20]),
+      ..Settings::default()
+    }
+    .normalized();
+
+    let bands = short.equalizer_bands.expect("补齐之后的频段");
+    assert_eq!(bands.len(), EQUALIZER_BANDS);
+    assert_eq!(bands[0], EQUALIZER_GAIN_LIMIT);
+    assert_eq!(bands[1], -EQUALIZER_GAIN_LIMIT);
+    assert_eq!(bands[2], 0.0, "缺的段补 0");
+    assert_eq!(long.equalizer_bands.expect("截断之后的频段").len(), EQUALIZER_BANDS);
+  }
+
+  /// 0 和「跟随源」是同一件事，别在界面上留两个看起来不一样的等价状态。
+  #[test]
+  fn samplerate_zero_means_follow_the_source() {
+    let settings = Settings {
+      audio_samplerate: Some(0),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.audio_samplerate, None);
+  }
+
+  #[test]
+  fn unknown_audio_format_or_mode_or_preset_falls_back() {
+    let settings = Settings {
+      audio_format: Some("s24".to_string()),
+      audio_filter_mode: "expert".to_string(),
+      equalizer_preset: Some("cinema".to_string()),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.audio_format, None);
+    assert_eq!(settings.audio_filter_mode, "simple");
+    assert_eq!(settings.equalizer_preset, None);
   }
 }

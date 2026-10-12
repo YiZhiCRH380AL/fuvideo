@@ -229,6 +229,19 @@ impl MpvIpc {
   pub fn add_audio(&self, path: &str) -> Result<(), IpcError> {
     self.request(json!(["audio-add", path, "select"])).map(|_| ())
   }
+
+  /// 整体替换音频滤镜链。
+  ///
+  /// mpv 的 `af` 是**整体替换**的语义：每次都把整条链交上去，谁也别想只改其中一条
+  /// （实测 `af-command` 对 `lavfi=[...]` 桥接的滤镜也不可用）。空链要用 `change-list`
+  /// 清空——给 `af set` 传空字符串不是合法的滤镜列表。
+  pub fn set_audio_filters(&self, chain: &[String]) -> Result<(), IpcError> {
+    if chain.is_empty() {
+      return self.request(json!(["change-list", "af", "clr", ""])).map(|_| ());
+    }
+
+    self.request(json!(["af", "set", chain.join(",")])).map(|_| ())
+  }
 }
 
 /// 反复尝试连接管道，直到超时。

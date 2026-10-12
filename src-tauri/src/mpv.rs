@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::audio;
 use crate::settings::{self, Settings};
 
 pub(crate) mod ipc;
@@ -463,6 +464,18 @@ pub fn build_player_args(
     args.push(format!("--sub-ass-override={mode}"));
   }
 
+  if let Some(rate) = settings.audio_samplerate {
+    args.push(format!("--audio-samplerate={rate}"));
+  }
+
+  if let Some(format) = &settings.audio_format {
+    args.push(format!("--audio-format={format}"));
+  }
+
+  if settings.audio_spdif {
+    args.push(format!("--audio-spdif={}", audio::SPDIF_CODECS));
+  }
+
   args
 }
 
@@ -670,6 +683,10 @@ pub fn play_video(
 
   state.with_ipc(|client| client.load_file(&path))?;
   state.set_current_path(Some(path));
+
+  // 音频效果是全局偏好，但 `af` 也在 watch-later 的默认记录里：不重新压一遍的话，
+  // 换到一部以前看过的片子就会带回它当时的那条链，和设置页显示的对不上。
+  apply_audio_settings(&state, &settings);
 
   // 首次播放时 mpv 可能还没把窗口建出来，载入文件后再补一次对齐
   let _ = state.sync_embedded_window(window_handle, (size.width, size.height));
@@ -1227,6 +1244,165 @@ pub fn set_audio_exclusive(
   Ok(())
 }
 
+/* ---------------- 音频效果（滤镜链） ---------------- */
+
+/// 把设置里的音频效果同步到正在播放的 mpv 上。
+///
+/// 失败一律忽略：还没起进程、没在播放的时候这些属性本来就写不进去，
+/// 不值得为此让一次「保存设置」整个失败——下次启动照样会用同一份设置。
+fn apply_audio_settings(state: &PlayerState, settings: &Settings) {
+  let chain = audio::build_filter_chain(settings);
+
+  let _ = state.with_ipc(|client| client.set_audio_filters(&chain));
+
+  let _ = state.with_ipc(|client| {
+    client.set_number("audio-samplerate", settings.audio_samplerate.unwrap_or(0) as f64)
+  });
+
+  let _ = state.with_ipc(|client| {
+    client.set_string("audio-format", settings.audio_format.as_deref().unwrap_or("no"))
+  });
+
+  let _ = state.with_ipc(|client| {
+    client.set_string(
+      "audio-spdif",
+      if settings.audio_spdif { audio::SPDIF_CODECS } else { "" },
+    )
+  });
+}
+
+/// 改音频设置并立刻生效。
+///
+/// 所有音频效果的入口都走这里，免得每个命令自己记一遍「先存哪个、后传哪个」。
+/// 返回的是**落盘之后**的那份（越界的取值已经被折回），界面据此更新显示。
+fn update_audio_settings(
+  app: &tauri::AppHandle,
+  state: &PlayerState,
+  change: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
+  let directory = settings::config_dir(app);
+  let mut current = settings::load(&directory);
+  change(&mut current);
+
+  let saved = settings::save(&directory, current)?;
+  apply_audio_settings(state, &saved);
+
+  Ok(saved)
+}
+
+/// 设置页要用的选项表：频点、预设、位深、采样率。标签由后端给，前端不再抄一份。
+#[tauri::command]
+pub fn audio_options() -> audio::AudioOptions {
+  audio::AudioOptions::default()
+}
+
+/// 切换音效的呈现模式（简单 / 高级）。
+#[tauri::command(async)]
+pub fn set_audio_filter_mode(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  mode: String,
+) -> Result<Settings, String> {
+  if !settings::AUDIO_FILTER_MODES.contains(&mode.as_str()) {
+    return Err(format!("不支持的音效模式: {mode}"));
+  }
+
+  update_audio_settings(&app, &state, |settings| settings.audio_filter_mode = mode)
+}
+
+/// 开/关简单模式里的一个效果。`kind` 取 `loudness` / `surround` / `widening`。
+#[tauri::command(async)]
+pub fn set_audio_effect(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  kind: String,
+  enabled: bool,
+) -> Result<Settings, String> {
+  if !["loudness", "surround", "widening"].contains(&kind.as_str()) {
+    return Err(format!("未知的音效开关: {kind}"));
+  }
+
+  update_audio_settings(&app, &state, |settings| match kind.as_str() {
+    "loudness" => settings.loudness_normalization = enabled,
+    "surround" => settings.virtual_surround = enabled,
+    _ => settings.stereo_widening = enabled,
+  })
+}
+
+/// 选均衡器预设。`off` 会把所有频段清零。
+#[tauri::command(async)]
+pub fn set_equalizer_preset(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  preset: String,
+) -> Result<Settings, String> {
+  let Some(gains) = audio::preset_gains(&preset) else {
+    return Err(format!("未知的均衡器预设: {preset}"));
+  };
+
+  update_audio_settings(&app, &state, |settings| {
+    settings.equalizer_preset = Some(preset);
+    settings.equalizer_bands = Some(gains.to_vec());
+  })
+}
+
+/// 调某一个频段。调过之后预设就落到「自定义」。
+#[tauri::command(async)]
+pub fn set_equalizer_band(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  index: usize,
+  gain: f64,
+) -> Result<Settings, String> {
+  if index >= settings::EQUALIZER_BANDS {
+    return Err(format!("频段序号超出范围: {index}"));
+  }
+
+  update_audio_settings(&app, &state, |settings| {
+    // 头一次调的时候先按「全平」铺开，用户改的就是他看到的那条曲线
+    let mut bands = settings
+      .equalizer_bands
+      .clone()
+      .unwrap_or_else(|| vec![0.0; settings::EQUALIZER_BANDS]);
+
+    bands.resize(settings::EQUALIZER_BANDS, 0.0);
+    bands[index] = gain;
+
+    settings.equalizer_bands = Some(bands);
+    settings.equalizer_preset = Some("custom".to_string());
+  })
+}
+
+/// 输出采样率。`None` 表示跟随源。
+#[tauri::command(async)]
+pub fn set_audio_samplerate(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  samplerate: Option<u32>,
+) -> Result<Settings, String> {
+  update_audio_settings(&app, &state, |settings| settings.audio_samplerate = samplerate)
+}
+
+/// 输出位深。`None` 表示跟随源。
+#[tauri::command(async)]
+pub fn set_audio_format(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  format: Option<String>,
+) -> Result<Settings, String> {
+  update_audio_settings(&app, &state, |settings| settings.audio_format = format)
+}
+
+/// 音频透传。开着的时候所有滤镜都会失效，界面那边要说清楚。
+#[tauri::command(async)]
+pub fn set_audio_spdif(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  enabled: bool,
+) -> Result<Settings, String> {
+  update_audio_settings(&app, &state, |settings| settings.audio_spdif = enabled)
+}
+
 #[cfg(test)]
 mod tests {
   use std::thread;
@@ -1329,6 +1505,15 @@ mod tests {
       audio_exclusive: true,
       sub_position: Some(88.0),
       sub_ass_override: Some("force".to_string()),
+      audio_samplerate: Some(48000),
+      audio_format: Some("float".to_string()),
+      audio_spdif: true,
+      audio_filter_mode: "advanced".to_string(),
+      loudness_normalization: true,
+      virtual_surround: true,
+      stereo_widening: true,
+      equalizer_preset: Some("music".to_string()),
+      equalizer_bands: Some(vec![3.0; settings::EQUALIZER_BANDS]),
     };
     let args = build_player_args(1, r"\\.\pipe\p", &settings, Path::new(r"E:\config"));
 
@@ -1341,6 +1526,9 @@ mod tests {
     assert!(args.contains(&"--audio-exclusive=yes".to_string()));
     assert!(args.contains(&"--sub-pos=88".to_string()));
     assert!(args.contains(&"--sub-ass-override=force".to_string()));
+    assert!(args.contains(&"--audio-samplerate=48000".to_string()));
+    assert!(args.contains(&"--audio-format=float".to_string()));
+    assert!(args.contains(&format!("--audio-spdif={}", audio::SPDIF_CODECS)));
   }
 
   #[test]
@@ -2114,5 +2302,86 @@ mod tests {
     );
 
     let _ = std::fs::remove_dir_all(&directory);
+  }
+
+  /// 把 mpv 回读的 `af` 属性里的标签按顺序取出来。
+  fn filter_labels(value: &Value) -> Vec<String> {
+    value
+      .as_array()
+      .map(|items| {
+        items
+          .iter()
+          .filter_map(|item| item.get("label").and_then(Value::as_str).map(str::to_string))
+          .collect()
+      })
+      .unwrap_or_default()
+  }
+
+  /// 滤镜链真的挂到 mpv 上了吗——这是 P2 的地基，链子断了所有音效都是摆设。
+  ///
+  /// 跑在 `--ao=null` 下不会出声，也不会碰用户的音频设备。
+  #[test]
+  fn audio_filter_chain_reaches_mpv() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过音频滤镜集成测试");
+      return;
+    }
+
+    let (_guard, client) = spawn_headless("test-af", &[]);
+
+    client
+      .load_file("av://lavfi:sine=frequency=440:duration=30:sample_rate=48000")
+      .expect("载入音频");
+
+    wait_for_tracks(&client, |tracks| !tracks.is_empty(), Duration::from_secs(20));
+
+    let settings = Settings {
+      loudness_normalization: true,
+      stereo_widening: true,
+      equalizer_bands: Some({
+        let mut bands = vec![0.0; settings::EQUALIZER_BANDS];
+        bands[0] = 6.0;
+        bands
+      }),
+      ..Settings::default()
+    };
+
+    let chain = audio::build_filter_chain(&settings);
+    assert_eq!(chain.len(), 3, "一段均衡 + 响度归一化 + 立体声扩展: {chain:?}");
+
+    client.set_audio_filters(&chain).expect("挂上滤镜链");
+
+    // 回读 mpv 认下来的链：标签和顺序都要和交上去的一致
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut labels = Vec::new();
+
+    while Instant::now() < deadline {
+      labels = client
+        .get_value("af")
+        .ok()
+        .flatten()
+        .map(|value| filter_labels(&value))
+        .unwrap_or_default();
+
+      if labels.len() == 3 {
+        break;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+
+    assert_eq!(labels, vec!["eq00", "norm", "wide"]);
+
+    // 清空：用户把效果全关掉走的就是这条路
+    client.set_audio_filters(&[]).expect("清空滤镜链");
+
+    let cleared = client
+      .get_value("af")
+      .ok()
+      .flatten()
+      .map(|value| filter_labels(&value))
+      .unwrap_or_default();
+
+    assert!(cleared.is_empty(), "清空之后链上不该还有东西: {cleared:?}");
   }
 }
