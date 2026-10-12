@@ -13,6 +13,7 @@ import Crumbs from './components/Crumbs'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
 import MediaPanel from './components/MediaPanel'
+import SettingsPage from './components/SettingsPage'
 import Splash from './components/Splash'
 import Tutorial from './components/Tutorial'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
@@ -120,6 +121,7 @@ export default function App() {
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
   const [openPanel, setOpenPanel] = useState<'speed' | 'media' | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
 
   /** 开屏走到哪一步：入场 → 收场（界面同时淡入）→ 卸载。 */
@@ -194,7 +196,8 @@ export default function App() {
   // 暂停、拖动进度、开着倍速菜单时保持显示。
   const chromeVisible = useIdleVisibility({
     delayMs: CHROME_IDLE_MS,
-    enabled: expanded && hasMedia && !paused && scrub === null && openPanel === null,
+    enabled:
+      expanded && hasMedia && !paused && scrub === null && openPanel === null && !settingsOpen,
   })
 
   const reportError = useCallback((cause: unknown) => {
@@ -941,6 +944,16 @@ export default function App() {
 
           <div className="app__tools">
             <button
+              className="app__tool"
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="设置"
+              title="设置"
+            >
+              ⚙
+            </button>
+
+            <button
               className="app__help"
               type="button"
               onClick={() => setTutorialOpen(true)}
@@ -1123,6 +1136,10 @@ export default function App() {
       {/* 开屏没走完之前不弹教程，不然两层浮层会叠在一起 */}
       {splash === 'done' && tutorialOpen ? (
         <Tutorial onClose={() => setTutorialOpen(false)} />
+      ) : null}
+
+      {settingsOpen ? (
+        <SettingsPage onClose={() => setSettingsOpen(false)} onError={reportError} />
       ) : null}
 
       {error ? (

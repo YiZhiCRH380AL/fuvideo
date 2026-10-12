@@ -242,7 +242,9 @@
 }
 
 /* 想再看一次教程就点它 */
-.app__help {
+/* 顶栏右上角的图标按钮：设置和帮助共用一套外观 */
+.app__help,
+.app__tool {
   display: grid;
   flex: none;
   place-items: center;
@@ -262,7 +264,8 @@
     color var(--dur-fast) var(--ease);
 }
 
-.app__help:hover {
+.app__help:hover,
+.app__tool:hover {
   border-color: rgb(255 255 255 / 20%);
   background: var(--surface-hover);
   color: var(--text);

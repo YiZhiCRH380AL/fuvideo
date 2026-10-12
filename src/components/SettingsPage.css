@@ -1,0 +1,315 @@
+/*
+ * 设置页：一层压暗的底 + 一张大卡片。
+ *
+ * 遮罩和圆角跟着教程那一套走（见 Tutorial.css），因为它们都是「盖住整个窗口的浮层」，
+ * 用户应该觉得它们是同一种东西。区别只在尺寸：设置页要放得下一排均衡器滑块。
+ */
+
+.settings {
+  position: fixed;
+  inset: 0;
+  /* 比教程高一层：两个浮层万一同时开着，设置应该在上面 */
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 24px;
+}
+
+.settings__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(4 4 6 / 66%);
+  backdrop-filter: blur(3px);
+  animation: settings-veil 220ms var(--ease) both;
+}
+
+@keyframes settings-veil {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.settings__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(720px, 100%);
+  max-height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgb(21 21 26 / 97%);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  animation: settings-in 320ms var(--ease-spring) both;
+  /* 面板本身不滚：头部和底部固定，只有中间那块滚 */
+  overflow: hidden;
+}
+
+@keyframes settings-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.settings__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.settings__close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.settings__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.settings__name {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings__note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings__block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings__label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings__chip {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__chip:hover {
+  background: var(--surface-hover);
+}
+
+.settings__chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.settings__chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settings__bands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 频点、滑块、增益三栏对齐，扫一眼就知道哪一段抬了多少 */
+.settings__band {
+  display: grid;
+  grid-template-columns: 46px 1fr 62px;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings__frequency {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings__gain {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 和灵动岛上的滑块同一套观感（那边叫 .island__range）。
+ * 没有并成一个类是因为灵动岛的样式绑着它自己的布局，动它就可能动到外观。
+ */
+.settings__range {
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings__range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) var(--fill, 50%),
+    var(--track) var(--fill, 50%),
+    var(--track) 100%
+  );
+}
+
+.settings__range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  appearance: none;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.settings__range:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.settings__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings__select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 开关的说明文字挂在标题下面，比挤在同一行好读 */
+.settings__effect {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings__effect-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings__warning {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings__foot {
+  flex: none;
+  margin: 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings__backdrop,
+  .settings__panel {
+    animation: none;
+  }
+}

@@ -83,7 +83,38 @@ export interface PlayerSettings {
   audioChannels: string | null
   audioDevice: string | null
   audioExclusive: boolean
+  /** 音效的呈现模式：`simple` 只有几个开关，`advanced` 给预设与均衡器。 */
+  audioFilterMode: string
+  loudnessNormalization: boolean
+  virtualSurround: boolean
+  stereoWidening: boolean
+  equalizerPreset: string | null
+  /** 均衡器各段的增益（dB）。`null` 表示还没动过均衡器。 */
+  equalizerBands: number[] | null
+  audioSamplerate: number | null
+  audioFormat: string | null
+  /** 音频透传。开着的时候所有滤镜都会失效。 */
+  audioSpdif: boolean
 }
+
+/** 一个可选项：给机器看的 id 和给人看的名字。 */
+export interface OptionChoice {
+  id: string
+  label: string
+}
+
+/** 设置页要用的选项表。标签由后端给，前端不抄一份。 */
+export interface AudioOptions {
+  frequencies: number[]
+  gainLimit: number
+  modes: OptionChoice[]
+  presets: OptionChoice[]
+  samplerates: OptionChoice[]
+  formats: OptionChoice[]
+}
+
+/** 简单模式里的三个开关。 */
+export type AudioEffectKind = 'loudness' | 'surround' | 'widening'
 
 /** 和 Rust 侧 `Settings::default()` 保持一致。 */
 export const DEFAULT_SETTINGS: PlayerSettings = {
@@ -96,6 +127,15 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   audioChannels: null,
   audioDevice: null,
   audioExclusive: false,
+  audioFilterMode: 'simple',
+  loudnessNormalization: false,
+  virtualSurround: false,
+  stereoWidening: false,
+  equalizerPreset: null,
+  equalizerBands: null,
+  audioSamplerate: null,
+  audioFormat: null,
+  audioSpdif: false,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -332,6 +372,56 @@ export function setAudioDevice(device: string): Promise<void> {
 /** 独占模式：开着会独占设备，别的程序就出不了声。 */
 export function setAudioExclusive(enabled: boolean): Promise<void> {
   return playerCommand<void>('set_audio_exclusive', { enabled })
+}
+
+/** 设置页要用的选项表（频点、预设、位深、采样率）。 */
+export function getAudioOptions(): Promise<AudioOptions> {
+  return playerCommand<AudioOptions>('audio_options')
+}
+
+/**
+ * 音效类命令的统一入口。
+ *
+ * 它们都会返回**落盘之后**的设置（越界的取值已经被折回），
+ * 界面直接拿它更新，不用再读一次文件。
+ */
+function settingsCommand(command: string, args?: Record<string, unknown>): Promise<PlayerSettings> {
+  return playerCommand<PlayerSettings>(command, args)
+}
+
+/** 切换音效的呈现模式。 */
+export function setAudioFilterMode(mode: string): Promise<PlayerSettings> {
+  return settingsCommand('set_audio_filter_mode', { mode })
+}
+
+/** 开/关简单模式里的一个效果。 */
+export function setAudioEffect(kind: AudioEffectKind, enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('set_audio_effect', { kind, enabled })
+}
+
+/** 选均衡器预设。`off` 会把所有频段清零。 */
+export function setEqualizerPreset(preset: string): Promise<PlayerSettings> {
+  return settingsCommand('set_equalizer_preset', { preset })
+}
+
+/** 调某一个频段。调过之后预设会落到「自定义」。 */
+export function setEqualizerBand(index: number, gain: number): Promise<PlayerSettings> {
+  return settingsCommand('set_equalizer_band', { index, gain })
+}
+
+/** 输出采样率；传 null 表示跟随源。 */
+export function setAudioSamplerate(samplerate: number | null): Promise<PlayerSettings> {
+  return settingsCommand('set_audio_samplerate', { samplerate })
+}
+
+/** 输出位深；传 null 表示跟随源。 */
+export function setAudioFormat(format: string | null): Promise<PlayerSettings> {
+  return settingsCommand('set_audio_format', { format })
+}
+
+/** 音频透传。开着的时候所有滤镜都会失效。 */
+export function setAudioSpdif(enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('set_audio_spdif', { enabled })
 }
 
 /** 跳转到指定秒数。 */

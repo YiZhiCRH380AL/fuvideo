@@ -3,13 +3,17 @@ import {
   DEFAULT_SETTINGS,
   addSubtitleFile,
   describeProbe,
+  getAudioOptions,
   getAudioDevices,
   getBackendStatus,
   getPlayerDetails,
   isTauri,
   readSettings,
+  setAudioFilterMode,
   setAudioDevice,
+  setAudioSpdif,
   setAudioTrack,
+  setEqualizerPreset,
   writeSettings,
 } from './backend'
 
@@ -72,5 +76,12 @@ describe('播放控制类命令', () => {
     await expect(setAudioTrack(2)).rejects.toThrow('桌面应用')
     await expect(addSubtitleFile()).rejects.toThrow('桌面应用')
     await expect(setAudioDevice('auto')).rejects.toThrow('桌面应用')
+  })
+
+  it('音效设置的读写也一样', async () => {
+    await expect(getAudioOptions()).rejects.toThrow('桌面应用')
+    await expect(setAudioFilterMode('advanced')).rejects.toThrow('桌面应用')
+    await expect(setEqualizerPreset('music')).rejects.toThrow('桌面应用')
+    await expect(setAudioSpdif(true)).rejects.toThrow('桌面应用')
   })
 })

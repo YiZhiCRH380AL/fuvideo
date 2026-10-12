@@ -57,6 +57,27 @@ const mocks = vi.hoisted(() => {
       speed: 1,
       buffering: false,
     } as PlayerSnapshot,
+    // 设置页要用的一份设置：字段和 Rust 侧对齐，少一个字段界面就会读成 undefined
+    settings: {
+      hwdec: 'auto-safe',
+      savePosition: true,
+      subAuto: null,
+      subFontSize: null,
+      subPosition: null,
+      subAssOverride: null,
+      audioChannels: null,
+      audioDevice: null,
+      audioExclusive: false,
+      audioFilterMode: 'simple',
+      loudnessNormalization: false,
+      virtualSurround: false,
+      stereoWidening: false,
+      equalizerPreset: null,
+      equalizerBands: null,
+      audioSamplerate: null,
+      audioFormat: null,
+      audioSpdif: false,
+    },
     togglePause: vi.fn(async () => false),
     seekTo: vi.fn(async (_position: number) => {}),
     seekBy: vi.fn(async (_offset: number) => {}),
@@ -125,6 +146,29 @@ vi.mock('./lib/backend', () => ({
   setAudioChannels: async () => {},
   setAudioDevice: async () => {},
   setAudioExclusive: async () => {},
+  // 设置页用到的那一批：这个测试只关心设置页能不能从右上角打开
+  readSettings: async () => mocks.settings,
+  getAudioOptions: async () => ({
+    frequencies: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+    gainLimit: 12,
+    modes: [
+      { id: 'simple', label: '简单' },
+      { id: 'advanced', label: '高级' },
+    ],
+    presets: [
+      { id: 'off', label: '关闭' },
+      { id: 'music', label: '音乐' },
+    ],
+    samplerates: [{ id: 'source', label: '跟随源' }],
+    formats: [{ id: 'source', label: '跟随源' }],
+  }),
+  setAudioFilterMode: async () => mocks.settings,
+  setAudioEffect: async () => mocks.settings,
+  setEqualizerPreset: async () => mocks.settings,
+  setEqualizerBand: async () => mocks.settings,
+  setAudioSamplerate: async () => mocks.settings,
+  setAudioFormat: async () => mocks.settings,
+  setAudioSpdif: async () => mocks.settings,
 }))
 
 import App from './App'
@@ -477,6 +521,18 @@ describe('底部控制条', () => {
 
     await userEvent.click(button)
     expect(screen.queryByRole('dialog', { name: '音轨与字幕' })).not.toBeInTheDocument()
+  })
+
+  it('右上角的按钮能打开设置页，Esc 收起', async () => {
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: '设置' }))
+
+    expect(await screen.findByRole('dialog', { name: '设置' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument()
   })
 
   it('全屏按钮调用全屏切换', async () => {
