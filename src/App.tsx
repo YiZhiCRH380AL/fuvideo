@@ -26,6 +26,7 @@ import {
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
+  prepareSampleFolder,
   seekBy,
   seekTo,
   setSpeed,
@@ -558,6 +559,22 @@ export default function App() {
     }
   }, [loadDirectory, reportError])
 
+  /**
+   * 打开自带的示例文件夹。
+   *
+   * 第一次点会把示例视频和字幕复制到应用配置目录下，之后就是普通目录了：
+   * 用户可以在里面加自己的文件，也随时能换成别的文件夹。
+   */
+  const handleOpenSample = useCallback(async () => {
+    setError(null)
+
+    try {
+      await loadDirectory(await prepareSampleFolder())
+    } catch (cause: unknown) {
+      reportError(cause)
+    }
+  }, [loadDirectory, reportError])
+
   /** 上下集：直接换片，沿用原来那套「载入 + 展开」的流程，不用再点方格。 */
   const handlePlayEpisode = useCallback(
     (path: string) => {
@@ -1042,6 +1059,17 @@ export default function App() {
                 选择目录
               </button>
               <span className="library__links">
+                <button
+                  className="library__single library__sample"
+                  type="button"
+                  onClick={() => void handleOpenSample()}
+                  disabled={!canOpen}
+                >
+                  看示例视频
+                </button>
+                <span className="library__dot" aria-hidden="true">
+                  ·
+                </span>
                 <button
                   className="library__single"
                   type="button"

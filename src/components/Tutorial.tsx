@@ -41,11 +41,15 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    title: '先挑一个放视频的文件夹',
-    body: '点下面这个按钮选一个文件夹，里面的视频会铺成方格墙。',
-    target: '.library__empty .button--primary',
+    title: '先看一段自带的示例',
+    body: '点「看示例视频」，它会打开随应用带来的一小段片段（还带一条字幕），不用自己先去找片子。',
+    target: '.library__sample',
     done: (progress) => progress.hasDirectory,
-    waitHint: '选好目录就会自动继续',
+    waitHint: '点一下就会自动继续',
+    points: [
+      '看完想换成自己的视频，点旁边的「选择目录」，或者直接进「此电脑」翻盘',
+      '示例文件会复制到本机的应用数据目录里，改坏了删掉重进就行',
+    ],
     art: (
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="4.5" y="5.5" width="10" height="8" rx="2" />

@@ -6,6 +6,8 @@ import Tutorial, { type TutorialProgress } from './Tutorial'
 
 /** 什么都没做过的状态。 */
 const NOTHING: TutorialProgress = { hasDirectory: false, hasVideos: false, hasMedia: false }
+/** 目录已经打开、视频也放起来了。 */
+const PLAYING: TutorialProgress = { hasDirectory: true, hasVideos: true, hasMedia: true }
 
 /** 教程是从页面上量打光位置的，所以测试里得先把目标元素挂上。 */
 function mountInto(parentClass: string, childClass: string): HTMLElement {
@@ -18,6 +20,11 @@ function mountInto(parentClass: string, childClass: string): HTMLElement {
 
   document.body.appendChild(parent)
   return child
+}
+
+/** 第一步打光的是空状态里的「看示例视频」。 */
+function mountSampleEntry(): HTMLElement {
+  return mountInto('library__empty', 'library__sample')
 }
 
 function renderTutorial(progress: TutorialProgress = NOTHING) {
@@ -49,24 +56,24 @@ afterEach(() => {
 })
 
 describe('交互教程', () => {
-  it('第一步真的指向「选择目录」，并等用户去点', async () => {
-    mountInto('library__empty', 'button button--primary')
+  it('第一步真的指向「看示例视频」，并等用户去点', async () => {
+    mountSampleEntry()
     renderTutorial()
 
     expect(screen.getByTestId('tutorial-spotlight')).toBeInTheDocument()
-    expect(screen.getByText('先挑一个放视频的文件夹')).toBeInTheDocument()
+    expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
 
     // 空转的主按钮 + 一个跳出口，用户不能被卡在这儿
     expect(screen.getByRole('button', { name: '等你操作' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '跳过这步' })).toBeInTheDocument()
-    expect(screen.getByTestId('tutorial-wait')).toHaveTextContent('选好目录就会自动继续')
+    expect(screen.getByTestId('tutorial-wait')).toHaveTextContent('点一下就会自动继续')
   })
 
-  it('选好目录之后自己翻到第二步', async () => {
-    mountInto('library__empty', 'button button--primary')
+  it('打开示例目录之后自己翻到第二步', async () => {
+    mountSampleEntry()
     const { view } = renderTutorial()
 
-    expect(screen.getByText('先挑一个放视频的文件夹')).toBeInTheDocument()
+    expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
 
     view.rerender(<Tutorial onClose={vi.fn()} progress={{ ...NOTHING, hasDirectory: true }} />)
 
@@ -74,12 +81,12 @@ describe('交互教程', () => {
   })
 
   it('重新打开教程时，已经做到过的步骤不再拦人', async () => {
-    // 目录早就选好了：这一步不该再用「等你操作」把人拦住
-    mountInto('library__empty', 'button button--primary')
+    // 目录早打开了：这一步不该再用「等你操作」把人拦住
+    mountSampleEntry()
 
     renderTutorial({ hasDirectory: true, hasVideos: true, hasMedia: false })
 
-    expect(screen.getByText('先挑一个放视频的文件夹')).toBeInTheDocument()
+    expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '跳过这步' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled()
   })
@@ -88,7 +95,7 @@ describe('交互教程', () => {
     // 一个目标元素都没挂：没有东西可以打光
     renderTutorial({ hasDirectory: true, hasVideos: false, hasMedia: false })
 
-    expect(screen.getByText('先挑一个放视频的文件夹')).toBeInTheDocument()
+    expect(screen.getByText('先看一段自带的示例')).toBeInTheDocument()
     expect(screen.queryByTestId('tutorial-spotlight')).not.toBeInTheDocument()
     // 退回居中的卡片，而且主按钮可用，用户能继续往下走
     expect(screen.getByTestId('tutorial')).toHaveAttribute('aria-modal', 'true')
@@ -96,7 +103,7 @@ describe('交互教程', () => {
   })
 
   it('点「跳过这步」能继续往下走', async () => {
-    mountInto('library__empty', 'button button--primary')
+    mountSampleEntry()
     renderTutorial()
 
     await userEvent.click(screen.getByRole('button', { name: '跳过这步' }))
@@ -104,13 +111,13 @@ describe('交互教程', () => {
     await waitFor(() => expect(screen.getByText('点一格，放大播放')).toBeInTheDocument())
   })
 
-  it('一步步做下去：先等选目录，再等点方格，最后不再拦人', async () => {
-    mountInto('library__empty', 'button button--primary')
+  it('一步步做下去：先等看示例，再等点方格，最后不再拦人', async () => {
+    mountSampleEntry()
     const { view } = renderTutorial()
 
     expect(screen.getByRole('button', { name: '等你操作' })).toBeDisabled()
 
-    // 目录选好了 → 自己进第二步，继续等着点方格
+    // 示例目录打开了 → 自己进第二步，继续等着点方格
     view.rerender(
       <Tutorial onClose={vi.fn()} progress={{ ...NOTHING, hasDirectory: true, hasVideos: true }} />,
     )
@@ -118,9 +125,7 @@ describe('交互教程', () => {
     expect(screen.getByRole('button', { name: '等你操作' })).toBeDisabled()
 
     // 视频放起来了 → 第三步不用动手，按钮就能点
-    view.rerender(
-      <Tutorial onClose={vi.fn()} progress={{ hasDirectory: true, hasVideos: true, hasMedia: true }} />,
-    )
+    view.rerender(<Tutorial onClose={vi.fn()} progress={PLAYING} />)
 
     await waitFor(() => expect(screen.getByText('底部的灵动岛')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled()

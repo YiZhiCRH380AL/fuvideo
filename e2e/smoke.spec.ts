@@ -34,9 +34,9 @@ test('首次进入的教程是交互式的，走过一次不再弹', async ({ pa
   const tutorial = page.getByTestId('tutorial')
   await expect(tutorial).toBeVisible()
 
-  // 前两步是真的要动手：第一步高亮「选择目录」并等用户去点。
-  // 浏览器里选不了目录，所以走「跳过这步」。
-  await expect(tutorial).toContainText('先挑一个放视频的文件夹')
+  // 前两步是真的要动手：第一步高亮「看示例视频」并等用户去点。
+  // 浏览器里没有后端，点了也没用，所以走「跳过这步」。
+  await expect(tutorial).toContainText('先看一段自带的示例')
   await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
   await page.getByRole('button', { name: '跳过这步' }).click()
 

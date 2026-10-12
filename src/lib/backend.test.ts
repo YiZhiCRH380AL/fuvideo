@@ -8,6 +8,7 @@ import {
   getBackendStatus,
   getPlayerDetails,
   isTauri,
+  prepareSampleFolder,
   readSettings,
   setAudioFilterMode,
   setAudioDevice,
@@ -83,5 +84,9 @@ describe('播放控制类命令', () => {
     await expect(setAudioFilterMode('advanced')).rejects.toThrow('桌面应用')
     await expect(setEqualizerPreset('music')).rejects.toThrow('桌面应用')
     await expect(setAudioSpdif(true)).rejects.toThrow('桌面应用')
+  })
+
+  it('示例文件夹要在桌面端才能准备', async () => {
+    await expect(prepareSampleFolder()).rejects.toThrow('桌面应用')
   })
 })

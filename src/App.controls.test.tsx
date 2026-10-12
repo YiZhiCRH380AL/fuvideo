@@ -9,7 +9,6 @@ import { markTutorialSeen } from './lib/tutorial'
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
 const DEMO = String.raw`E:\clips\demo.mp4`
-
 const IDLE: PlayerSnapshot = {
   hasMedia: false,
   ipcReady: false,
@@ -57,6 +56,9 @@ const mocks = vi.hoisted(() => {
       speed: 1,
       buffering: false,
     } as PlayerSnapshot,
+    /** 后端把自带的示例文件复制到这里，再当作普通目录打开。 */
+    sampleFolder: String.raw`C:\Users\zhan2\AppData\Roaming\com.fuvideo.desktop\示例视频`,
+    prepareSampleFolder: vi.fn(),
     // 设置页要用的一份设置：字段和 Rust 侧对齐，少一个字段界面就会读成 undefined
     settings: {
       hwdec: 'auto-safe',
@@ -113,6 +115,7 @@ vi.mock('./lib/backend', () => ({
   setSpeed: (speed: number) => mocks.setSpeed(speed),
   toggleFullscreen: () => mocks.toggleFullscreen(),
   pickDirectory: () => mocks.pickDirectory(),
+  prepareSampleFolder: () => mocks.prepareSampleFolder(),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
   listDrives: () => mocks.listDrives(),
   thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
@@ -193,6 +196,7 @@ beforeEach(() => {
     mocks.listDirectory,
     mocks.listDrives,
     mocks.thumbnailAt,
+    mocks.prepareSampleFolder,
   ]) {
     fn.mockClear()
   }
@@ -205,6 +209,7 @@ beforeEach(() => {
     directory === ANIME ? mocks.subListing : mocks.listing,
   )
   mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,AAAA')
+  mocks.prepareSampleFolder.mockResolvedValue(mocks.sampleFolder)
 })
 
 const grid = () => within(screen.getByTestId('video-grid'))
@@ -533,6 +538,17 @@ describe('底部控制条', () => {
     await userEvent.keyboard('{Escape}')
 
     expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument()
+  })
+
+  it('空状态里点「看示例视频」会打开自带的示例文件夹', async () => {
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: '看示例视频' }))
+
+    await waitFor(() => expect(mocks.prepareSampleFolder).toHaveBeenCalledTimes(1))
+    // 拿回来的路径要当成普通目录打开，方格墙才会出现
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(mocks.sampleFolder))
+    expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
   })
 
   it('全屏按钮调用全屏切换', async () => {

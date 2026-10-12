@@ -411,6 +411,11 @@
   cursor: default;
 }
 
+/* 「看示例视频」是空状态里最省事的入口，给它一点强调色 */
+.library__sample {
+  color: var(--accent);
+}
+
 /* 引导页下面那排次要入口 */
 .library__links {
   display: inline-flex;

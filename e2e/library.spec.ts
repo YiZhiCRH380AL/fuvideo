@@ -7,8 +7,8 @@ import { expect, test, type Page } from '@playwright/test'
  * 而它们恰恰是布局最容易出问题的地方。这里把 `__TAURI_INTERNALS__.invoke`
  * 换成一张固定的答案表，就能在真浏览器里量它们的真实尺寸。
  */
-async function installFakeTauri(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } = {}): Promise<void> {
+  await page.addInitScript((tutorialSeen: boolean) => {
     /** 1×1 的透明 GIF，当缩略图用。 */
     const pixel =
       'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -30,12 +30,17 @@ async function installFakeTauri(page: Page): Promise<void> {
 
     const listing = { directory: clips, parent: 'E:\\', entries: [...folders, ...videos] }
 
-    // 教程会盖住界面，这里的用例都不关心它
-    try {
-      window.localStorage.setItem('fuvideo:tutorial-seen', '1')
-    } catch {
-      // about:blank 之类的上下文拿不到存储，忽略
+    // 除教程那条用例以外，其余用例都不关心这个浮层
+    if (tutorialSeen) {
+      try {
+        window.localStorage.setItem('fuvideo:tutorial-seen', '1')
+      } catch {
+        // about:blank 之类的上下文拿不到存储，忽略
+      }
     }
+
+    /** 自带的示例文件夹：示例目录打开的是一个真实目录，这里也给它一份内容。 */
+    const sample = 'C:\\Users\\tester\\AppData\\Roaming\\com.fuvideo.desktop\\示例视频'
 
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
@@ -46,10 +51,12 @@ async function installFakeTauri(page: Page): Promise<void> {
               return { available: true, version: '0.41.0', path: 'C:\\mpv\\mpv.exe' }
             case 'pick_directory':
               return clips
+            case 'prepare_sample_folder':
+              return sample
             case 'list_drives':
               return ['C:\\', 'D:\\', 'E:\\']
             case 'list_directory':
-              return args.directory === clips
+              return args.directory === clips || args.directory === sample
                 ? listing
                 : { directory: args.directory, parent: null, entries: [] }
             case 'thumbnail_at':
@@ -63,7 +70,7 @@ async function installFakeTauri(page: Page): Promise<void> {
         convertFileSrc: (path: string) => path,
       },
     })
-  })
+  }, options.tutorialSeen ?? true)
 }
 
 async function waitForBoot(page: Page): Promise<void> {
@@ -157,4 +164,31 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
   expect(new Set(drives!.cards.map((card) => card.height)).size).toBe(1)
   expect(drives!.cards.every((card) => card.cover === 92)).toBe(true)
 
+})
+
+test('教程能带着用户真的走一遍：看示例 → 点方格播放', async ({ page }) => {
+  await installFakeTauri(page, { tutorialSeen: false })
+  await page.goto('/')
+  await waitForBoot(page)
+
+  const tutorial = page.getByTestId('tutorial')
+
+  // 第一步：高亮「看示例视频」，等用户真的去点
+  await expect(tutorial).toContainText('先看一段自带的示例')
+  await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
+  await expect(page.getByRole('button', { name: '等你操作' })).toBeDisabled()
+
+  await page.getByRole('button', { name: '看示例视频' }).click()
+
+  // 示例目录打开之后自己翻页，方格墙也出来了
+  await expect(tutorial).toContainText('点一格，放大播放')
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  // 第二步：真的点一格，播放起来之后自动进第三步
+  await page.locator('.tile').first().click()
+
+  await expect(tutorial).toContainText('底部的灵动岛')
+  await expect(page.getByTestId('island')).toBeVisible()
+  // 打光框跟到灵动岛上，而不是留在上一屏的位置
+  await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
 })

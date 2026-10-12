@@ -487,6 +487,16 @@ export async function pickDirectory(): Promise<string | null> {
   return invoke<string | null>('pick_directory')
 }
 
+/**
+ * 准备自带的示例文件夹，返回它的路径。
+ *
+ * 安装目录里的示例文件是只读的，而「打开一个目录」需要一个真目录，
+ * 所以由后端把它们复制到应用配置目录下（已经存在就不动）。
+ */
+export function prepareSampleFolder(): Promise<string> {
+  return playerCommand<string>('prepare_sample_folder')
+}
+
 /** 列出目录下的子目录与视频文件。 */
 export async function listDirectory(directory: string): Promise<DirectoryListing> {
   if (!isTauri()) {
