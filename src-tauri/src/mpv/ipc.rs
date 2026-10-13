@@ -155,7 +155,16 @@ impl MpvIpc {
   }
 
   /// 写入数值属性。
+  ///
+  /// **只用于浮点属性**。整数属性（`aid`、`sid`、`video-rotate`、`target-peak`、
+  /// `audio-samplerate` 之类）收到 `1.0` 这种浮点会被 mpv 回一句 "invalid parameter"，
+  /// 界面上表现成「点了没反应」——那些请用 [MpvIpc::set_integer]。
   pub fn set_number(&self, name: &str, value: f64) -> Result<(), IpcError> {
+    self.request(json!(["set_property", name, value])).map(|_| ())
+  }
+
+  /// 写入整数属性。见 [MpvIpc::set_number] 的说明：整数属性不能走浮点。
+  pub fn set_integer(&self, name: &str, value: i64) -> Result<(), IpcError> {
     self.request(json!(["set_property", name, value])).map(|_| ())
   }
 
@@ -177,7 +186,7 @@ impl MpvIpc {
   /// `aid` / `sid` / `secondary-sid` 都是**整数**属性：mpv 收到 `1.0` 这种
   /// 浮点会直接回一个 "error accessing property"。这里必须走整数。
   pub fn select_track(&self, property: &str, id: i64) -> Result<(), IpcError> {
-    self.request(json!(["set_property", property, id])).map(|_| ())
+    self.set_integer(property, id)
   }
 
   pub fn seek_absolute(&self, seconds: f64) -> Result<(), IpcError> {
@@ -231,16 +240,33 @@ impl MpvIpc {
   }
 
   /// 整体替换音频滤镜链。
-  ///
-  /// mpv 的 `af` 是**整体替换**的语义：每次都把整条链交上去，谁也别想只改其中一条
-  /// （实测 `af-command` 对 `lavfi=[...]` 桥接的滤镜也不可用）。空链要用 `change-list`
-  /// 清空——给 `af set` 传空字符串不是合法的滤镜列表。
   pub fn set_audio_filters(&self, chain: &[String]) -> Result<(), IpcError> {
+    self.set_filters("af", chain)
+  }
+
+  /// 整体替换画面滤镜链。
+  pub fn set_video_filters(&self, chain: &[String]) -> Result<(), IpcError> {
+    self.set_filters("vf", chain)
+  }
+
+  /// 整体替换一条滤镜链（`af` / `vf` 语义一样）。
+  ///
+  /// 是**整体替换**的语义：每次都把整条链交上去，谁也别想只改其中一条
+  /// （实测 `af-command` 对 `lavfi=[...]` 桥接的滤镜也不可用）。空链要用 `change-list`
+  /// 清空——给 `set` 传空字符串不是合法的滤镜列表。
+  fn set_filters(&self, name: &str, chain: &[String]) -> Result<(), IpcError> {
     if chain.is_empty() {
-      return self.request(json!(["change-list", "af", "clr", ""])).map(|_| ());
+      return self.request(json!(["change-list", name, "clr", ""])).map(|_| ());
     }
 
-    self.request(json!(["af", "set", chain.join(",")])).map(|_| ())
+    self.request(json!([name, "set", chain.join(",")])).map(|_| ())
+  }
+
+  /// 把当前画面截到指定文件。`with_subtitles` 决定字幕要不要一起截进来。
+  pub fn screenshot_to_file(&self, path: &str, with_subtitles: bool) -> Result<(), IpcError> {
+    let flag = if with_subtitles { "subtitles" } else { "video" };
+
+    self.request(json!(["screenshot-to-file", path, flag])).map(|_| ())
   }
 }
 

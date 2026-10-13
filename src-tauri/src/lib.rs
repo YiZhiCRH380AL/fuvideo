@@ -5,6 +5,7 @@ mod mpv;
 mod sample;
 mod settings;
 mod thumbnail;
+mod video;
 
 use tauri::Manager;
 
@@ -92,6 +93,22 @@ pub fn run() {
       mpv::set_audio_samplerate,
       mpv::set_audio_format,
       mpv::set_audio_spdif,
+      mpv::video_options,
+      mpv::set_video_aspect,
+      mpv::set_video_fill,
+      mpv::set_video_zoom,
+      mpv::set_video_rotate,
+      mpv::set_video_flip,
+      mpv::set_video_color,
+      mpv::set_video_switch,
+      mpv::set_video_sharpen,
+      mpv::set_video_profile,
+      mpv::set_video_tone_mapping,
+      mpv::set_video_target_peak,
+      mpv::set_video_hdr_recovery,
+      mpv::set_screenshot_format,
+      mpv::set_screenshot_subtitles,
+      mpv::take_screenshot,
       mpv::toggle_fullscreen,
       settings::read_settings,
       settings::write_settings,

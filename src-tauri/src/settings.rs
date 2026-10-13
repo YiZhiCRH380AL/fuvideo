@@ -42,6 +42,37 @@ const EQUALIZER_GAIN_LIMIT: f64 = 12.0;
 /// 采样率上限，跟 mpv 的 `--audio-samplerate` 对齐。
 const SAMPLERATE_LIMIT: u32 = 768_000;
 
+/// 允许的画面比例档位，对应 `--video-aspect-override`。见 [crate::video::aspect_value]。
+pub const ASPECT_MODES: &[&str] = &["auto", "window", "16:9", "4:3", "21:9", "1:1"];
+
+/// 允许的镜像方式。mpv 没有对应的属性，只能走 `vf` 滤镜链。
+pub const VIDEO_FLIPS: &[&str] = &["h", "v", "both"];
+
+/// 画质档位。
+pub const VIDEO_PROFILES: &[&str] = &["high"];
+
+/// 允许的 HDR 色调映射曲线，取自 mpv 的 `--tone-mapping`。
+pub const TONE_MAPPINGS: &[&str] = &[
+  "auto", "clip", "mobius", "reinhard", "hable", "gamma", "linear", "spline", "bt.2390",
+  "bt.2446a", "st2094-40", "st2094-10",
+];
+
+/// 允许的快照格式。
+pub const SCREENSHOT_FORMATS: &[&str] = &["jpg", "png", "webp"];
+
+/// 允许的旋转角度。
+pub const VIDEO_ROTATIONS: &[i64] = &[0, 90, 180, 270];
+
+/// 色彩那五项：都要在 -100..100 之间，0 是中性。
+pub const COLOR_CHANNELS: &[&str] = &["brightness", "contrast", "saturation", "hue", "gamma"];
+
+/// 色彩与锐化的取值区间（跟 mpv 对齐）。
+const COLOR_RANGE: (f64, f64) = (-100.0, 100.0);
+const SHARPEN_RANGE: (f64, f64) = (0.0, 5.0);
+const ZOOM_RANGE: (f64, f64) = (-20.0, 20.0);
+const TARGET_PEAK_RANGE: (f64, f64) = (10.0, 10_000.0);
+const HDR_RECOVERY_RANGE: (f64, f64) = (0.0, 2.0);
+
 /// 默认硬解模式。和加设置之前写死在启动参数里的那个保持一致。
 pub const DEFAULT_HWDEC: &str = "auto-safe";
 
@@ -104,6 +135,42 @@ pub struct Settings {
   pub audio_format: Option<String>,
   /// 音频透传：把 AC3/DTS/TrueHD 原样交给功放。开着的时候滤镜链是空的。
   pub audio_spdif: bool,
+  /// 画面比例档位，见 [ASPECT_MODES]。
+  pub video_aspect: Option<String>,
+  /// 填满窗口（裁掉黑边），对应 `panscan`。
+  pub video_fill: bool,
+  /// 缩放，对应 `video-zoom`（对数倍率，1 是两倍大）。
+  pub video_zoom: Option<f64>,
+  /// 旋转角度，对应 `video-rotate`。
+  pub video_rotate: Option<i64>,
+  /// 镜像，见 [VIDEO_FLIPS]。mpv 没有对应属性，走 `vf` 滤镜链。
+  pub video_flip: Option<String>,
+  /// 画质档位，见 [VIDEO_PROFILES]。
+  pub video_profile: Option<String>,
+  /// 色彩五项，取值 -100..100，0 是中性。
+  pub video_brightness: Option<f64>,
+  pub video_contrast: Option<f64>,
+  pub video_saturation: Option<f64>,
+  pub video_hue: Option<f64>,
+  pub video_gamma: Option<f64>,
+  /// 去色带。
+  pub video_deband: bool,
+  /// 补帧（把帧率提到显示器刷新率）。
+  pub video_interpolation: bool,
+  /// 跟随显示器的 ICC 色彩配置。
+  pub video_icc: bool,
+  /// 锐化强度。
+  pub video_sharpen: Option<f64>,
+  /// HDR 色调映射曲线，见 [TONE_MAPPINGS]。
+  pub video_tone_mapping: Option<String>,
+  /// 目标峰值亮度（nits）；`None` 表示交给 mpv 自动判断。
+  pub video_target_peak: Option<f64>,
+  /// HDR 对比度恢复强度。
+  pub video_hdr_recovery: Option<f64>,
+  /// 快照格式，见 [SCREENSHOT_FORMATS]。
+  pub screenshot_format: Option<String>,
+  /// 快照是否连字幕一起截。
+  pub screenshot_subtitles: bool,
 }
 
 impl Default for Settings {
@@ -127,6 +194,26 @@ impl Default for Settings {
       audio_samplerate: None,
       audio_format: None,
       audio_spdif: false,
+      video_aspect: None,
+      video_fill: false,
+      video_zoom: None,
+      video_rotate: None,
+      video_flip: None,
+      video_profile: None,
+      video_brightness: None,
+      video_contrast: None,
+      video_saturation: None,
+      video_hue: None,
+      video_gamma: None,
+      video_deband: false,
+      video_interpolation: false,
+      video_icc: false,
+      video_sharpen: None,
+      video_tone_mapping: None,
+      video_target_peak: None,
+      video_hdr_recovery: None,
+      screenshot_format: None,
+      screenshot_subtitles: true,
     }
   }
 }
@@ -190,8 +277,35 @@ impl Settings {
       normalized
     });
 
+    self.video_aspect = keep_choice(self.video_aspect, ASPECT_MODES);
+    self.video_flip = keep_choice(self.video_flip, VIDEO_FLIPS);
+    self.video_profile = keep_choice(self.video_profile, VIDEO_PROFILES);
+    self.video_tone_mapping = keep_choice(self.video_tone_mapping, TONE_MAPPINGS);
+    self.screenshot_format = keep_choice(self.screenshot_format, SCREENSHOT_FORMATS);
+
+    // 旋转只认 0/90/180/270：别的角度 mpv 也收，但界面上只有一个档位选择
+    self.video_rotate = self.video_rotate.filter(|degrees| VIDEO_ROTATIONS.contains(degrees));
+
+    self.video_zoom = clamp_option(self.video_zoom, ZOOM_RANGE);
+    self.video_sharpen = clamp_option(self.video_sharpen, SHARPEN_RANGE);
+    self.video_target_peak = clamp_option(self.video_target_peak, TARGET_PEAK_RANGE);
+    self.video_hdr_recovery = clamp_option(self.video_hdr_recovery, HDR_RECOVERY_RANGE);
+
+    self.video_brightness = clamp_option(self.video_brightness, COLOR_RANGE);
+    self.video_contrast = clamp_option(self.video_contrast, COLOR_RANGE);
+    self.video_saturation = clamp_option(self.video_saturation, COLOR_RANGE);
+    self.video_hue = clamp_option(self.video_hue, COLOR_RANGE);
+    self.video_gamma = clamp_option(self.video_gamma, COLOR_RANGE);
+
     self
   }
+}
+
+/// 把可选的数值夹进区间；NaN 这种坏值直接当没设置过。
+fn clamp_option(value: Option<f64>, range: (f64, f64)) -> Option<f64> {
+  value
+    .filter(|number| number.is_finite())
+    .map(|number| number.clamp(range.0, range.1))
 }
 
 /// 空串和不在白名单里的取值一律当成「没设置过」。
@@ -322,6 +436,26 @@ mod tests {
       audio_samplerate: Some(48000),
       audio_format: Some("float".to_string()),
       audio_spdif: false,
+      video_aspect: Some("16:9".to_string()),
+      video_fill: true,
+      video_zoom: Some(0.5),
+      video_rotate: Some(90),
+      video_flip: Some("h".to_string()),
+      video_profile: Some("high".to_string()),
+      video_brightness: Some(10.0),
+      video_contrast: Some(-5.0),
+      video_saturation: Some(20.0),
+      video_hue: Some(0.0),
+      video_gamma: Some(0.0),
+      video_deband: true,
+      video_interpolation: false,
+      video_icc: false,
+      video_sharpen: Some(1.0),
+      video_tone_mapping: Some("bt.2390".to_string()),
+      video_target_peak: Some(180.0),
+      video_hdr_recovery: Some(0.5),
+      screenshot_format: Some("png".to_string()),
+      screenshot_subtitles: false,
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -440,6 +574,18 @@ mod tests {
       "audioSamplerate",
       "audioFormat",
       "audioSpdif",
+      "videoAspect",
+      "videoFill",
+      "videoZoom",
+      "videoRotate",
+      "videoFlip",
+      "videoProfile",
+      "videoBrightness",
+      "videoDeband",
+      "videoToneMapping",
+      "videoTargetPeak",
+      "screenshotFormat",
+      "screenshotSubtitles",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }

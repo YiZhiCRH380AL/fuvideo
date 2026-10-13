@@ -18,6 +18,7 @@ use serde_json::Value;
 
 use crate::audio;
 use crate::settings::{self, Settings};
+use crate::video;
 
 pub(crate) mod ipc;
 
@@ -497,6 +498,9 @@ pub fn build_player_args(
     args.push(format!("--audio-spdif={}", audio::SPDIF_CODECS));
   }
 
+  // 画面这边只有画质档位进命令行：其余项运行时都能写，硬解本来就在上面
+  args.extend(video::build_player_args(settings));
+
   args
 }
 
@@ -711,6 +715,9 @@ pub fn play_video(
   // 音频效果是全局偏好，但 `af` 也在 watch-later 的默认记录里：不重新压一遍的话，
   // 换到一部以前看过的片子就会带回它当时的那条链，和设置页显示的对不上。
   apply_audio_settings(&state, &settings);
+
+  // 画面同理：`video-zoom` / `brightness` / `vf` 都在 watch-later 的记录里
+  apply_video_settings(&state, &settings);
 
   // 首次播放时 mpv 可能还没把窗口建出来，载入文件后再补一次对齐
   let _ = state.sync_embedded_window(window_handle, (size.width, size.height));
@@ -1340,7 +1347,8 @@ fn apply_audio_settings(state: &PlayerState, settings: &Settings) {
   let _ = state.with_ipc(|client| client.set_audio_filters(&chain));
 
   let _ = state.with_ipc(|client| {
-    client.set_number("audio-samplerate", settings.audio_samplerate.unwrap_or(0) as f64)
+    // 采样率是整数属性：写浮点会被 mpv 拒掉（这条踩过一次了）
+    client.set_integer("audio-samplerate", settings.audio_samplerate.unwrap_or(0) as i64)
   });
 
   let _ = state.with_ipc(|client| {
@@ -1364,14 +1372,22 @@ fn update_audio_settings(
   state: &PlayerState,
   change: impl FnOnce(&mut Settings),
 ) -> Result<Settings, String> {
+  let saved = save_settings(app, change)?;
+  apply_audio_settings(state, &saved);
+
+  Ok(saved)
+}
+
+/// 改设置并落盘，返回真正存下来的那份。
+fn save_settings(
+  app: &tauri::AppHandle,
+  change: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
   let directory = settings::config_dir(app);
   let mut current = settings::load(&directory);
   change(&mut current);
 
-  let saved = settings::save(&directory, current)?;
-  apply_audio_settings(state, &saved);
-
-  Ok(saved)
+  settings::save(&directory, current)
 }
 
 /// 设置页要用的选项表：频点、预设、位深、采样率。标签由后端给，前端不再抄一份。
@@ -1487,6 +1503,318 @@ pub fn set_audio_spdif(
   update_audio_settings(&app, &state, |settings| settings.audio_spdif = enabled)
 }
 
+/* ---------------- 画面 ---------------- */
+
+/// 画面比例「自动」的取值：mpv 用 -2 表示按文件里的比例。
+const ASPECT_AUTO: f64 = -2.0;
+/// `--target-peak` 的「自动」。
+const TARGET_PEAK_AUTO: &str = "auto";
+/// `--tone-mapping` 的默认曲线。
+const TONE_MAPPING_AUTO: &str = "auto";
+
+/// 把设置里的画面项同步到正在播放的 mpv 上。
+///
+/// 每一项都是「没设置过就用 mpv 的默认值」——**每次都写一遍全部**，
+/// 而不是只写这一回改的那一项：`watch-later` 会记画面状态（`video-zoom`、`brightness`、
+/// `vf` 都在它的默认记录列表里），不整套压一遍的话，换到一部以前调过画面的片子
+/// 就会把它当时的取值带回来，和设置页显示的对不上。
+///
+/// 失败一律忽略：没在播放的时候这些属性本来就写不进去。
+fn apply_video_settings(state: &PlayerState, settings: &Settings) {
+  let _ = state.with_ipc(|client| client.set_video_filters(&video::build_filter_chain(settings)));
+
+  let aspect = settings
+    .video_aspect
+    .as_deref()
+    .and_then(video::aspect_value)
+    .unwrap_or(ASPECT_AUTO);
+
+  let _ = state.with_ipc(|client| client.set_number("video-aspect-override", aspect));
+  let _ = state.with_ipc(|client| {
+    client.set_number("panscan", if settings.video_fill { 1.0 } else { 0.0 })
+  });
+  let _ = state.with_ipc(|client| client.set_number("video-zoom", settings.video_zoom.unwrap_or(0.0)));
+  let _ = state.with_ipc(|client| {
+    // 旋转也是整数属性
+    client.set_integer("video-rotate", settings.video_rotate.unwrap_or(0))
+  });
+
+  let _ = state.with_ipc(|client| client.set_number("brightness", settings.video_brightness.unwrap_or(0.0)));
+  let _ = state.with_ipc(|client| client.set_number("contrast", settings.video_contrast.unwrap_or(0.0)));
+  let _ = state.with_ipc(|client| {
+    client.set_number("saturation", settings.video_saturation.unwrap_or(0.0))
+  });
+  let _ = state.with_ipc(|client| client.set_number("hue", settings.video_hue.unwrap_or(0.0)));
+  let _ = state.with_ipc(|client| client.set_number("gamma", settings.video_gamma.unwrap_or(0.0)));
+
+  let _ = state.with_ipc(|client| client.set_flag("deband", settings.video_deband));
+  let _ = state.with_ipc(|client| {
+    client.set_number("sharpen", settings.video_sharpen.unwrap_or(0.0))
+  });
+  let _ = state.with_ipc(|client| client.set_flag("interpolation", settings.video_interpolation));
+  let _ = state.with_ipc(|client| client.set_flag("icc-profile-auto", settings.video_icc));
+
+  let _ = state.with_ipc(|client| {
+    client.set_string(
+      "tone-mapping",
+      settings.video_tone_mapping.as_deref().unwrap_or(TONE_MAPPING_AUTO),
+    )
+  });
+  let _ = state.with_ipc(|client| {
+    // target-peak 收的是「auto 或者一个整数」：数字走整数写入，自动才是字符串
+    match settings.video_target_peak {
+      Some(peak) => client.set_integer("target-peak", peak.round() as i64),
+      None => client.set_string("target-peak", TARGET_PEAK_AUTO),
+    }
+  });
+  let _ = state.with_ipc(|client| {
+    client.set_number("hdr-contrast-recovery", settings.video_hdr_recovery.unwrap_or(0.0))
+  });
+}
+
+/// 改画面设置并立刻生效。返回落盘之后的那份，界面据此更新。
+fn update_video_settings(
+  app: &tauri::AppHandle,
+  state: &PlayerState,
+  change: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
+  let saved = save_settings(app, change)?;
+  apply_video_settings(state, &saved);
+
+  Ok(saved)
+}
+
+/// 设置页「画面」那一节要用的选项表。
+#[tauri::command]
+pub fn video_options() -> video::VideoOptions {
+  video::VideoOptions::default()
+}
+
+/// 画面比例。
+#[tauri::command(async)]
+pub fn set_video_aspect(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  aspect: String,
+) -> Result<Settings, String> {
+  if video::aspect_value(&aspect).is_none() {
+    return Err(format!("不支持的画面比例: {aspect}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_aspect = Some(aspect))
+}
+
+/// 填满窗口（裁掉黑边）。
+#[tauri::command(async)]
+pub fn set_video_fill(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  fill: bool,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.video_fill = fill)
+}
+
+/// 缩放。
+#[tauri::command(async)]
+pub fn set_video_zoom(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  zoom: f64,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.video_zoom = Some(zoom))
+}
+
+/// 旋转。
+#[tauri::command(async)]
+pub fn set_video_rotate(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  degrees: i64,
+) -> Result<Settings, String> {
+  if !settings::VIDEO_ROTATIONS.contains(&degrees) {
+    return Err(format!("不支持的旋转角度: {degrees}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_rotate = Some(degrees))
+}
+
+/// 镜像。`None` 表示不镜像。
+#[tauri::command(async)]
+pub fn set_video_flip(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  flip: Option<String>,
+) -> Result<Settings, String> {
+  if let Some(value) = &flip {
+    if !settings::VIDEO_FLIPS.contains(&value.as_str()) {
+      return Err(format!("不支持的镜像方式: {value}"));
+    }
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_flip = flip)
+}
+
+/// 色彩五项之一。`channel` 取 brightness / contrast / saturation / hue / gamma。
+#[tauri::command(async)]
+pub fn set_video_color(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  channel: String,
+  value: f64,
+) -> Result<Settings, String> {
+  if !settings::COLOR_CHANNELS.contains(&channel.as_str()) {
+    return Err(format!("未知的色彩项: {channel}"));
+  }
+
+  update_video_settings(&app, &state, |settings| match channel.as_str() {
+    "contrast" => settings.video_contrast = Some(value),
+    "saturation" => settings.video_saturation = Some(value),
+    "hue" => settings.video_hue = Some(value),
+    "gamma" => settings.video_gamma = Some(value),
+    _ => settings.video_brightness = Some(value),
+  })
+}
+
+/// 画面开关：deband / interpolation / icc。
+#[tauri::command(async)]
+pub fn set_video_switch(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  kind: String,
+  enabled: bool,
+) -> Result<Settings, String> {
+  if !["deband", "interpolation", "icc"].contains(&kind.as_str()) {
+    return Err(format!("未知的画面开关: {kind}"));
+  }
+
+  update_video_settings(&app, &state, |settings| match kind.as_str() {
+    "interpolation" => settings.video_interpolation = enabled,
+    "icc" => settings.video_icc = enabled,
+    _ => settings.video_deband = enabled,
+  })
+}
+
+/// 锐化强度。
+#[tauri::command(async)]
+pub fn set_video_sharpen(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  strength: f64,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.video_sharpen = Some(strength))
+}
+
+/// 画质档位。`None` 回到默认。
+#[tauri::command(async)]
+pub fn set_video_profile(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  profile: Option<String>,
+) -> Result<Settings, String> {
+  if let Some(value) = &profile {
+    if !settings::VIDEO_PROFILES.contains(&value.as_str()) {
+      return Err(format!("未知的画质档位: {value}"));
+    }
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_profile = profile)
+}
+
+/// HDR 色调映射曲线。
+#[tauri::command(async)]
+pub fn set_video_tone_mapping(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  mapping: String,
+) -> Result<Settings, String> {
+  if !settings::TONE_MAPPINGS.contains(&mapping.as_str()) {
+    return Err(format!("不支持的色调映射: {mapping}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_tone_mapping = Some(mapping))
+}
+
+/// 目标峰值亮度（nits）。`None` 交给 mpv 自动判断。
+#[tauri::command(async)]
+pub fn set_video_target_peak(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  peak: Option<f64>,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.video_target_peak = peak)
+}
+
+/// HDR 对比度恢复强度。
+#[tauri::command(async)]
+pub fn set_video_hdr_recovery(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  value: f64,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.video_hdr_recovery = Some(value))
+}
+
+/// 快照格式。
+#[tauri::command(async)]
+pub fn set_screenshot_format(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  format: String,
+) -> Result<Settings, String> {
+  if !settings::SCREENSHOT_FORMATS.contains(&format.as_str()) {
+    return Err(format!("不支持的快照格式: {format}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.screenshot_format = Some(format))
+}
+
+/// 快照要不要连字幕一起截。
+#[tauri::command(async)]
+pub fn set_screenshot_subtitles(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  enabled: bool,
+) -> Result<Settings, String> {
+  update_video_settings(&app, &state, |settings| settings.screenshot_subtitles = enabled)
+}
+
+/// 截一张当前画面的图，返回存到哪儿了。
+///
+/// 存在**视频旁边**——用户最容易找到的地方；文件名是「原名 + 截图」，重名就往后编号，
+/// 免得连拍几张互相覆盖。
+#[tauri::command(async)]
+pub fn take_screenshot(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+) -> Result<String, String> {
+  let Some(source) = state.current_path() else {
+    return Err("还没有在播放的视频".to_string());
+  };
+
+  let config_dir = settings::config_dir(&app);
+  let settings = settings::load(&config_dir);
+  let format = settings.screenshot_format.as_deref().unwrap_or("jpg");
+
+  let origin = Path::new(&source);
+  let stem = origin.file_stem().and_then(|name| name.to_str()).unwrap_or("截图");
+  // 视频所在目录拿不到就退回配置目录，总得有个能写的地方
+  let folder = origin.parent().map(Path::to_path_buf).unwrap_or(config_dir);
+
+  let mut target = folder.join(format!("{stem} 截图.{format}"));
+  let mut sequence = 2;
+
+  while target.exists() && sequence < 100 {
+    target = folder.join(format!("{stem} 截图 {sequence}.{format}"));
+    sequence += 1;
+  }
+
+  let path = target.to_string_lossy().to_string();
+
+  state.with_ipc(|client| client.screenshot_to_file(&path, settings.screenshot_subtitles))?;
+
+  Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
   use std::thread;
@@ -1598,6 +1926,8 @@ mod tests {
       stereo_widening: true,
       equalizer_preset: Some("music".to_string()),
       equalizer_bands: Some(vec![3.0; settings::EQUALIZER_BANDS]),
+      video_profile: Some("high".to_string()),
+      ..Settings::default()
     };
     let args = build_player_args(1, r"\\.\pipe\p", &settings, Path::new(r"E:\config"));
 
@@ -1613,6 +1943,7 @@ mod tests {
     assert!(args.contains(&"--audio-samplerate=48000".to_string()));
     assert!(args.contains(&"--audio-format=float".to_string()));
     assert!(args.contains(&format!("--audio-spdif={}", audio::SPDIF_CODECS)));
+    assert!(args.contains(&"--profile=gpu-hq".to_string()));
   }
 
   #[test]
@@ -2468,5 +2799,137 @@ mod tests {
       .unwrap_or_default();
 
     assert!(cleared.is_empty(), "清空之后链上不该还有东西: {cleared:?}");
+  }
+
+  /// 等轨道表里出现某一类轨道。连接挂在 `state` 里，所以这里也走 state 读。
+  fn wait_for_track_kind(state: &PlayerState, kind: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+      let found = state
+        .with_ipc(|client| client.get_value("track-list"))
+        .ok()
+        .flatten()
+        .map(|value| parse_tracks(&value).iter().any(|track| track.kind == kind))
+        .unwrap_or(false);
+
+      if found {
+        return true;
+      }
+
+      if Instant::now() >= deadline {
+        return false;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+  }
+
+  /// 画面项真的写到 mpv 上了吗——这是 P3 的地基。
+  ///
+  /// 跑在 `--vo=null` 下不会开窗。这里走的是 `apply_video_settings` 本身，
+  /// 而不是把同样的属性再手写一遍：要验的正是「整套设置压下去」这件事。
+  #[test]
+  fn video_settings_reach_mpv() {
+    let Some(executable) = find_mpv() else {
+      eprintln!("本机未安装 mpv，跳过画面设置集成测试");
+      return;
+    };
+
+    let state = PlayerState::default();
+    let pipe = next_pipe_name("test-video");
+
+    let child = Command::new(&executable)
+      .args([
+        format!("--input-ipc-server={pipe}"),
+        "--vo=null".to_string(),
+        "--ao=null".to_string(),
+        "--no-terminal".to_string(),
+        "--no-config".to_string(),
+        "--idle=yes".to_string(),
+        "--pause=yes".to_string(),
+      ])
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("启动 mpv 失败");
+
+    *state.child.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(child);
+    *state.ipc_pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pipe.clone());
+
+    let client = ipc::connect_with_retry(&pipe, Duration::from_secs(20)).expect("连上 mpv 的 IPC 管道");
+    *state.ipc.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(client);
+
+    state
+      .with_ipc(|client| client.load_file("av://lavfi:testsrc=duration=30:size=320x240:rate=30"))
+      .expect("载入视频");
+
+    assert!(wait_for_track_kind(&state, "video", Duration::from_secs(20)), "视频轨该出现了");
+
+    let settings = Settings {
+      video_aspect: Some("16:9".to_string()),
+      video_fill: true,
+      video_zoom: Some(0.5),
+      video_rotate: Some(90),
+      video_flip: Some("h".to_string()),
+      video_brightness: Some(-20.0),
+      video_contrast: Some(15.0),
+      video_deband: true,
+      video_sharpen: Some(1.0),
+      video_tone_mapping: Some("bt.2390".to_string()),
+      video_target_peak: Some(180.0),
+      video_hdr_recovery: Some(0.5),
+      ..Settings::default()
+    };
+
+    apply_video_settings(&state, &settings);
+
+    let read = |name: &str| {
+      state
+        .with_ipc(|client| client.get_number(name))
+        .ok()
+        .flatten()
+        .unwrap_or(f64::NAN)
+    };
+
+    assert!((read("video-aspect-override") - 16.0 / 9.0).abs() < 0.001, "画面比例没写进去");
+    assert!((read("panscan") - 1.0).abs() < 0.001, "填满窗口没写进去");
+    assert!((read("video-zoom") - 0.5).abs() < 0.001);
+    assert!((read("video-rotate") - 90.0).abs() < 0.001);
+    assert!((read("brightness") + 20.0).abs() < 0.5);
+    assert!((read("contrast") - 15.0).abs() < 0.5);
+    assert!((read("sharpen") - 1.0).abs() < 0.01);
+    assert!((read("hdr-contrast-recovery") - 0.5).abs() < 0.01);
+
+    assert_eq!(state.with_ipc(|client| client.get_bool("deband")).ok().flatten(), Some(true));
+    assert_eq!(
+      state.with_ipc(|client| client.get_string("tone-mapping")).ok().flatten().as_deref(),
+      Some("bt.2390")
+    );
+    // mpv 存下来的可能是数字也可能是 "180" 这样的字符串，两种都算写进去了
+    let peak = state
+      .with_ipc(|client| client.get_value("target-peak"))
+      .ok()
+      .flatten()
+      .map(|value| value.to_string())
+      .unwrap_or_default();
+
+    assert!(peak.contains("180"), "目标峰值没写进去: {peak}");
+
+    // 镜像走滤镜链
+    let filters = state
+      .with_ipc(|client| client.get_value("vf"))
+      .ok()
+      .flatten()
+      .map(|value| value.to_string())
+      .unwrap_or_default();
+
+    assert!(filters.contains("hflip"), "镜像滤镜没挂上: {filters}");
+
+    // 实际生效的硬解后端：这一项由 mpv 报，界面直接显示它
+    let hardware = state.with_ipc(|client| client.get_string("hwdec-current")).ok().flatten();
+
+    assert!(hardware.is_some(), "hwdec-current 应该能读出来");
   }
 }
