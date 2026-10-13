@@ -7,8 +7,15 @@ import { expect, test, type Page } from '@playwright/test'
  * 而它们恰恰是布局最容易出问题的地方。这里把 `__TAURI_INTERNALS__.invoke`
  * 换成一张固定的答案表，就能在真浏览器里量它们的真实尺寸。
  */
-async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } = {}): Promise<void> {
-  await page.addInitScript((tutorialSeen: boolean) => {
+async function installFakeTauri(
+  page: Page,
+  options: { tutorialSeen?: boolean; videoCount?: number } = {},
+): Promise<void> {
+  const tutorialSeen = options.tutorialSeen ?? true
+  const videoCount = options.videoCount ?? 5
+
+  await page.addInitScript(
+    ({ tutorialSeen, videoCount }: { tutorialSeen: boolean; videoCount: number }) => {
     /** 1×1 的透明 GIF，当缩略图用。 */
     const pixel =
       'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -22,7 +29,7 @@ async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } 
       kind: 'directory',
     }))
 
-    const videos = Array.from({ length: 5 }, (_, index) => ({
+    const videos = Array.from({ length: videoCount }, (_, index) => ({
       name: `demo-${index + 1}.mp4`,
       path: `E:\\clips\\demo-${index + 1}.mp4`,
       kind: 'video',
@@ -93,7 +100,9 @@ async function installFakeTauri(page: Page, options: { tutorialSeen?: boolean } 
         convertFileSrc: (path: string) => path,
       },
     })
-  }, options.tutorialSeen ?? true)
+    },
+    { tutorialSeen, videoCount },
+  )
 }
 
 async function waitForBoot(page: Page): Promise<void> {
@@ -215,6 +224,11 @@ test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async
   await expect(list).toBeVisible()
   await expect(list).toContainText('demo-1.mp4')
 
+  // 每一行要有封面，而且名字不省略号截断（长名字要能折行看全）
+  const row = list.locator('.paths__item').first()
+  await expect(row.locator('.paths__thumb img')).toBeVisible()
+  await expect(row.locator('.paths__name')).toHaveCSS('white-space', 'normal')
+
   // 面板是淡入的，等动画走完再截图，否则拍到的是一张近乎透明的图
   await expect(page.getByTestId('popover')).toHaveCSS('opacity', '1')
   await page.screenshot({ path: 'test-results/shots/playlist.png' })
@@ -246,3 +260,105 @@ test('教程能带着用户真的走一遍：看示例 → 点方格播放', asy
   // 打光框跟到灵动岛上，而不是留在上一屏的位置
   await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
 })
+test('视频多到要滚动时，每一格还是原来的高度', async ({ page }) => {
+  await installFakeTauri(page, { videoCount: 40 })
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+  await page.waitForTimeout(400)
+
+  const sizes = await tileSizes(page)
+  const grid = await page.evaluate(() => {
+    const element = document.querySelector('[data-testid="video-grid"]') as HTMLElement
+    return { clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }
+  })
+
+  expect(sizes).toHaveLength(40)
+  // 网格确实滚起来了（内容比容器高），而且每一格都保持原尺寸
+  expect(grid.scrollHeight).toBeGreaterThan(grid.clientHeight)
+  expect(new Set(sizes.map((tile) => tile.height)).size).toBe(1)
+  expect(sizes.every((tile) => tile.height > 150)).toBe(true)
+})
+
+test('从收藏夹跳回来之后，方格还是方格，并且那一格被高亮', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  const tile = page.locator('.tile').first()
+  await tile.hover()
+  await tile.getByRole('button', { name: /收藏/ }).first().click()
+
+  await page.getByRole('button', { name: '收藏夹', exact: true }).click()
+  const list = page.getByTestId('favorites-list')
+  await expect(list).toBeVisible()
+
+  const before = await tileSizes(page)
+
+  await list.getByRole('button', { name: /^跳到 / }).click()
+  await page.waitForTimeout(600)
+
+  // 跳转前后每格的高度都不该变（曾经这里会塌成一条条长条）
+  expect(await tileSizes(page)).toEqual(before)
+  // 而且确实跳到了它所在的目录，把那一格标了出来
+  await expect(page.locator('.tile[data-highlight="true"]')).toHaveCount(1)
+
+  await page.screenshot({ path: 'test-results/shots/favorite-jump.png' })
+})
+
+/** 每个方格的高度、封面比例，以及它是不是「放大播放」的那一格。 */
+async function tileSizes(
+  page: Page,
+): Promise<{ height: number; aspect: number; expanded: boolean }[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-testid="video-grid"] .tile')).map((tile) => {
+      const frame = tile.querySelector('.tile__frame')?.getBoundingClientRect()
+
+      return {
+        height: Math.round(tile.getBoundingClientRect().height),
+        // 封面区是不是还是 16:9——被压扁的时候它就守不住了
+        aspect: frame === undefined || frame.height === 0 ? 0 : Number((frame.width / frame.height).toFixed(2)),
+        expanded: tile.classList.contains('tile--expanded'),
+      }
+    }),
+  )
+}
+
+test('放大播放时，下面那些方格不会被压扁', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+  await page.waitForTimeout(400)
+
+  const before = (await tileSizes(page)).map((tile) => tile.height)
+  expect(before.every((height) => height > 150)).toBe(true)
+
+  await page.locator('.tile').first().click()
+  await page.waitForTimeout(500)
+
+  const after = await tileSizes(page)
+  const wall = after.filter((tile) => !tile.expanded)
+
+  // 画面那一格占满整屏
+  expect(after.filter((tile) => tile.expanded)).toHaveLength(1)
+
+  /*
+   * 下面那些方格要还是「方格」。
+   *
+   * 它们这时被挤到可视区外、由 overflow 裁掉，所以尺寸不必和展开前逐像素相等
+   * （展开时网格去掉了间距，列宽本来就会变），但封面必须是 16:9 的正常形状——
+   * 曾经它们在这儿被压成 2px 高的长条，从收藏夹跳回来滚一下就会露出来。
+   */
+  expect(wall.length).toBeGreaterThan(0)
+  expect(wall.every((tile) => Math.abs(tile.aspect - 16 / 9) < 0.02)).toBe(true)
+  expect(wall.every((tile) => tile.height > 100)).toBe(true)
+})
+

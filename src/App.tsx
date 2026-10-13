@@ -56,6 +56,7 @@ import {
 } from './lib/playback'
 import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
 import { hasSeenTutorial } from './lib/tutorial'
+import { cachedThumbnail, loadThumbnail } from './lib/thumbnail-cache'
 import { useIdleVisibility } from './lib/use-idle-visibility'
 import { revealMainWindow } from './lib/window'
 
@@ -165,7 +166,6 @@ export default function App() {
   const previewFrame = useRef<number | null>(null)
   const hoveredPoint = useRef<{ fraction: number; seconds: number } | null>(null)
   const previewCache = useRef(new Map<string, string>())
-  const gridCache = useRef(new Map<string, string>())
   const curtainRef = useRef<HTMLDivElement>(null)
   const previewBusy = useRef(false)
   const queuedPreview = useRef<{ source: string; seconds: number } | null>(null)
@@ -376,7 +376,7 @@ export default function App() {
           continue
         }
 
-        const cached = gridCache.current.get(entry.path)
+        const cached = cachedThumbnail(entry.path)
 
         if (cached !== undefined) {
           setThumbnails((previous) =>
@@ -386,14 +386,15 @@ export default function App() {
         }
 
         try {
-          const image = await thumbnailAt(entry.path, 0)
+          const image = await loadThumbnail(entry.path)
 
           if (cancelled) {
             return
           }
 
-          gridCache.current.set(entry.path, image)
-          setThumbnails((previous) => ({ ...previous, [entry.path]: image }))
+          if (image !== null) {
+            setThumbnails((previous) => ({ ...previous, [entry.path]: image }))
+          }
         } catch {
           // 单个文件抓不到就让它空着，不影响其他方格
         }
@@ -1122,7 +1123,7 @@ export default function App() {
                 onClose={() => setOpenPanel(null)}
                 label="播放列表"
                 anchorSelector=".app__playlist"
-                className="popover--panel popover--down"
+                className="popover--panel popover--paths popover--down"
                 role="dialog"
               >
                 <CollectionsPanel
@@ -1154,7 +1155,7 @@ export default function App() {
                 onClose={() => setOpenPanel(null)}
                 label="收藏夹"
                 anchorSelector=".app__favorites"
-                className="popover--panel popover--down"
+                className="popover--panel popover--paths popover--down"
                 role="dialog"
               >
                 <CollectionsPanel

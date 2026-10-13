@@ -205,7 +205,11 @@ export default function VideoGrid({
   useEffect(() => {
     const container = containerRef.current
 
-    if (highlightPath === null || container === null) {
+    /*
+     * 放大播放时方格墙是「向下让位、被裁掉」的状态（overflow: hidden），
+     * 这时候把某一格滚进视野，只会把画面本身顶上去。所以只在看方格墙时才滚。
+     */
+    if (highlightPath === null || container === null || expandedPath !== null) {
       return
     }
 
@@ -218,7 +222,7 @@ export default function VideoGrid({
     if (typeof tile?.scrollIntoView === 'function') {
       tile.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }
-  }, [highlightPath, videos])
+  }, [expandedPath, highlightPath, videos])
 
   useLayoutEffect(() => {
     const container = containerRef.current

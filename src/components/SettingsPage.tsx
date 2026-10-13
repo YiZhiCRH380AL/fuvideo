@@ -25,7 +25,7 @@ const EFFECTS: { kind: AudioEffectKind; title: string; hint: string }[] = [
   {
     kind: 'loudness',
     title: '响度归一化',
-    hint: '把忽大忽小的对白拉平，夜里看片不用一直捏着音量',
+    hint: '把忽大忽小的对白拉平，晚上看视频不用一直调音量',
   },
   {
     kind: 'surround',

@@ -635,6 +635,8 @@
   grid-row: 2;
   box-sizing: border-box;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  /* 行高只由卡片决定：网格容器有确定高度，auto 行会被压扁（文件夹条踩过同一个坑） */
+  grid-auto-rows: max-content;
   gap: 16px;
   height: 100%;
   padding: 12px 20px 24px;
@@ -650,11 +652,23 @@
  * 放大格会塌成 0 高，后面的方格就顶上来把画面盖住了。
  */
 .grid[data-expanded='true'] {
-  display: flex;
-  flex-direction: column;
+  /*
+   * 保持网格，只让放大那一格跨满整行。
+   *
+   * 以前这里换成 flex 列，而 flex 列里**每一项都会被拉成全宽**：放大时下面那些
+   * 方格要么被压成 2px 的长条、要么被撑成 745px 的大块，怎么都不对。
+   * 留在网格里它们的列宽天然不变，只是被挤到下面、由 overflow 裁掉。
+   */
+  grid-template-rows: 100%;
   gap: 0;
   padding: 0;
   overflow: hidden;
+}
+
+/* 画面这一格独占第一行、横跨所有列 */
+.grid[data-expanded='true'] .tile--expanded {
+  grid-column: 1 / -1;
+  grid-row: 1;
 }
 
 .tile {
@@ -1218,8 +1232,26 @@
 
 .paths__row {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 每行前面那帧封面：和方格墙上一样是 16:9，没有就留一块空底 */
+.paths__thumb {
+  display: block;
+  overflow: hidden;
+  flex: none;
+  width: 64px;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  background: #000;
+}
+
+.paths__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .paths__name {
@@ -1234,8 +1266,9 @@
   font-family: inherit;
   font-size: 12px;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* 名字要能看全：长名字折行，不省略号截断 */
+  line-height: 1.5;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -1277,6 +1310,8 @@
 /* 收藏夹里那行小字：点它跳到文件所在的目录，而不是播放 */
 .paths__where {
   overflow: hidden;
+  /* 缩进到文件名那一列，不和封面挤在一行 */
+  margin-left: 70px;
   padding: 0 8px 4px;
   border: none;
   background: none;
@@ -1402,6 +1437,11 @@
   top: calc(100% + 8px);
   bottom: auto;
   transform-origin: top right;
+}
+
+/* 带封面的列表要宽一点：缩略图 + 完整文件名两样都得放下 */
+.popover--paths {
+  width: 352px;
 }
 
 .media {

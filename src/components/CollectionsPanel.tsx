@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { fileName, parentDirectory } from '../lib/path'
+import { cachedThumbnail, loadThumbnail } from '../lib/thumbnail-cache'
 
 export type CollectionKind = 'playlist' | 'favorites'
 
@@ -39,6 +41,46 @@ export default function CollectionsPanel({
   onShift,
   onReveal,
 }: CollectionsPanelProps) {
+  /** 每一行的封面首帧。抓到一张补一张，抓不到就留一块空底。 */
+  const [thumbs, setThumbs] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let cancelled = false
+
+    const run = async () => {
+      for (const path of paths) {
+        if (cancelled) {
+          return
+        }
+
+        if (cachedThumbnail(path) !== undefined) {
+          continue
+        }
+
+        // 一次只抓一张：抓帧是串行的，一起发出去只会互相排队
+        const image = await loadThumbnail(path)
+
+        if (!cancelled && image !== null) {
+          setThumbs((previous) => ({ ...previous, [path]: image }))
+        }
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [paths])
+
+  /**
+   * 这一行的封面。
+   *
+   * 先看自己的 state，再看共用缓存：方格墙上可能已经抓过这一帧了，
+   * 缓存里有就直接画出来，不用再等一次抓取。
+   */
+  const thumbFor = (path: string): string | undefined => thumbs[path] ?? cachedThumbnail(path)
+
   if (paths.length === 0) {
     return (
       <p className="paths__empty" data-testid={`${kind}-empty`}>
@@ -52,6 +94,10 @@ export default function CollectionsPanel({
       {paths.map((path, index) => (
         <li className="paths__item" key={path}>
           <div className="paths__row">
+            <span className="paths__thumb" aria-hidden="true">
+              {thumbFor(path) === undefined ? null : <img src={thumbFor(path)} alt="" />}
+            </span>
+
             <button className="paths__name" type="button" title={path} onClick={() => onPlay(path)}>
               {fileName(path)}
             </button>

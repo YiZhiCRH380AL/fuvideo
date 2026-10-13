@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectoryListing, PlayerSnapshot } from './lib/backend'
 import { PAUSE_PATH, PLAY_PATH } from './lib/play-pause-paths'
 import { markTutorialSeen } from './lib/tutorial'
+import { clearThumbnails } from './lib/thumbnail-cache'
 
 const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
@@ -192,6 +193,8 @@ beforeEach(() => {
   // 这些用例测的是主界面：教程只在第一次进入时弹，这里先标记看过
   window.localStorage.clear()
   markTutorialSeen()
+  // 缩略图缓存是模块级的：不清的话后一个用例会拿到前一个抓到的帧
+  clearThumbnails()
 
   mocks.snapshot = { ...IDLE }
 
@@ -1027,6 +1030,21 @@ describe('播放列表与收藏夹', () => {
 
     await userEvent.click(list.getByRole('button', { name: '把 demo.mp4 从播放列表移出' }))
     await waitFor(() => expect(mocks.togglePlaylist).toHaveBeenCalledWith(DEMO))
+  })
+
+  it('列表里的每一行都带封面', async () => {
+    mocks.collections = { playlist: [DEMO], favorites: [] }
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+
+    const list = await screen.findByTestId('playlist-list')
+
+    // 抓帧是异步的：等那张图落进 img
+    await waitFor(() => {
+      expect(list.querySelector('.paths__thumb img')).not.toBeNull()
+    })
+    expect(mocks.thumbnailAt).toHaveBeenCalledWith(DEMO, 0)
   })
 
   it('播放列表空着的时候告诉用户怎么加进来', async () => {

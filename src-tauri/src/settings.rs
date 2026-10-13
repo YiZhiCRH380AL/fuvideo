@@ -88,7 +88,7 @@ pub struct Settings {
   pub sub_ass_override: Option<String>,
   /// 音频效果的呈现模式，见 [AUDIO_FILTER_MODES]。
   pub audio_filter_mode: String,
-  /// 响度归一化（动态）：把忽大忽小的对白拉平，夜里看片用。
+  /// 响度归一化（动态）：把忽大忽小的对白拉平，晚上看视频时不用一直调音量。
   pub loudness_normalization: bool,
   /// 虚拟环绕：在立体声设备上模拟出包围感。
   pub virtual_surround: bool,
