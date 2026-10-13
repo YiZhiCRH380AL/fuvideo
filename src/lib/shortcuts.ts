@@ -50,9 +50,24 @@ export function shouldIgnoreShortcut(code: string, target: EventTarget | null): 
     case 'SELECT':
       return true
     case 'INPUT': {
-      // 滑块自己要吃方向键，其余快捷键（空格、静音、全屏）照常归播放器
       const type = target instanceof HTMLInputElement ? target.type : ''
-      return type === 'range' ? code.startsWith('Arrow') : true
+
+      if (type !== 'range') {
+        return true
+      }
+
+      /*
+       * 播放进度条的方向键要还给播放器。
+       *
+       * 它自己的 step 是 0.1 秒，按一下只挪 0.1 秒，肉眼根本看不出来——
+       * 用户只会觉得「方向键快进快退没反应」。交给播放器就是 5 秒一跳。
+       * 其余滑块（音量、均衡器）仍旧自己吃方向键。
+       */
+      if (target instanceof HTMLElement && target.dataset.keys === 'playback') {
+        return false
+      }
+
+      return code.startsWith('Arrow')
     }
     case 'BUTTON':
     case 'A':

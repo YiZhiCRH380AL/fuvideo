@@ -681,22 +681,40 @@ export default function App() {
     [collapseVideo, loadDirectory],
   )
 
-  /** 同一个文件只推进一次：待机状态会在轮询里反复出现，不记着就会一直往下跳。 */
-  const advancedFrom = useRef<string | null>(null)
+  /**
+   * 这一片有没有真的播起来过。
+   *
+   * 它的值始终是「上一部真的播过的片子」，所以刚载入的新片天然对不上——
+   * 这正好挡掉换片瞬间那个假待机（见下面的注释）。
+   */
+  const playedCurrent = useRef<string | null>(null)
 
   /**
    * 播完自动播下一个。
    *
    * mpv 播完会把文件卸掉进入待机（`idle-active` 从 false 翻成 true），拿它当判据最可靠：
    * 实测 `eof-reached` 在进入待机之后就整个读不到了。
-   * 同一个文件只推进一次，靠 ref 记着——待机状态会在轮询里反复出现，不记就会一直往下跳。
+   *
+   * **但只看 `idle-active` 会一跳两格**：刚 `loadfile` 到下一片时 mpv 还没把它拉起来，
+   * 快照同样是「待机」，于是刚切过去就被当成「这一片也播完了」，直接又跳一格。
+   * 所以多一条：只有「这一片确实播起来过」才算播完。
    */
   useEffect(() => {
-    if (player?.idleActive !== true || currentFile === null || advancedFrom.current === currentFile) {
+    if (currentFile === null) {
       return
     }
 
-    advancedFrom.current = currentFile
+    if (player?.idleActive !== true) {
+      playedCurrent.current = currentFile
+      return
+    }
+
+    if (playedCurrent.current !== currentFile) {
+      return
+    }
+
+    // 处理过就清掉：待机状态会在每次轮询里反复出现，不清就会一直往下跳
+    playedCurrent.current = null
 
     const index = collections.playlist.indexOf(currentFile)
     const next = index >= 0 ? collections.playlist[index + 1] : undefined

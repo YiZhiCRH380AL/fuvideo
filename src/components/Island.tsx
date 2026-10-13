@@ -264,6 +264,8 @@ export default function Island({
           max={Math.max(duration, 0.1)}
           step={0.1}
           value={shown}
+          /* 方向键交给播放器走 5 秒一跳，别让滑块自己按 0.1 秒挪 */
+          data-keys="playback"
           aria-label="播放进度"
           onChange={onScrubChange}
           onPointerUp={onScrubCommit}

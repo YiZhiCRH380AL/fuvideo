@@ -11,6 +11,7 @@ const CLIPS = String.raw`E:\clips`
 const ANIME = String.raw`E:\clips\anime`
 const DEMO = String.raw`E:\clips\demo.mp4`
 const OTHER = String.raw`E:\clips\other.mkv`
+const THIRD = String.raw`E:\clips\anime\ep01.mkv`
 const IDLE: PlayerSnapshot = {
   hasMedia: false,
   ipcReady: false,
@@ -732,12 +733,22 @@ describe('键盘快捷键', () => {
     expect(mocks.setSpeed).toHaveBeenNthCalledWith(2, 0.75)
   })
 
-  it('焦点在进度条上时方向键交给控件自己处理', async () => {
+  /**
+   * 回归：焦点落在进度条上时，方向键曾经「没反应」。
+   *
+   * 进度条是 `input[type=range]`，原本让它自己吃方向键——可它的 step 是 0.1 秒，
+   * 按一下只挪 0.1 秒，肉眼看不出来。现在进度条把方向键交回播放器，5 秒一跳。
+   */
+  it('焦点在进度条上时，方向键照样快退快进 5 秒', async () => {
     await openPlayingVideo()
 
-    fireEvent.keyDown(screen.getByRole('slider', { name: '播放进度' }), { code: 'ArrowRight' })
+    const progress = screen.getByRole('slider', { name: '播放进度' })
 
-    expect(mocks.seekBy).not.toHaveBeenCalled()
+    fireEvent.keyDown(progress, { code: 'ArrowRight' })
+    fireEvent.keyDown(progress, { code: 'ArrowLeft' })
+
+    expect(mocks.seekBy).toHaveBeenNthCalledWith(1, 5)
+    expect(mocks.seekBy).toHaveBeenNthCalledWith(2, -5)
   })
 
   it('焦点留在进度条上时，空格依然能暂停', async () => {
@@ -1104,16 +1115,40 @@ describe('播放列表与收藏夹', () => {
   it('当前视频播完（mpv 进入待机）就自动播列表里的下一个', async () => {
     mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
 
-    await openPlayingVideo({ idleActive: true })
+    // 先正常播着，再把快照切成「播完」：顺序很重要，
+    // 一上来就给待机快照不算数（那正是下一个用例要挡住的假待机）
+    await openPlayingVideo()
+    mocks.snapshot = { ...mocks.snapshot, idleActive: true }
 
     await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(OTHER))
+  })
+
+  /**
+   * 回归：播完自动下一个曾经会「跳过一个」。
+   *
+   * 刚 `loadfile` 到下一片时 mpv 还没把它拉起来，快照同样是待机；
+   * 只看 `idleActive` 就会把「刚切过去」当成「这一片也播完了」，直接再跳一格，
+   * 于是第二片被跳过、直接播第三片。
+   */
+  it('刚切到下一片时那个假待机不会再往下跳一格', async () => {
+    mocks.collections = { playlist: [DEMO, OTHER, THIRD], favorites: [] }
+
+    await openPlayingVideo()
+    mocks.snapshot = { ...mocks.snapshot, idleActive: true }
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(OTHER))
+
+    // 新片还没起来，快照一直是待机：这时不许再跳到第三片
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(mocks.playLocalVideo).toHaveBeenCalledTimes(2)
   })
 
   it('列表里没有下一个就停在原地', async () => {
     mocks.collections = { playlist: [DEMO], favorites: [] }
 
-    await openPlayingVideo({ idleActive: true })
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await openPlayingVideo()
+    mocks.snapshot = { ...mocks.snapshot, idleActive: true }
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
     // 只有点方格那一次播放
     expect(mocks.playLocalVideo).toHaveBeenCalledTimes(1)
