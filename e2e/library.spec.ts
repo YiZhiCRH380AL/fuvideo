@@ -9,13 +9,22 @@ import { expect, test, type Page } from '@playwright/test'
  */
 async function installFakeTauri(
   page: Page,
-  options: { tutorialSeen?: boolean; videoCount?: number } = {},
+  options: { tutorialSeen?: boolean; videoCount?: number; playlist?: string[] } = {},
 ): Promise<void> {
   const tutorialSeen = options.tutorialSeen ?? true
   const videoCount = options.videoCount ?? 5
+  const seedPlaylist = options.playlist ?? []
 
   await page.addInitScript(
-    ({ tutorialSeen, videoCount }: { tutorialSeen: boolean; videoCount: number }) => {
+    ({
+      tutorialSeen,
+      videoCount,
+      seedPlaylist,
+    }: {
+      tutorialSeen: boolean
+      videoCount: number
+      seedPlaylist: string[]
+    }) => {
     /**
      * 缩略图用一张 1920×1080 的占位图。
      *
@@ -56,7 +65,7 @@ async function installFakeTauri(
     const sample = 'C:\\Users\\tester\\AppData\\Roaming\\com.fuvideo.desktop\\示例视频'
 
     /** 播放列表与收藏夹：假后端也要真的增删改，界面才看得到结果。 */
-    const collections = { playlist: [] as string[], favorites: [] as string[] }
+    const collections = { playlist: [...seedPlaylist], favorites: [] as string[] }
     const copyCollections = () => ({
       playlist: [...collections.playlist],
       favorites: [...collections.favorites],
@@ -107,7 +116,7 @@ async function installFakeTauri(
       },
     })
     },
-    { tutorialSeen, videoCount },
+    { tutorialSeen, videoCount, seedPlaylist },
   )
 }
 
@@ -238,6 +247,29 @@ test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async
   // 面板是淡入的，等动画走完再截图，否则拍到的是一张近乎透明的图
   await expect(page.getByTestId('popover')).toHaveCSS('opacity', '1')
   await page.screenshot({ path: 'test-results/shots/playlist.png' })
+})
+
+test('空状态下从播放列表点名字：引导语让位给方格墙，然后开始播放', async ({ page }) => {
+  // 预置一条播放列表，这样「还没选过目录」和「列表里有东西」能同时成立
+  await installFakeTauri(page, { playlist: ['E:\\clips\\demo-1.mp4'] })
+  await page.goto('/')
+  await waitForBoot(page)
+
+  const hint = page.getByText('选一个目录，把里面的视频铺成方格')
+  await expect(hint).toBeVisible()
+
+  await page.getByRole('button', { name: '播放列表', exact: true }).click()
+  const list = page.getByTestId('playlist-list')
+  await expect(list).toBeVisible()
+
+  // 精确匹配：那几颗工具按钮的名字里也带文件名
+  await list.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+
+  // 先切到它所在的目录：引导语消失、方格墙出现（这是这次修的 bug）
+  await expect(hint).toHaveCount(0)
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+  // 再开始播放
+  await expect(page.getByTestId('island')).toBeVisible()
 })
 
 test('教程能带着用户真的走一遍：看示例 → 点方格播放', async ({ page }) => {

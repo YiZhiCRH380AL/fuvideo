@@ -654,12 +654,19 @@ export default function App() {
     [reportError],
   )
 
+  /**
+   * 从列表里点某个视频：先切到它所在的目录，再播。
+   *
+   * 不切目录的话，从空状态点一下会变成「视频在播、背后还挂着那句选目录的引导」，
+   * 收起画面就是一块空屏；就算本来开着别的目录，方格墙和上下集也跟当前这片对不上。
+   */
   const handlePlayFromList = useCallback(
-    (path: string) => {
+    async (path: string) => {
       setOpenPanel(null)
+      await loadDirectory(parentDirectory(path))
       void playPath(path)
     },
-    [playPath],
+    [loadDirectory, playPath],
   )
 
   /**

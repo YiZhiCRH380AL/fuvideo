@@ -1153,5 +1153,29 @@ describe('播放列表与收藏夹', () => {
     // 只有点方格那一次播放
     expect(mocks.playLocalVideo).toHaveBeenCalledTimes(1)
   })
+
+  /**
+   * 从列表里点名字播放时，也要切到它所在的目录。
+   *
+   * 否则：空状态下点一下，视频是播了，但背后的目录区还停在「选择目录」的引导上——
+   * 收起画面就露出一块空屏，方格墙、上下集也全都对不上。
+   */
+  it('从列表里点名字播放时，会先切到它所在的目录', async () => {
+    mocks.collections = { playlist: [DEMO], favorites: [] }
+
+    render(<App />)
+    expect(screen.getByText('选一个目录，把里面的视频铺成方格')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+    const list = within(await screen.findByTestId('playlist-list'))
+    await userEvent.click(list.getByRole('button', { name: 'demo.mp4' }))
+
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS))
+    // 引导语让位给方格墙
+    await waitFor(() =>
+      expect(screen.queryByText('选一个目录，把里面的视频铺成方格')).not.toBeInTheDocument(),
+    )
+    expect(mocks.playLocalVideo).toHaveBeenCalledWith(DEMO)
+  })
 })
 
