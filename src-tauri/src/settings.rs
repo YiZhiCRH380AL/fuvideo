@@ -27,8 +27,8 @@ pub const AUDIO_CHANNELS: &[&str] = &["auto-safe", "auto", "mono", "stereo", "2.
 /// 允许的 ASS 字幕样式覆盖模式，对应 mpv 的 `--sub-ass-override`。
 pub const SUB_ASS_OVERRIDE_MODES: &[&str] = &["no", "yes", "scale", "force", "strip"];
 
-/// 音频效果的呈现模式：简单模式只给几个开关，高级模式给预设与均衡器。
-pub const AUDIO_FILTER_MODES: &[&str] = &["simple", "advanced"];
+/// 设置的呈现模式：简单只给几个常用项，高级把细调都摆出来。音频和画面共用这一套。
+pub const FILTER_MODES: &[&str] = &["simple", "advanced"];
 
 /// 允许的输出位深。`None` 表示跟随源。
 pub const AUDIO_FORMATS: &[&str] = &["s16", "s32", "float"];
@@ -119,6 +119,8 @@ pub struct Settings {
   pub sub_ass_override: Option<String>,
   /// 音频效果的呈现模式，见 [AUDIO_FILTER_MODES]。
   pub audio_filter_mode: String,
+  /// 画面设置的呈现模式，取值同上。
+  pub video_filter_mode: String,
   /// 响度归一化（动态）：把忽大忽小的对白拉平，晚上看视频时不用一直调音量。
   pub loudness_normalization: bool,
   /// 虚拟环绕：在立体声设备上模拟出包围感。
@@ -186,6 +188,7 @@ impl Default for Settings {
       sub_position: None,
       sub_ass_override: None,
       audio_filter_mode: default_filter_mode(),
+      video_filter_mode: default_filter_mode(),
       loudness_normalization: false,
       virtual_surround: false,
       stereo_widening: false,
@@ -248,8 +251,12 @@ impl Settings {
 
     self.sub_ass_override = keep_choice(self.sub_ass_override, SUB_ASS_OVERRIDE_MODES);
 
-    if !AUDIO_FILTER_MODES.contains(&self.audio_filter_mode.as_str()) {
+    if !FILTER_MODES.contains(&self.audio_filter_mode.as_str()) {
       self.audio_filter_mode = default_filter_mode();
+    }
+
+    if !FILTER_MODES.contains(&self.video_filter_mode.as_str()) {
+      self.video_filter_mode = default_filter_mode();
     }
 
     self.audio_format = keep_choice(self.audio_format, AUDIO_FORMATS);
@@ -428,6 +435,7 @@ mod tests {
       sub_position: Some(92.0),
       sub_ass_override: Some("force".to_string()),
       audio_filter_mode: "advanced".to_string(),
+      video_filter_mode: "simple".to_string(),
       loudness_normalization: true,
       virtual_surround: true,
       stereo_widening: false,

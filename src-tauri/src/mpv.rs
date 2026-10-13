@@ -1403,7 +1403,7 @@ pub fn set_audio_filter_mode(
   state: tauri::State<'_, PlayerState>,
   mode: String,
 ) -> Result<Settings, String> {
-  if !settings::AUDIO_FILTER_MODES.contains(&mode.as_str()) {
+  if !settings::FILTER_MODES.contains(&mode.as_str()) {
     return Err(format!("不支持的音效模式: {mode}"));
   }
 
@@ -1523,6 +1523,9 @@ const TONE_MAPPING_AUTO: &str = "auto";
 fn apply_video_settings(state: &PlayerState, settings: &Settings) {
   let _ = state.with_ipc(|client| client.set_video_filters(&video::build_filter_chain(settings)));
 
+  // 硬解换后端会重建视频输出，画面会闪一下——所以只在真的变了的时候才生效
+  let _ = state.with_ipc(|client| client.set_string("hwdec", &settings.hwdec));
+
   let aspect = settings
     .video_aspect
     .as_deref()
@@ -1588,6 +1591,38 @@ fn update_video_settings(
 #[tauri::command]
 pub fn video_options() -> video::VideoOptions {
   video::VideoOptions::default()
+}
+
+/// 硬件解码方式。
+///
+/// 切换会让 mpv 重建视频输出，画面会闪一下；有些后端在这台机器上根本用不了
+/// （比如没有 Intel 核显就没有 `qsv` 可依附），所以界面上要显示 `hwdec-current`
+/// 报出来的**真正生效**的那个，而不是用户选了什么。
+#[tauri::command(async)]
+pub fn set_hwdec(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  mode: String,
+) -> Result<Settings, String> {
+  if !settings::HWDEC_MODES.contains(&mode.as_str()) {
+    return Err(format!("不支持的硬解方式: {mode}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.hwdec = mode)
+}
+
+/// 画面设置的呈现模式（简单 / 高级）。
+#[tauri::command(async)]
+pub fn set_video_filter_mode(
+  app: tauri::AppHandle,
+  state: tauri::State<'_, PlayerState>,
+  mode: String,
+) -> Result<Settings, String> {
+  if !settings::FILTER_MODES.contains(&mode.as_str()) {
+    return Err(format!("不支持的画面模式: {mode}"));
+  }
+
+  update_video_settings(&app, &state, |settings| settings.video_filter_mode = mode)
 }
 
 /// 画面比例。

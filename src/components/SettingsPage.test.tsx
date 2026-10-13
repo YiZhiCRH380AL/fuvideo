@@ -1,29 +1,21 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AudioEffectKind, AudioOptions, PlayerSettings } from '../lib/backend'
+import {
+  type AudioEffectKind,
+  type AudioOptions,
+  type PlayerSettings,
+  type VideoOptions,
+} from '../lib/backend'
+
+/** 后端模块被整个 mock 掉了，默认值要从真模块拿。 */
+const { DEFAULT_SETTINGS } = await vi.importActual<{ DEFAULT_SETTINGS: PlayerSettings }>(
+  '../lib/backend',
+)
 
 function baseSettings(): PlayerSettings {
-  return {
-    hwdec: 'auto-safe',
-    savePosition: true,
-    subAuto: null,
-    subFontSize: null,
-    subPosition: null,
-    subAssOverride: null,
-    audioChannels: null,
-    audioDevice: null,
-    audioExclusive: false,
-    audioFilterMode: 'simple',
-    loudnessNormalization: false,
-    virtualSurround: false,
-    stereoWidening: false,
-    equalizerPreset: null,
-    equalizerBands: null,
-    audioSamplerate: null,
-    audioFormat: null,
-    audioSpdif: false,
-  }
+  // 直接拿前端那份默认值：设置项一多，手写一份迟早对不上
+  return { ...DEFAULT_SETTINGS }
 }
 
 const OPTIONS: AudioOptions = {
@@ -48,6 +40,34 @@ const OPTIONS: AudioOptions = {
   ],
 }
 
+const VIDEO_OPTIONS: VideoOptions = {
+  colorLimit: 100,
+  sharpenLimit: 5,
+  modes: [
+    { id: 'simple', label: '简单' },
+    { id: 'advanced', label: '高级' },
+  ],
+  aspects: [
+    { id: 'auto', label: '自动' },
+    { id: '16:9', label: '16:9' },
+  ],
+  rotations: [0, 90, 180, 270],
+  flips: [{ id: 'h', label: '左右镜像' }],
+  profiles: [{ id: 'high', label: '高质量（缩放更锐利）' }],
+  toneMappings: [
+    { id: 'auto', label: '自动' },
+    { id: 'bt.2390', label: 'BT.2390（推荐）' },
+  ],
+  hwdec: [
+    { id: 'auto-safe', label: '自动（推荐）' },
+    { id: 'no', label: '关闭，用软件解码' },
+  ],
+  screenshotFormats: [
+    { id: 'jpg', label: 'JPEG（体积小）' },
+    { id: 'png', label: 'PNG（无损）' },
+  ],
+}
+
 const mocks = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   readSettings: vi.fn(),
@@ -59,6 +79,14 @@ const mocks = vi.hoisted(() => ({
   setAudioSamplerate: vi.fn(),
   setAudioFormat: vi.fn(),
   setAudioSpdif: vi.fn(),
+  getVideoOptions: vi.fn(),
+  getPlayerDetails: vi.fn(),
+  setVideoFilterMode: vi.fn(),
+  setVideoAspect: vi.fn(),
+  setVideoFill: vi.fn(),
+  setVideoRotate: vi.fn(),
+  setHwdec: vi.fn(),
+  takeScreenshot: vi.fn(),
 }))
 
 vi.mock('../lib/backend', () => ({
@@ -71,6 +99,14 @@ vi.mock('../lib/backend', () => ({
   setAudioSamplerate: (samplerate: number | null) => mocks.setAudioSamplerate(samplerate),
   setAudioFormat: (format: string | null) => mocks.setAudioFormat(format),
   setAudioSpdif: (enabled: boolean) => mocks.setAudioSpdif(enabled),
+  getVideoOptions: () => mocks.getVideoOptions(),
+  getPlayerDetails: () => mocks.getPlayerDetails(),
+  setVideoFilterMode: (mode: string) => mocks.setVideoFilterMode(mode),
+  setVideoAspect: (aspect: string) => mocks.setVideoAspect(aspect),
+  setVideoFill: (fill: boolean) => mocks.setVideoFill(fill),
+  setVideoRotate: (degrees: number) => mocks.setVideoRotate(degrees),
+  setHwdec: (mode: string) => mocks.setHwdec(mode),
+  takeScreenshot: () => mocks.takeScreenshot(),
 }))
 
 import SettingsPage from './SettingsPage'
@@ -139,6 +175,9 @@ const bandList = () => within(screen.getByTestId('equalizer-bands'))
 beforeEach(() => {
   mocks.settings = baseSettings() as unknown as Record<string, unknown>
   mocks.getAudioOptions.mockResolvedValue(OPTIONS)
+  mocks.getVideoOptions.mockResolvedValue(VIDEO_OPTIONS)
+  mocks.getPlayerDetails.mockResolvedValue({ hwdecCurrent: 'd3d11va' })
+  mocks.takeScreenshot.mockResolvedValue(String.raw`E:\clips\demo 截图.jpg`)
 
   for (const fn of [
     mocks.readSettings,
@@ -181,8 +220,10 @@ describe('设置页 · 简单模式', () => {
   it('简单/高级两个模式按钮反映当前模式，点了会切过去', async () => {
     renderPage()
 
-    const simple = await screen.findByRole('button', { name: '简单' })
-    const advanced = screen.getByRole('button', { name: '高级' })
+    // 音效和画面各有一组「简单 / 高级」，按分组定位
+    const modes = within(await screen.findByRole('group', { name: '音效模式' }))
+    const simple = modes.getByRole('button', { name: '简单' })
+    const advanced = modes.getByRole('button', { name: '高级' })
 
     expect(simple).toHaveAttribute('aria-pressed', 'true')
     expect(advanced).toHaveAttribute('aria-pressed', 'false')
@@ -267,3 +308,46 @@ describe('设置页 · 高级模式', () => {
     await waitFor(() => expect(mocks.setAudioFormat).toHaveBeenCalledWith('float'))
   })
 })
+describe('设置页 · 画面', () => {
+  it('简单模式只摆常用项：比例、旋转、缩放、截图，不摊色彩', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('group', { name: '画面比例' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '旋转' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '截一张当前画面' })).toBeInTheDocument()
+    // 色彩滑块是高级的东西，简单模式不摆出来
+    expect(screen.queryByRole('slider', { name: '亮度' })).not.toBeInTheDocument()
+  })
+
+  it('选画面比例会通知后端', async () => {
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: '16:9' }))
+
+    await waitFor(() => expect(mocks.setVideoAspect).toHaveBeenCalledWith('16:9'))
+  })
+
+  it('截图会把存到哪儿显示出来', async () => {
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: '截一张当前画面' }))
+
+    await waitFor(() => expect(mocks.takeScreenshot).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('screenshot-saved')).toHaveTextContent('截图.jpg')
+  })
+
+  it('高级模式摊开色彩、硬解与 HDR，并显示当前真正生效的硬解后端', async () => {
+    mocks.settings = { ...baseSettings(), videoFilterMode: 'advanced' } as unknown as Record<
+      string,
+      unknown
+    >
+
+    renderPage()
+
+    expect(await screen.findByRole('slider', { name: '亮度' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '画面比例' })).toBeInTheDocument()
+    // 显示的是 mpv 报的「真正在用」的那个，不是用户选了什么
+    expect(screen.getByTestId('hwdec-current')).toHaveTextContent('d3d11va')
+  })
+})
+

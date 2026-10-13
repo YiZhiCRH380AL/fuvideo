@@ -298,6 +298,65 @@
   line-height: 1.6;
 }
 
+/* 步进器和「截一张」这类动作按钮：画面那一节用得上 */
+.settings__stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings__step {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__step:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.settings__step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.settings__value {
+  flex: 1;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.settings__action {
+  padding: 7px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings__action:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.settings__action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .settings__foot {
   flex: none;
   margin: 0;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import {
   getAudioOptions,
+  getPlayerDetails,
+  getVideoOptions,
   readSettings,
   setAudioEffect,
   setAudioFilterMode,
@@ -12,7 +14,9 @@ import {
   type AudioEffectKind,
   type AudioOptions,
   type PlayerSettings,
+  type VideoOptions,
 } from '../lib/backend'
+import VideoSettings from './VideoSettings'
 import './SettingsPage.css'
 
 export interface SettingsPageProps {
@@ -63,6 +67,9 @@ function formatFrequency(hertz: number): string {
 export default function SettingsPage({ onClose, onError }: SettingsPageProps) {
   const [settings, setSettings] = useState<PlayerSettings | null>(null)
   const [options, setOptions] = useState<AudioOptions | null>(null)
+  const [videoOptions, setVideoOptions] = useState<VideoOptions | null>(null)
+  /** mpv 报出来的、当前真正在用的硬解后端。 */
+  const [hwdecCurrent, setHwdecCurrent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   /** 正在拖的那一段。松手之前只改界面，不去重建滤镜链。 */
   const [dragging, setDragging] = useState<{ index: number; gain: number } | null>(null)
@@ -72,11 +79,19 @@ export default function SettingsPage({ onClose, onError }: SettingsPageProps) {
 
     const load = async () => {
       try {
-        const [nextSettings, nextOptions] = await Promise.all([readSettings(), getAudioOptions()])
+        const [nextSettings, nextOptions, nextVideoOptions, details] = await Promise.all([
+          readSettings(),
+          getAudioOptions(),
+          getVideoOptions(),
+          // 没在播放时读不到详情，不该因此把整个设置页卡住
+          getPlayerDetails().catch(() => null),
+        ])
 
         if (!cancelled) {
           setSettings(nextSettings)
           setOptions(nextOptions)
+          setVideoOptions(nextVideoOptions)
+          setHwdecCurrent(details?.hwdecCurrent ?? null)
         }
       } catch (cause: unknown) {
         if (!cancelled) {
@@ -334,6 +349,17 @@ export default function SettingsPage({ onClose, onError }: SettingsPageProps) {
               </div>
             )}
           </section>
+
+          {!settings || !videoOptions ? null : (
+            <VideoSettings
+              settings={settings}
+              options={videoOptions}
+              hwdecCurrent={hwdecCurrent}
+              busy={busy}
+              run={run}
+              onError={onError}
+            />
+          )}
         </div>
 
         <p className="settings__foot">设置存在本机，下次打开还是这样。</p>

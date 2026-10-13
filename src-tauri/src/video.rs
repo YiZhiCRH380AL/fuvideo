@@ -80,6 +80,7 @@ pub struct VideoOptions {
   /// 色彩五项的取值范围，界面拿它当滑块的上下限。
   pub color_limit: i32,
   pub sharpen_limit: i32,
+  pub modes: Vec<OptionChoice>,
   pub aspects: Vec<OptionChoice>,
   pub rotations: Vec<i64>,
   pub flips: Vec<OptionChoice>,
@@ -94,6 +95,7 @@ impl Default for VideoOptions {
     Self {
       color_limit: 100,
       sharpen_limit: 5,
+      modes: vec![choice("simple", "简单"), choice("advanced", "高级")],
       aspects: vec![
         choice("auto", "自动"),
         choice("window", "拉伸填满窗口"),

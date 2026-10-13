@@ -97,7 +97,49 @@ export interface PlayerSettings {
   audioFormat: string | null
   /** 音频透传。开着的时候所有滤镜都会失效。 */
   audioSpdif: boolean
+  /** 画面设置的呈现模式：`simple` 只给常用项，`advanced` 把细调都摆出来。 */
+  videoFilterMode: string
+  videoAspect: string | null
+  videoFill: boolean
+  videoZoom: number | null
+  videoRotate: number | null
+  videoFlip: string | null
+  videoProfile: string | null
+  videoBrightness: number | null
+  videoContrast: number | null
+  videoSaturation: number | null
+  videoHue: number | null
+  videoGamma: number | null
+  videoDeband: boolean
+  videoInterpolation: boolean
+  videoIcc: boolean
+  videoSharpen: number | null
+  videoToneMapping: string | null
+  videoTargetPeak: number | null
+  videoHdrRecovery: number | null
+  screenshotFormat: string | null
+  screenshotSubtitles: boolean
 }
+
+/** 设置页「画面」那一节要用的选项表。 */
+export interface VideoOptions {
+  colorLimit: number
+  sharpenLimit: number
+  modes: OptionChoice[]
+  aspects: OptionChoice[]
+  rotations: number[]
+  flips: OptionChoice[]
+  profiles: OptionChoice[]
+  toneMappings: OptionChoice[]
+  hwdec: OptionChoice[]
+  screenshotFormats: OptionChoice[]
+}
+
+/** 画面开关：去色带 / 补帧 / 跟随显示器 ICC。 */
+export type VideoSwitchKind = 'deband' | 'interpolation' | 'icc'
+
+/** 色彩五项。 */
+export type VideoColorChannel = 'brightness' | 'contrast' | 'saturation' | 'hue' | 'gamma'
 
 /** 一个可选项：给机器看的 id 和给人看的名字。 */
 export interface OptionChoice {
@@ -138,6 +180,27 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   audioSamplerate: null,
   audioFormat: null,
   audioSpdif: false,
+  videoFilterMode: 'simple',
+  videoAspect: null,
+  videoFill: false,
+  videoZoom: null,
+  videoRotate: null,
+  videoFlip: null,
+  videoProfile: null,
+  videoBrightness: null,
+  videoContrast: null,
+  videoSaturation: null,
+  videoHue: null,
+  videoGamma: null,
+  videoDeband: false,
+  videoInterpolation: false,
+  videoIcc: false,
+  videoSharpen: null,
+  videoToneMapping: null,
+  videoTargetPeak: null,
+  videoHdrRecovery: null,
+  screenshotFormat: null,
+  screenshotSubtitles: true,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -461,6 +524,85 @@ export function toggleFavorite(path: string): Promise<Collections> {
  */
 export function pauseVideo(): Promise<void> {
   return playerCommand<void>('pause_video')
+}
+
+/** 设置页「画面」那一节的选项表。 */
+export function getVideoOptions(): Promise<VideoOptions> {
+  return playerCommand<VideoOptions>('video_options')
+}
+
+/** 画面设置的呈现模式（简单 / 高级）。 */
+export function setVideoFilterMode(mode: string): Promise<PlayerSettings> {
+  return settingsCommand('set_video_filter_mode', { mode })
+}
+
+/** 硬件解码方式。切换会让 mpv 重建视频输出，画面闪一下。 */
+export function setHwdec(mode: string): Promise<PlayerSettings> {
+  return settingsCommand('set_hwdec', { mode })
+}
+
+export function setVideoAspect(aspect: string): Promise<PlayerSettings> {
+  return settingsCommand('set_video_aspect', { aspect })
+}
+
+export function setVideoFill(fill: boolean): Promise<PlayerSettings> {
+  return settingsCommand('set_video_fill', { fill })
+}
+
+export function setVideoZoom(zoom: number): Promise<PlayerSettings> {
+  return settingsCommand('set_video_zoom', { zoom })
+}
+
+export function setVideoRotate(degrees: number): Promise<PlayerSettings> {
+  return settingsCommand('set_video_rotate', { degrees })
+}
+
+/** 镜像；传 null 表示不镜像。 */
+export function setVideoFlip(flip: string | null): Promise<PlayerSettings> {
+  return settingsCommand('set_video_flip', { flip })
+}
+
+export function setVideoColor(channel: VideoColorChannel, value: number): Promise<PlayerSettings> {
+  return settingsCommand('set_video_color', { channel, value })
+}
+
+export function setVideoSwitch(kind: VideoSwitchKind, enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('set_video_switch', { kind, enabled })
+}
+
+export function setVideoSharpen(strength: number): Promise<PlayerSettings> {
+  return settingsCommand('set_video_sharpen', { strength })
+}
+
+/** 画质档位；传 null 回到默认。 */
+export function setVideoProfile(profile: string | null): Promise<PlayerSettings> {
+  return settingsCommand('set_video_profile', { profile })
+}
+
+export function setVideoToneMapping(mapping: string): Promise<PlayerSettings> {
+  return settingsCommand('set_video_tone_mapping', { mapping })
+}
+
+/** 目标峰值亮度（nits）；传 null 交给 mpv 自动判断。 */
+export function setVideoTargetPeak(peak: number | null): Promise<PlayerSettings> {
+  return settingsCommand('set_video_target_peak', { peak })
+}
+
+export function setVideoHdrRecovery(value: number): Promise<PlayerSettings> {
+  return settingsCommand('set_video_hdr_recovery', { value })
+}
+
+export function setScreenshotFormat(format: string): Promise<PlayerSettings> {
+  return settingsCommand('set_screenshot_format', { format })
+}
+
+export function setScreenshotSubtitles(enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('set_screenshot_subtitles', { enabled })
+}
+
+/** 截一张当前画面的图，返回存到哪儿了。 */
+export function takeScreenshot(): Promise<string> {
+  return playerCommand<string>('take_screenshot')
 }
 
 /** 跳转到指定秒数。 */
