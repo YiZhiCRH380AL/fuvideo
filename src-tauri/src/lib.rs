@@ -65,6 +65,7 @@ pub fn run() {
       mpv::player_details,
       mpv::audio_devices,
       mpv::toggle_pause,
+      mpv::pause_video,
       mpv::seek_to,
       mpv::seek_by,
       mpv::set_volume,

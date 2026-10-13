@@ -90,6 +90,7 @@ const mocks = vi.hoisted(() => {
       audioSpdif: false,
     },
     togglePause: vi.fn(async () => false),
+    pauseVideo: vi.fn(async () => {}),
     seekTo: vi.fn(async (_position: number) => {}),
     seekBy: vi.fn(async (_offset: number) => {}),
     setVolume: vi.fn(async (_volume: number) => {}),
@@ -117,6 +118,7 @@ vi.mock('./lib/backend', () => ({
   playLocalVideo: (path: string) => mocks.playLocalVideo(path),
   getPlayerState: async () => mocks.snapshot,
   togglePause: () => mocks.togglePause(),
+  pauseVideo: () => mocks.pauseVideo(),
   seekTo: (position: number) => mocks.seekTo(position),
   seekBy: (offset: number) => mocks.seekBy(offset),
   setVolume: (volume: number) => mocks.setVolume(volume),
@@ -200,6 +202,7 @@ beforeEach(() => {
 
   for (const fn of [
     mocks.togglePause,
+    mocks.pauseVideo,
     mocks.seekTo,
     mocks.seekBy,
     mocks.setVolume,
@@ -463,7 +466,8 @@ describe('方格放大播放', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '收起画面' }))
 
-    expect(mocks.togglePause).toHaveBeenCalledTimes(1)
+    // 收起走的是「设成暂停」，不是「切一下」：收起可能被连着触发两次
+    expect(mocks.pauseVideo).toHaveBeenCalledTimes(1)
     await waitFor(() => {
       expect(screen.queryByTestId('expanded-tile')).not.toBeInTheDocument()
     })
@@ -477,7 +481,7 @@ describe('方格放大播放', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '收起画面' }))
 
-    expect(mocks.togglePause).not.toHaveBeenCalled()
+    expect(mocks.pauseVideo).not.toHaveBeenCalled()
   })
 })
 
@@ -1067,6 +1071,34 @@ describe('播放列表与收藏夹', () => {
 
     const tile = grid().getByRole('button', { name: 'demo.mp4' }).closest('.tile')
     await waitFor(() => expect(tile).toHaveAttribute('data-highlight', 'true'))
+  })
+
+  /**
+   * 收藏夹那行小字是「带我去看这个文件在哪」，不是「播它」。
+   * 以前正在播的片子会一直播下去，方格墙还停在放大状态里，高亮根本看不见。
+   */
+  it('正在播放时从收藏夹跳转：先离开播放画面，而且不会顺手播起来', async () => {
+    mocks.collections = { playlist: [], favorites: [DEMO] }
+
+    await openPlayingVideo({ paused: false })
+    expect(screen.getByTestId('expanded-tile')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '收藏夹' }))
+    const list = within(await screen.findByTestId('favorites-list'))
+    await userEvent.click(list.getByRole('button', { name: String.raw`跳到 E:\clips` }))
+
+    // 画面收起来了、也暂停了
+    await waitFor(() => expect(screen.queryByTestId('expanded-tile')).not.toBeInTheDocument())
+    expect(mocks.pauseVideo).toHaveBeenCalledTimes(1)
+
+    // 只是跳过去看看：除了最开始点方格那一次，没有别的播放
+    expect(mocks.playLocalVideo).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(grid().getByRole('button', { name: 'demo.mp4' }).closest('.tile')).toHaveAttribute(
+        'data-highlight',
+        'true',
+      ),
+    )
   })
 
   it('当前视频播完（mpv 进入待机）就自动播列表里的下一个', async () => {

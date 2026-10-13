@@ -16,9 +16,15 @@ async function installFakeTauri(
 
   await page.addInitScript(
     ({ tutorialSeen, videoCount }: { tutorialSeen: boolean; videoCount: number }) => {
-    /** 1×1 的透明 GIF，当缩略图用。 */
+    /**
+     * 缩略图用一张 1920×1080 的占位图。
+     *
+     * 尺寸要像真的：之前用 1×1 的图，绕过了一个真实的坑——网格行高按内容算时，
+     * 浏览器会拿图片的原生高度（1080）去撑行，整排方格会变成一屏高的柱子。
+     */
     const pixel =
-      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+      'data:image/svg+xml;utf8,' +
+      encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"></svg>')
 
     const clips = 'E:\\clips'
 
@@ -280,6 +286,8 @@ test('视频多到要滚动时，每一格还是原来的高度', async ({ page 
   expect(grid.scrollHeight).toBeGreaterThan(grid.clientHeight)
   expect(new Set(sizes.map((tile) => tile.height)).size).toBe(1)
   expect(sizes.every((tile) => tile.height > 150)).toBe(true)
+  // 卡片高度要和封面 + 名字对得上，不能被图片原生高度撑成柱子
+  expect(sizes.every((tile) => tile.slack < 60)).toBe(true)
 })
 
 test('从收藏夹跳回来之后，方格还是方格，并且那一格被高亮', async ({ page }) => {
@@ -321,6 +329,8 @@ async function tileSizes(
 
       return {
         height: Math.round(tile.getBoundingClientRect().height),
+        // 卡片比封面高出来的部分（名字那一行）。撑成柱子时这里会是几百上千
+        slack: frame === undefined ? 0 : Math.round(tile.getBoundingClientRect().height - frame.height),
         // 封面区是不是还是 16:9——被压扁的时候它就守不住了
         aspect: frame === undefined || frame.height === 0 ? 0 : Number((frame.width / frame.height).toFixed(2)),
         expanded: tile.classList.contains('tile--expanded'),
@@ -360,5 +370,7 @@ test('放大播放时，下面那些方格不会被压扁', async ({ page }) => 
   expect(wall.length).toBeGreaterThan(0)
   expect(wall.every((tile) => Math.abs(tile.aspect - 16 / 9) < 0.02)).toBe(true)
   expect(wall.every((tile) => tile.height > 100)).toBe(true)
+  // 而且卡片只比封面高出一个名字的量：被图片原生高度撑成柱子时这里会是几百
+  expect(wall.every((tile) => tile.slack < 60)).toBe(true)
 })
 

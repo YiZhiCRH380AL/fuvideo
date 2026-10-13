@@ -26,6 +26,7 @@ import {
   isTauri,
   listDirectory,
   listDrives,
+  pauseVideo,
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
@@ -523,8 +524,10 @@ export default function App() {
 
     if (player?.paused === false) {
       try {
-        const paused = await togglePause()
-        setPlayer((previous) => (previous ? { ...previous, paused } : previous))
+        // 用「设成暂停」而不是「切一下」：这里可能被连着触发两次，
+        // 切一下会变成「暂停又恢复」，设成暂停怎么调都一样
+        await pauseVideo()
+        setPlayer((previous) => (previous ? { ...previous, paused: true } : previous))
       } catch (cause: unknown) {
         reportError(cause)
       }
@@ -667,10 +670,15 @@ export default function App() {
   const handleRevealFavorite = useCallback(
     async (path: string) => {
       setOpenPanel(null)
+
+      // 收藏夹那一行小字的意思是「带我去看看这个文件在哪」，不是「播它」：
+      // 先离开播放画面，方格墙才露得出来，高亮也才有意义
+      await collapseVideo()
+
       await loadDirectory(parentDirectory(path))
       setHighlightPath(path)
     },
-    [loadDirectory],
+    [collapseVideo, loadDirectory],
   )
 
   /** 同一个文件只推进一次：待机状态会在轮询里反复出现，不记着就会一直往下跳。 */

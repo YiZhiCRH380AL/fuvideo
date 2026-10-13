@@ -854,6 +854,16 @@ pub fn toggle_pause(state: tauri::State<'_, PlayerState>) -> Result<bool, String
   Ok(next)
 }
 
+/// 暂停播放。已经暂停了就是空操作。
+///
+/// 「收起画面」要走这条而不是 `toggle_pause`：收起可能被连着触发两次
+/// （从收藏夹跳转时，跳转本身和换目录都会要求先离开播放画面），
+/// 用 toggle 会变成「暂停又恢复」，而「设成暂停」怎么调都一样。
+#[tauri::command(async)]
+pub fn pause_video(state: tauri::State<'_, PlayerState>) -> Result<(), String> {
+  state.with_ipc(|client| client.set_flag("pause", true))
+}
+
 /// 跳转到指定秒数。
 #[tauri::command(async)]
 pub fn seek_to(state: tauri::State<'_, PlayerState>, position: f64) -> Result<(), String> {

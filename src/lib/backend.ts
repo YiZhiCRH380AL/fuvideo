@@ -453,6 +453,16 @@ export function toggleFavorite(path: string): Promise<Collections> {
   return playerCommand<Collections>('toggle_favorite', { path })
 }
 
+/**
+ * 暂停播放。已经暂停了就是空操作。
+ *
+ * 收起画面要走这条而不是 `togglePause`：收起可能被连着触发两次，
+ * 用 toggle 会变成「暂停又恢复」。
+ */
+export function pauseVideo(): Promise<void> {
+  return playerCommand<void>('pause_video')
+}
+
 /** 跳转到指定秒数。 */
 export async function seekTo(position: number): Promise<void> {
   if (!isTauri()) {
