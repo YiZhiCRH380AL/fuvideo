@@ -2,6 +2,39 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：教程打光指错按钮（已修复）
+
+**症状**：教程讲到「右上角是设置」那一步时，框住的是**播放列表**按钮，不是齿轮。
+
+**原因**：那一步的目标选择器是 `.app__tool`，而顶栏上**三颗按钮共用这个类**
+（播放列表 `≡`、收藏夹 `★`、设置 `⚙`），`document.querySelector` 取到的是按 DOM 顺序
+排在最前面的那颗——也就是播放列表。
+
+**修法**：教程的目标改成显式的 **`data-tutorial` 钩子**，不再拿样式类当定位依据。
+钩子只出现在要指的那一个元素上，从根上排除「打到别人身上」：
+
+| 步骤 | 钩子 | 挂在哪 |
+| --- | --- | --- |
+| 看示例 | `data-tutorial="sample"` | 空状态里的「看示例视频」 |
+| 点一格 | `data-tutorial="tile"` | 方格的 `.tile` 容器 |
+| 灵动岛 | `data-tutorial="island"` | `.island` |
+| 音轨与字幕 | `data-tutorial="media"` | `.island__media` |
+| 右上角是设置 | `data-tutorial="settings"` | 顶栏的齿轮 |
+
+**为什么值得这么改**：这个 bug 的本质是「拿共用的样式类当定位钩子」。
+以后再往顶栏加按钮、或者给某颗按钮换类名，教程都不会再莫名指错。
+
+**测试**：
+
+- `src/App.controls.test.tsx`：钉住「`.app__tool` 有三颗」这件事（说明它不能当唯一目标），
+  并断言 `[data-tutorial='settings']` 就是那颗「设置」按钮。
+- `e2e/smoke.spec.ts`：走到这一步时量**打光框与齿轮的实际位置**——整个齿轮要在框里，
+  而且框的左边必须在播放列表按钮右边（也就是「没框到它」）。顺手截图
+  `test-results/shots/tutorial-settings.png` 供人眼复核。
+
+验证：`npm run typecheck`、`npm run lint`（仍是那 2 条有意保留的警告）、
+`npm run test:run`（182 个）、`npm run test:e2e`（11 个）、`npm run build` 全绿。
+
 ## 上一阶段：播放列表、收藏夹与两个 bug 修复（已完成）
 
 ### 播放列表

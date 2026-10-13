@@ -51,6 +51,24 @@ test('首次进入的教程是交互式的，走过一次不再弹', async ({ pa
   await page.getByRole('button', { name: '下一步' }).click()
 
   await expect(tutorial).toContainText('右上角是设置')
+
+  // 回归：这一步以前框住的是播放列表按钮（目标用了共用的 .app__tool）
+  await page.waitForTimeout(400)
+  const spotlight = await page.getByTestId('tutorial-spotlight').boundingBox()
+  const gear = await page.getByRole('button', { name: '设置', exact: true }).boundingBox()
+  const playlist = await page.getByRole('button', { name: '播放列表', exact: true }).boundingBox()
+
+  expect(spotlight).not.toBeNull()
+  expect(gear).not.toBeNull()
+  expect(playlist).not.toBeNull()
+  // 框住的是齿轮：整个按钮都在打光框里面
+  expect(spotlight!.x).toBeLessThanOrEqual(gear!.x)
+  expect(spotlight!.x + spotlight!.width).toBeGreaterThanOrEqual(gear!.x + gear!.width)
+  // 而且没框到左边那颗播放列表
+  expect(spotlight!.x).toBeGreaterThan(playlist!.x + playlist!.width)
+
+  await page.screenshot({ path: 'test-results/shots/tutorial-settings.png' })
+
   await page.getByRole('button', { name: '下一步' }).click()
 
   await expect(tutorial).toContainText('键盘也能用')

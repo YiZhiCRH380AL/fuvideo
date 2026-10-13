@@ -99,7 +99,7 @@ export default function Island({
   const bubbleAt = duration > 0 ? Math.min(97, Math.max(3, (shown / duration) * 100)) : 50
 
   return (
-    <div className="island" data-testid="island">
+    <div className="island" data-testid="island" data-tutorial="island">
       <div className="island__row">
         <button
           className="island__button"
@@ -206,7 +206,7 @@ export default function Island({
         </div>
 
         {/* 音轨、输出设备、字幕都收在这个面板里，控制条上只多一个入口 */}
-        <div className="island__media">
+        <div className="island__media" data-tutorial="media">
           <button
             className="island__button"
             type="button"

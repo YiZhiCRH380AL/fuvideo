@@ -593,6 +593,22 @@ describe('底部控制条', () => {
     expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument()
   })
 
+  /**
+   * 回归：教程「说明设置」那一步曾经框住了播放列表按钮。
+   *
+   * 原因是那一步拿共用的 `.app__tool` 当目标，而顶栏三颗按钮都带这个类，
+   * `querySelector` 取到的是排在最前面的那颗。现在每一步都用专属的
+   * `data-tutorial` 钩子，这里把「类名是共用的」这件事也钉住。
+   */
+  it('教程指「设置」时框的是齿轮，不是顶栏上别的按钮', async () => {
+    render(<App />)
+
+    expect(document.querySelectorAll('.app__tool')).toHaveLength(3)
+    expect(document.querySelector("[data-tutorial='settings']")).toBe(
+      screen.getByRole('button', { name: '设置' }),
+    )
+  })
+
   it('空状态里点「看示例视频」会打开自带的示例文件夹', async () => {
     render(<App />)
 

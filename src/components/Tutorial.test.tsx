@@ -19,22 +19,23 @@ const PLAYING: TutorialProgress = {
   openedVideo: true,
 }
 
-/** 教程是从页面上量打光位置的，所以测试里得先把目标元素挂上。 */
-function mountInto(parentClass: string, childClass: string): HTMLElement {
-  const parent = document.createElement('div')
-  parent.className = parentClass
+/**
+ * 教程是从页面上量打光位置的，所以测试里得先把目标元素挂上。
+ *
+ * 目标靠 `data-tutorial` 钩子找，不靠样式类——类名是共用的，会打到别人身上。
+ */
+function mountTarget(name: string, className: string): HTMLElement {
+  const element = document.createElement('button')
+  element.className = className
+  element.dataset.tutorial = name
 
-  const child = document.createElement('button')
-  child.className = childClass
-  parent.appendChild(child)
-
-  document.body.appendChild(parent)
-  return child
+  document.body.appendChild(element)
+  return element
 }
 
 /** 第一步打光的是空状态里的「看示例视频」。 */
 function mountSampleEntry(): HTMLElement {
-  return mountInto('library__empty', 'library__sample')
+  return mountTarget('sample', 'library__sample')
 }
 
 function renderTutorial(progress: TutorialProgress = NOTHING) {
@@ -126,7 +127,7 @@ describe('交互教程', () => {
    * 用户点方格没反应，只能按「跳过这步」。等操作的那一屏，底衬必须让点击穿过去。
    */
   it('等操作时底衬不吃点击，用户的点击能落到页面上', async () => {
-    const tile = mountInto('grid', 'tile')
+    const tile = mountTarget('tile', 'tile')
     const clicked = vi.fn()
     tile.addEventListener('click', clicked)
 

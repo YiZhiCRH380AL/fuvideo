@@ -34,8 +34,12 @@ interface Step {
   /** 这一步要讲清的功能点。和 `keys` 分开：键帽是「按什么」，这里是「能做什么」。 */
   points?: string[]
   art: ReactNode
-  /**
+  /*
    * 要打光的那块界面的选择器。
+   *
+   * 统一用 `data-tutorial` 钩子而不是样式类：类名是共用的（顶栏那几颗按钮都叫
+   * `.app__tool`），`querySelector` 会打到排在前面的那一颗——「说明设置」的步骤
+   * 曾经因此框住了播放列表按钮。钩子只在要指的这一个元素上出现，指错不了。
    *
    * 找不到就退回居中的卡片——教程不该因为用户跳过了上一步就卡住。
    */
@@ -50,7 +54,7 @@ const STEPS: Step[] = [
   {
     title: '先看一段自带的示例',
     body: '点「看示例视频」，它会打开随应用带来的一小段片段（还带一条字幕），不用自己先去找片子。',
-    target: '.library__sample',
+    target: "[data-tutorial='sample']",
     done: (progress) => progress.hasDirectory,
     waitHint: '点一下就会自动继续',
     points: [
@@ -69,7 +73,7 @@ const STEPS: Step[] = [
   {
     title: '点一格，放大播放',
     body: '点任意一个方格，它会放大成铺满窗口的画面并开始播放；再看画面时点一下是播放/暂停，双击左半屏快退 10 秒、右半屏快进 10 秒。',
-    target: '.grid .tile:not(.tile--expanded)',
+    target: "[data-tutorial='tile']:not(.tile--expanded)",
     done: (progress) => progress.openedVideo,
     waitHint: '点一下方格就会自动继续',
     art: (
@@ -82,7 +86,7 @@ const STEPS: Step[] = [
   {
     title: '底部的灵动岛',
     body: '播放、进度、音量、倍速、全屏、上下集，都在这条常驻控制条里。鼠标不动几秒它会自己藏起来，动一下又回来。',
-    target: '.island',
+    target: "[data-tutorial='island']",
     art: (
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="3.5" y="11.5" width="25" height="10" rx="5" />
@@ -94,7 +98,7 @@ const STEPS: Step[] = [
   {
     title: '音轨、字幕在这里换',
     body: '灵动岛上的「音轨与字幕」把播放中要调的东西收在一处，分音频、字幕两页。',
-    target: '.island__media',
+    target: "[data-tutorial='media']",
     points: [
       '音频页：换音轨、挑输出设备、切声道、调音频延迟，也能加载外挂音轨',
       '字幕页：点「加载字幕文件…」挂外挂字幕，选中的那条立刻生效；第二字幕可以拿来放双语',
@@ -112,7 +116,7 @@ const STEPS: Step[] = [
   {
     title: '右上角是设置',
     body: '均衡器、响度归一化这些不用天天动的东西收在这里，点右上角的齿轮打开。',
-    target: '.app__tool',
+    target: "[data-tutorial='settings']",
     points: [
       '简单模式：响度归一化、虚拟环绕、立体声扩展，三个开关搞定',
       '高级模式：10 段均衡器 + 预设（音乐 / 电影 / 夜间 / 人声），还有输出采样率、位深和透传',

@@ -1171,6 +1171,7 @@ export default function App() {
             <button
               className="app__tool"
               type="button"
+              data-tutorial="settings"
               onClick={() => setSettingsOpen(true)}
               aria-label="设置"
               title="设置"
@@ -1253,6 +1254,7 @@ export default function App() {
                 <button
                   className="library__single library__sample"
                   type="button"
+                  data-tutorial="sample"
                   onClick={() => void handleOpenSample()}
                   disabled={!canOpen}
                 >
