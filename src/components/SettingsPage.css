@@ -366,6 +366,64 @@
   font-size: 11px;
 }
 
+/* ============ 快捷键 ============ */
+
+.keys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keys__row {
+  display: grid;
+  grid-template-columns: 1fr auto 24px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.keys__label {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.keys__key {
+  min-width: 78px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.keys__key:hover {
+  border-color: var(--accent);
+}
+
+.keys__key[data-recording='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.keys__reset {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.keys__reset:hover {
+  color: var(--text);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings__backdrop,
   .settings__panel {

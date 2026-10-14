@@ -1,5 +1,247 @@
 /* ============ 整体框架 ============ */
 
+.library__tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 10px;
+}
+
+.library__search {
+  flex: 1;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.library__search:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.library__sort {
+  display: flex;
+  gap: 4px;
+}
+
+.library__sort-chip {
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.library__sort-chip:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.library__sort-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ============ 播放工具面板 ============ */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 264px;
+  max-width: 320px;
+}
+
+.tools__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tools__title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.tools__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tools__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tools__chip {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.tools__chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.tools__chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tools__action {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.tools__action:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.tools__action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tools__chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 32vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tools__chapter {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tools__chapter:hover {
+  background: var(--surface-hover);
+}
+
+.tools__chapter-time {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tools__chapter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tools__toggle input {
+  accent-color: var(--accent);
+}
+
+.tools__input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.tools__input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* ============ 迷你模式 ============ */
+
+/* 只剩画面和灵动岛：顶栏与方格墙都收起来 */
+.app[data-mini='true'] .app__bar,
+.app[data-mini='true'] .library {
+  display: none;
+}
+
+.app[data-mini='true'] .shell {
+  grid-template-rows: 1fr;
+}
+
+/* 顶栏收起来之后得留一个看得见的出口，但不该抢画面 */
+.app__mini-exit {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 40;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--chrome);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity var(--dur-normal) var(--ease);
+}
+
+.app__mini-exit:hover,
+.app__mini-exit:focus-visible {
+  color: var(--text);
+  opacity: 1;
+}
+
 .app {
   position: relative;
   display: grid;

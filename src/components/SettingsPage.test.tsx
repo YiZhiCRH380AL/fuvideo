@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type AudioEffectKind,
@@ -87,6 +88,8 @@ const mocks = vi.hoisted(() => ({
   setVideoRotate: vi.fn(),
   setHwdec: vi.fn(),
   takeScreenshot: vi.fn(),
+  setShortcut: vi.fn(),
+  resetShortcuts: vi.fn(),
 }))
 
 vi.mock('../lib/backend', () => ({
@@ -107,6 +110,8 @@ vi.mock('../lib/backend', () => ({
   setVideoRotate: (degrees: number) => mocks.setVideoRotate(degrees),
   setHwdec: (mode: string) => mocks.setHwdec(mode),
   takeScreenshot: () => mocks.takeScreenshot(),
+  setShortcut: (action: string, code: string | null) => mocks.setShortcut(action, code),
+  resetShortcuts: () => mocks.resetShortcuts(),
 }))
 
 import SettingsPage from './SettingsPage'
@@ -164,10 +169,36 @@ function wireSetters(): void {
     mocks.settings = { ...mocks.settings, audioSpdif: enabled }
     return mocks.settings
   })
+
+  mocks.setShortcut.mockImplementation(async (action: string, code: string | null) => {
+    const current = (mocks.settings.shortcuts as Record<string, string> | null) ?? {}
+    const next = { ...current }
+
+    if (code === null) {
+      delete next[action]
+    } else {
+      next[action] = code
+    }
+
+    mocks.settings = { ...mocks.settings, shortcuts: Object.keys(next).length === 0 ? null : next }
+    return mocks.settings
+  })
+
+  mocks.resetShortcuts.mockImplementation(async () => {
+    mocks.settings = { ...mocks.settings, shortcuts: null }
+    return mocks.settings
+  })
 }
 
 function renderPage() {
-  return render(<SettingsPage onClose={vi.fn()} onError={vi.fn()} />)
+  return render(
+    <SettingsPage
+      onClose={vi.fn()}
+      onError={vi.fn()}
+      shortcuts={null}
+      onShortcutsChange={vi.fn()}
+    />,
+  )
 }
 
 const bandList = () => within(screen.getByTestId('equalizer-bands'))
@@ -189,6 +220,8 @@ beforeEach(() => {
     mocks.setAudioSamplerate,
     mocks.setAudioFormat,
     mocks.setAudioSpdif,
+    mocks.setShortcut,
+    mocks.resetShortcuts,
   ]) {
     fn.mockClear()
   }
@@ -348,6 +381,78 @@ describe('设置页 · 画面', () => {
     expect(screen.getByRole('group', { name: '画面比例' })).toBeInTheDocument()
     // 显示的是 mpv 报的「真正在用」的那个，不是用户选了什么
     expect(screen.getByTestId('hwdec-current')).toHaveTextContent('d3d11va')
+  })
+})
+
+describe('设置页 · 快捷键', () => {
+  /**
+   * 带状态的壳。
+   *
+   * 设置页自己不管键位表——它把改动交给外面（App 那边要立刻生效）。所以这里得有个
+   * 真的把值存下来的爹，否则「改完之后显示新键」这件事压根不会发生。
+   */
+  function Harness({ initial }: { initial: Record<string, string> | null }) {
+    const [value, setValue] = useState<Record<string, string> | null>(initial)
+
+    return (
+      <SettingsPage
+        onClose={vi.fn()}
+        onError={vi.fn()}
+        shortcuts={value}
+        onShortcutsChange={setValue}
+      />
+    )
+  }
+
+  /** 每个动作一行，键码要显示成人看得懂的字。 */
+  it('列出每个动作，键码显示成按键的字', async () => {
+    renderPage()
+
+    const list = await screen.findByTestId('shortcut-list')
+
+    expect(within(list).getByRole('button', { name: '播放 / 暂停 的按键' })).toHaveTextContent('空格')
+    expect(within(list).getByRole('button', { name: '静音开关 的按键' })).toHaveTextContent('M')
+    expect(within(list).getByRole('button', { name: '前进一帧 的按键' })).toHaveTextContent('.')
+  })
+
+  /**
+   * 录制期间按键不能被播放器那套快捷键吃掉：这条用例让 App 的全局监听也挂上，
+   * 确认「按下去之后键位真的改了」，而不是顺手暂停了一下视频。
+   */
+  it('点一下按键再按新键，就把新键交给后端', async () => {
+    render(<Harness initial={null} />)
+
+    const key = await screen.findByRole('button', { name: '静音开关 的按键' })
+
+    await userEvent.click(key)
+    expect(key).toHaveTextContent('按下新键…')
+
+    fireEvent.keyDown(window, { code: 'KeyQ' })
+
+    await waitFor(() => expect(mocks.setShortcut).toHaveBeenCalledWith('toggle-mute', 'KeyQ'))
+    // 改完之后立刻生效：界面拿后端返回的那份更新
+    expect(key).toHaveTextContent('Q')
+  })
+
+  it('改过的那一条能单独恢复默认', async () => {
+    render(<Harness initial={{ 'toggle-mute': 'KeyQ' }} />)
+
+    const key = await screen.findByRole('button', { name: '静音开关 的按键' })
+    expect(key).toHaveTextContent('Q')
+
+    await userEvent.click(screen.getByRole('button', { name: '把 静音开关 恢复默认' }))
+    await waitFor(() => expect(mocks.setShortcut).toHaveBeenCalledWith('toggle-mute', null))
+    expect(key).toHaveTextContent('M')
+  })
+
+  it('一键全部恢复默认', async () => {
+    render(<Harness initial={{ 'toggle-mute': 'KeyQ', 'speed-up': 'KeyY' }} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '全部恢复默认' }))
+    await waitFor(() => expect(mocks.resetShortcuts).toHaveBeenCalledTimes(1))
+
+    // 后端返回的那份是「没改过」，界面跟着回到出厂键位
+    expect(await screen.findByRole('button', { name: '静音开关 的按键' })).toHaveTextContent('M')
   })
 })
 

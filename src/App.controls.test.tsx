@@ -111,10 +111,22 @@ const mocks = vi.hoisted(() => {
       screenshotFormat: null,
       screenshotSubtitles: true,
       lastDirectory: null,
+      alwaysOnTop: false,
+      miniMode: false,
+      shortcuts: null,
     } as Record<string, unknown>,
     rememberDirectory: vi.fn(),
+    rememberAlwaysOnTop: vi.fn(),
+    rememberMiniMode: vi.fn(),
     getPlayOptions: vi.fn(),
     setPlayMode: vi.fn(),
+    // 章节、AB 循环与逐帧：这个测试只关心面板能不能用，链路本身由 Rust 那边验
+    getChapters: vi.fn(async () => [] as { index: number; title: string | null; time: number }[]),
+    getLoopPoints: vi.fn(async () => ({ a: null as number | null, b: null as number | null })),
+    selectChapter: vi.fn(async (_index: number) => {}),
+    setLoopA: vi.fn(async (_seconds: number | null) => {}),
+    setLoopB: vi.fn(async (_seconds: number | null) => {}),
+    stepFrame: vi.fn(async (_forward: boolean) => {}),
     togglePause: vi.fn(async () => false),
     pauseVideo: vi.fn(async () => {}),
     seekTo: vi.fn(async (_position: number) => {}),
@@ -239,6 +251,40 @@ vi.mock('./lib/backend', () => ({
   setHwdec: async () => mocks.settings,
   takeScreenshot: async () => String.raw`E:\clips\demo 截图.jpg`,
   rememberDirectory: (path: string) => mocks.rememberDirectory(path),
+  rememberAlwaysOnTop: async (enabled: boolean) => {
+    mocks.rememberAlwaysOnTop(enabled)
+    mocks.settings = { ...mocks.settings, alwaysOnTop: enabled }
+    return mocks.settings
+  },
+  rememberMiniMode: async (enabled: boolean) => {
+    mocks.rememberMiniMode(enabled)
+    mocks.settings = { ...mocks.settings, miniMode: enabled }
+    return mocks.settings
+  },
+  setShortcut: async (action: string, code: string | null) => {
+    const current = (mocks.settings.shortcuts as Record<string, string> | null) ?? {}
+    const next = { ...current }
+
+    if (code === null) {
+      delete next[action]
+    } else {
+      next[action] = code
+    }
+
+    mocks.settings = { ...mocks.settings, shortcuts: Object.keys(next).length === 0 ? null : next }
+    return mocks.settings
+  },
+  resetShortcuts: async () => {
+    mocks.settings = { ...mocks.settings, shortcuts: null }
+    return mocks.settings
+  },
+  playUrl: (url: string) => mocks.playLocalVideo(url),
+  stepFrame: (forward: boolean) => mocks.stepFrame(forward),
+  getChapters: () => mocks.getChapters(),
+  selectChapter: (index: number) => mocks.selectChapter(index),
+  getLoopPoints: () => mocks.getLoopPoints(),
+  setLoopA: (seconds: number | null) => mocks.setLoopA(seconds),
+  setLoopB: (seconds: number | null) => mocks.setLoopB(seconds),
   getPlayOptions: async () => mocks.getPlayOptions(),
   setPlayMode: async (mode: string) => {
     mocks.setPlayMode(mode)
@@ -257,7 +303,13 @@ beforeEach(() => {
 
   mocks.snapshot = { ...IDLE }
   // 上一个用例可能改过设置（比如换成别的「上次目录」），这里复位
-  mocks.settings = { ...mocks.settings, lastDirectory: null }
+  mocks.settings = {
+    ...mocks.settings,
+    lastDirectory: null,
+    alwaysOnTop: false,
+    miniMode: false,
+    shortcuts: null,
+  }
 
   for (const fn of [
     mocks.togglePause,
@@ -279,12 +331,22 @@ beforeEach(() => {
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
     mocks.rememberDirectory,
+    mocks.rememberAlwaysOnTop,
+    mocks.rememberMiniMode,
+    mocks.getChapters,
+    mocks.getLoopPoints,
+    mocks.selectChapter,
+    mocks.setLoopA,
+    mocks.setLoopB,
+    mocks.stepFrame,
     mocks.getPlayOptions,
     mocks.setPlayMode,
   ]) {
     fn.mockClear()
   }
 
+  mocks.getChapters.mockResolvedValue([])
+  mocks.getLoopPoints.mockResolvedValue({ a: null, b: null })
   mocks.togglePause.mockResolvedValue(false)
   mocks.toggleMute.mockResolvedValue(true)
   mocks.toggleFullscreen.mockResolvedValue(true)
@@ -671,14 +733,14 @@ describe('底部控制条', () => {
   /**
    * 回归：教程「说明设置」那一步曾经框住了播放列表按钮。
    *
-   * 原因是那一步拿共用的 `.app__tool` 当目标，而顶栏三颗按钮都带这个类，
+   * 原因是那一步拿共用的 `.app__tool` 当目标，而顶栏的按钮都带这个类，
    * `querySelector` 取到的是排在最前面的那颗。现在每一步都用专属的
    * `data-tutorial` 钩子，这里把「类名是共用的」这件事也钉住。
    */
   it('教程指「设置」时框的是齿轮，不是顶栏上别的按钮', async () => {
     render(<App />)
 
-    expect(document.querySelectorAll('.app__tool')).toHaveLength(3)
+    expect(document.querySelectorAll('.app__tool')).toHaveLength(4)
     expect(document.querySelector("[data-tutorial='settings']")).toBe(
       screen.getByRole('button', { name: '设置' }),
     )
@@ -1324,5 +1386,189 @@ describe('播放模式', () => {
     await waitFor(() => expect(mocks.setPlayMode).toHaveBeenCalledWith('shuffle'))
     expect(modes.getByRole('button', { name: '随机播放' })).toHaveAttribute('aria-pressed', 'true')
   })
+
+  /**
+   * 单曲循环：播完还是它自己。
+   *
+   * 这条正是之前没写成的那个缺口——当时断言「同一个路径又播了一次」稳定失败，
+   * 只留下了实现。这里按真实顺序走：先真的播起来（记下「这一片确实播过」），
+   * 再切到待机，看它会不会把同一片再放一遍。
+   */
+  it('单曲循环：播完还是它自己', async () => {
+    mocks.settings = { ...mocks.settings, playMode: 'single' }
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+
+    await openPlayingVideo()
+    expect(mocks.playLocalVideo).toHaveBeenCalledTimes(1)
+
+    await finishCurrent()
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledTimes(2))
+    expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(DEMO)
+    // 而且只放两回：待机状态会在每次轮询里反复出现，多跳就会一直重放
+    expect(mocks.playLocalVideo.mock.calls.filter(([path]) => path === DEMO)).toHaveLength(2)
+  })
 })
 
+describe('播放工具面板', () => {
+  /** 点右上角那颗 🧰，等面板出来。 */
+  async function openTools(): Promise<HTMLElement> {
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+
+    return screen.findByTestId('playback-tools')
+  }
+
+  it('没在播放时章节是空状态，播放之后列得出来，点一下跳过去', async () => {
+    render(<App />)
+
+    const idlePanel = await openTools()
+    expect(await within(idlePanel).findByTestId('tools-chapters-empty')).toHaveTextContent(
+      '先放一个视频',
+    )
+
+    // 关掉面板去挑片，再打开来看章节
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+    await chooseDirectory()
+
+    mocks.getChapters.mockResolvedValue([
+      { index: 0, title: '开场', time: 0 },
+      { index: 1, title: '正片', time: 65 },
+    ])
+
+    await userEvent.click(grid().getByRole('button', { name: 'demo.mp4' }))
+    await waitFor(() => expect(screen.getByTestId('expanded-tile')).toBeInTheDocument())
+
+    const panel = await openTools()
+
+    const chapter = await within(panel).findByRole('button', { name: /正片/ })
+    await userEvent.click(chapter)
+
+    await waitFor(() => expect(mocks.selectChapter).toHaveBeenCalledWith(1))
+  })
+
+  it('设 A / 设 B 用的是当前位置，清除把两端一起清', async () => {
+    // 假后端也要真的记住这两个点，界面才拿得到「设完之后」的状态
+    let points: { a: number | null; b: number | null } = { a: null, b: null }
+
+    mocks.getLoopPoints.mockImplementation(async () => points)
+    mocks.setLoopA.mockImplementation(async (seconds: number | null) => {
+      points = { ...points, a: seconds }
+    })
+    mocks.setLoopB.mockImplementation(async (seconds: number | null) => {
+      points = { ...points, b: seconds }
+    })
+
+    await openPlayingVideo({ position: 33 })
+    const panel = await openTools()
+
+    await userEvent.click(await within(panel).findByRole('button', { name: /设 A/ }))
+    await waitFor(() => expect(mocks.setLoopA).toHaveBeenCalledWith(33))
+    await waitFor(() => expect(panel).toHaveTextContent('A 点 0:33'))
+
+    await userEvent.click(within(panel).getByRole('button', { name: /设 B/ }))
+    await waitFor(() => expect(mocks.setLoopB).toHaveBeenCalledWith(33))
+    await waitFor(() => expect(panel).toHaveTextContent('B 点 0:33'))
+
+    await userEvent.click(within(panel).getByRole('button', { name: '清除' }))
+    await waitFor(() => expect(mocks.setLoopA).toHaveBeenCalledWith(null))
+    expect(mocks.setLoopB).toHaveBeenCalledWith(null)
+    await waitFor(() => expect(panel).toHaveTextContent('A 点 未设'))
+  })
+
+  it('选了定时时长就显示倒计时，动作默认是暂停', async () => {
+    await openPlayingVideo()
+    const panel = await openTools()
+
+    await userEvent.click(await within(panel).findByRole('button', { name: '15 分' }))
+
+    expect(await within(panel).findByTestId('tools-sleep')).toHaveTextContent('就暂停')
+    expect(within(panel).getByRole('button', { name: '15 分' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    // 换成「退出应用」，倒计时还在
+    await userEvent.click(within(panel).getByRole('button', { name: '退出应用' }))
+    expect(await within(panel).findByTestId('tools-sleep')).toHaveTextContent('就退出')
+
+    // 关掉之后回到提示语
+    await userEvent.click(within(panel).getByRole('button', { name: '关' }))
+    expect(await within(panel).findByTestId('tools-sleep')).toHaveTextContent('到点之后自动动手')
+  })
+
+  it('置顶与迷你模式都会落盘，迷你模式把界面收成一小块', async () => {
+    render(<App />)
+    await chooseDirectory()
+    const panel = await openTools()
+
+    await userEvent.click(within(panel).getByRole('checkbox', { name: /窗口置顶/ }))
+    await waitFor(() => expect(mocks.rememberAlwaysOnTop).toHaveBeenCalledWith(true))
+
+    await userEvent.click(within(panel).getByRole('checkbox', { name: /迷你模式/ }))
+    await waitFor(() => expect(mocks.rememberMiniMode).toHaveBeenCalledWith(true))
+    await waitFor(() => expect(document.querySelector('.app')).toHaveAttribute('data-mini', 'true'))
+
+    // 顶栏收起来了，出口得留在画面上
+    await userEvent.click(screen.getByRole('button', { name: '退出迷你模式' }))
+    await waitFor(() => expect(document.querySelector('.app')).toHaveAttribute('data-mini', 'false'))
+    expect(mocks.rememberMiniMode).toHaveBeenLastCalledWith(false)
+  })
+
+  it('打开地址会把地址交给内核', async () => {
+    render(<App />)
+    const panel = await openTools()
+
+    await userEvent.type(within(panel).getByRole('textbox', { name: '视频地址' }), 'https://a.test/b.mkv')
+    await userEvent.click(within(panel).getByRole('button', { name: '打开' }))
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledWith('https://a.test/b.mkv'))
+  })
+})
+
+describe('方格墙的搜索与排序', () => {
+  it('按名字过滤，过滤空了给的是「没有匹配」', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    await userEvent.type(screen.getByRole('searchbox', { name: '搜索这个目录' }), 'demo')
+
+    await waitFor(() => expect(grid().queryByRole('button', { name: 'other.mkv' })).toBeNull())
+    expect(grid().getByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+
+    await userEvent.clear(screen.getByRole('searchbox', { name: '搜索这个目录' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: '搜索这个目录' }), 'zzz')
+
+    expect(await screen.findByText(/没有名字里有「zzz」的条目/)).toBeInTheDocument()
+  })
+
+  it('可以按名字倒序排', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    const demo = grid().getByRole('button', { name: 'demo.mp4' })
+    const other = grid().getByRole('button', { name: 'other.mkv' })
+
+    // 默认正序：demo 在 other 前面
+    expect(demo.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '名称 ↓' }))
+
+    await waitFor(() =>
+      expect(
+        other.compareDocumentPosition(demo) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy(),
+    )
+  })
+})
+
+describe('逐帧快捷键', () => {
+  it('句号往前走一帧，逗号往后退一帧', async () => {
+    await openPlayingVideo()
+
+    fireEvent.keyDown(window, { code: 'Period' })
+    await waitFor(() => expect(mocks.stepFrame).toHaveBeenCalledWith(true))
+
+    fireEvent.keyDown(window, { code: 'Comma' })
+    await waitFor(() => expect(mocks.stepFrame).toHaveBeenCalledWith(false))
+  })
+})

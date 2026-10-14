@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { resolveShortcut, shouldIgnoreShortcut } from './shortcuts'
+import {
+  buildShortcutMap,
+  defaultCodeFor,
+  isBindableCode,
+  keyLabel,
+  resolveShortcut,
+  shouldIgnoreShortcut,
+} from './shortcuts'
 
 describe('resolveShortcut', () => {
   it('映射常用播放快捷键', () => {
@@ -15,10 +22,83 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut('KeyF')).toBe('toggle-fullscreen')
     expect(resolveShortcut('BracketRight')).toBe('speed-up')
     expect(resolveShortcut('BracketLeft')).toBe('speed-down')
+    expect(resolveShortcut('Period')).toBe('frame-forward')
+    expect(resolveShortcut('Comma')).toBe('frame-backward')
+    expect(resolveShortcut('KeyT')).toBe('toggle-mini')
   })
 
   it('未映射的按键返回 null', () => {
     expect(resolveShortcut('KeyQ')).toBeNull()
+  })
+})
+
+describe('buildShortcutMap', () => {
+  it('没改过时就是出厂键位', () => {
+    expect(buildShortcutMap(null)['KeyM']).toBe('toggle-mute')
+  })
+
+  /** 改键之后原来的键要让出来，不然一个键会同时触发两件事。 */
+  it('改过的动作让出原来的键', () => {
+    const map = buildShortcutMap({ 'toggle-mute': 'KeyQ' })
+
+    expect(map['KeyQ']).toBe('toggle-mute')
+    expect(map['KeyM']).toBeUndefined()
+  })
+
+  /** 抢了别人的键，别人也得让位——否则按下去两个动作一起跑。 */
+  it('被占用的键会把原来的动作挤走', () => {
+    const map = buildShortcutMap({ 'toggle-mute': 'KeyL' })
+
+    expect(map['KeyL']).toBe('toggle-mute')
+    expect(map['KeyM']).toBeUndefined()
+  })
+
+  it('不认识的动作名直接忽略', () => {
+    const map = buildShortcutMap({ '没有这个动作': 'KeyQ' })
+
+    expect(map['KeyQ']).toBeUndefined()
+    expect(map['KeyM']).toBe('toggle-mute')
+  })
+})
+
+describe('keyLabel', () => {
+  it('把键码写成人看得懂的字', () => {
+    expect(keyLabel('KeyA')).toBe('A')
+    expect(keyLabel('Digit1')).toBe('1')
+    expect(keyLabel('Space')).toBe('空格')
+    expect(keyLabel('ArrowLeft')).toBe('←')
+    expect(keyLabel('BracketLeft')).toBe('[')
+    expect(keyLabel('NumpadEnter')).toBe('小键盘回车')
+  })
+
+  /** 认不出来的原样带出来：总比显示一个空白强。 */
+  it('认不出来的键码原样显示', () => {
+    expect(keyLabel('MediaPlayPause')).toBe('MediaPlayPause')
+    expect(keyLabel('')).toBe('未设置')
+  })
+})
+
+describe('isBindableCode', () => {
+  it('字母数字键都能绑', () => {
+    expect(isBindableCode('KeyA')).toBe(true)
+    expect(isBindableCode('Digit5')).toBe(true)
+    expect(isBindableCode('F11')).toBe(true)
+    expect(isBindableCode('BracketLeft')).toBe(true)
+  })
+
+  /** 纯修饰键按下去只是「准备按组合键」，绑它等于把键位丢了。 */
+  it('修饰键与锁定键不能绑', () => {
+    expect(isBindableCode('ShiftLeft')).toBe(false)
+    expect(isBindableCode('ControlRight')).toBe(false)
+    expect(isBindableCode('CapsLock')).toBe(false)
+    expect(isBindableCode('')).toBe(false)
+  })
+})
+
+describe('defaultCodeFor', () => {
+  it('给出厂键位里这个动作落在哪颗键上', () => {
+    expect(defaultCodeFor('toggle-mute')).toBe('KeyM')
+    expect(defaultCodeFor('toggle-play')).toBe('Space')
   })
 })
 

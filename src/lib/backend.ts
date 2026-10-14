@@ -123,6 +123,27 @@ export interface PlayerSettings {
   lastDirectory: string | null
   /** 播放模式：sequence / single / list / shuffle。 */
   playMode: string
+  /** 窗口置顶。 */
+  alwaysOnTop: boolean
+  /** 迷你模式：窗口缩成一小块，只看画面。 */
+  miniMode: boolean
+  /** 自定义快捷键：动作 id → 键码。`null` 表示全用默认。 */
+  shortcuts: Record<string, string> | null
+}
+
+/** 一个章节。 */
+export interface ChapterInfo {
+  index: number
+  /** 章节名；有的片子不给名字。 */
+  title: string | null
+  /** 章节起点，秒。 */
+  time: number
+}
+
+/** AB 循环的两个端点；`null` 表示那一端还没设。 */
+export interface LoopPoints {
+  a: number | null
+  b: number | null
 }
 
 /** 设置页「画面」那一节要用的选项表。 */
@@ -207,6 +228,9 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   screenshotSubtitles: true,
   lastDirectory: null,
   playMode: 'sequence',
+  alwaysOnTop: false,
+  miniMode: false,
+  shortcuts: null,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -624,6 +648,66 @@ export function setPlayMode(mode: string): Promise<PlayerSettings> {
 /** 记下这次打开的目录，下次启动直接铺回来。 */
 export function rememberDirectory(path: string): Promise<PlayerSettings> {
   return settingsCommand('remember_directory', { path })
+}
+
+/** 窗口置顶开关，落盘。 */
+export function rememberAlwaysOnTop(enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('remember_always_on_top', { enabled })
+}
+
+/** 迷你模式开关，落盘。 */
+export function rememberMiniMode(enabled: boolean): Promise<PlayerSettings> {
+  return settingsCommand('remember_mini_mode', { enabled })
+}
+
+/** 改一个动作的快捷键；`code` 传 null 表示这一条恢复默认。 */
+export function setShortcut(action: string, code: string | null): Promise<PlayerSettings> {
+  return settingsCommand('set_shortcut', { action, code })
+}
+
+/** 全部快捷键恢复默认。 */
+export function resetShortcuts(): Promise<PlayerSettings> {
+  return settingsCommand('reset_shortcuts')
+}
+
+/** 逐帧步进。前后各走一帧，mpv 会顺手停住。 */
+export function stepFrame(forward: boolean): Promise<void> {
+  return playerCommand<void>('step_frame', { forward })
+}
+
+/** 读当前片子的章节表。没有章节就是空表。 */
+export function getChapters(): Promise<ChapterInfo[]> {
+  return playerCommand<ChapterInfo[]>('chapters')
+}
+
+/** 跳到第几个章节（从 0 开始）。 */
+export function selectChapter(index: number): Promise<void> {
+  return playerCommand<void>('select_chapter', { index })
+}
+
+/** 读 AB 循环的两个端点。 */
+export function getLoopPoints(): Promise<LoopPoints> {
+  return playerCommand<LoopPoints>('ab_loop')
+}
+
+/** 设 A 点；传 null 表示清除。 */
+export function setLoopA(seconds: number | null): Promise<void> {
+  return playerCommand<void>('set_loop_a', { seconds })
+}
+
+/** 设 B 点；传 null 表示清除。 */
+export function setLoopB(seconds: number | null): Promise<void> {
+  return playerCommand<void>('set_loop_b', { seconds })
+}
+
+/**
+ * 播放一个网络地址。
+ *
+ * mpv 的 `loadfile` 本来就认 http(s):// 这类地址，所以这条走的是同一个后端命令，
+ * 不另外开一条链路。
+ */
+export function playUrl(url: string): Promise<void> {
+  return playerCommand<void>('play_video', { path: url })
 }
 
 /** 跳转到指定秒数。 */

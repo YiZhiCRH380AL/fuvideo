@@ -8,12 +8,15 @@ import {
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { LogicalSize } from '@tauri-apps/api/dpi'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import './App.css'
 import Crumbs from './components/Crumbs'
 import CollectionsPanel from './components/CollectionsPanel'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
 import MediaPanel from './components/MediaPanel'
+import PlaybackTools, { type SleepAction } from './components/PlaybackTools'
 import Popover from './components/Popover'
 import SettingsPage from './components/SettingsPage'
 import Splash from './components/Splash'
@@ -31,15 +34,19 @@ import {
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
+  playUrl,
   prepareSampleFolder,
   readSettings,
+  rememberAlwaysOnTop,
   rememberDirectory,
+  rememberMiniMode,
   setPlayMode as savePlayMode,
   seekBy,
   seekTo,
   setSpeed,
   setVolume,
   shiftInPlaylist,
+  stepFrame,
   thumbnailAt,
   toggleFavorite,
   toggleFullscreen,
@@ -47,6 +54,7 @@ import {
   togglePause,
   togglePlaylist,
   type BackendStatus,
+  type BrowseEntry,
   type Collections,
   type OptionChoice,
   type DirectoryListing,
@@ -60,7 +68,8 @@ import {
   stepVolume,
   VOLUME_STEP,
 } from './lib/playback'
-import { resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
+import { buildShortcutMap, resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
+import { hasFired, remainingSeconds, sleepDeadline } from './lib/sleep'
 import { hasSeenTutorial } from './lib/tutorial'
 import { cachedThumbnail, loadThumbnail } from './lib/thumbnail-cache'
 import { useIdleVisibility } from './lib/use-idle-visibility'
@@ -68,6 +77,28 @@ import { revealMainWindow } from './lib/window'
 
 /** 播放状态的轮询间隔。 */
 const POLL_INTERVAL_MS = 300
+
+/** 迷你模式的窗口尺寸：16:9 的一小块，搁在角落看片用。 */
+const MINI_WIDTH = 480
+const MINI_HEIGHT = 270
+
+/**
+ * 主窗口句柄；拿不到就返回 `null`。
+ *
+ * 浏览器里（端到端测试、开发时的浏览器预览）没有 Tauri 的窗口对象，
+ * `getCurrentWindow()` 会当场抛错。窗口方面的操作失败不该把整个界面带下去。
+ */
+function mainWindow(): ReturnType<typeof getCurrentWindow> | null {
+  if (!isTauri()) {
+    return null
+  }
+
+  try {
+    return getCurrentWindow()
+  } catch {
+    return null
+  }
+}
 /** 鼠标停留多久才真正去抓预览图。 */
 const PREVIEW_DEBOUNCE_MS = 120
 /** 画面展开播放时，空闲多久把顶栏和底栏一起隐去。 */
@@ -137,7 +168,9 @@ export default function App() {
    * 倍速菜单是第一个使用者，后面的音轨、字幕面板往这个联合类型里加就行：
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
-  const [openPanel, setOpenPanel] = useState<'speed' | 'media' | 'playlist' | 'favorites' | null>(
+  const [openPanel, setOpenPanel] = useState<
+    'speed' | 'media' | 'playlist' | 'favorites' | 'tools' | null
+  >(
     null,
   )
   /** 播放列表与收藏夹。两者都只是一串路径，顺序就是播放顺序。 */
@@ -147,6 +180,23 @@ export default function App() {
   /** 播放模式（顺序 / 单曲循环 / 列表循环 / 随机），决定「播完一个之后放什么」。 */
   const [playMode, setPlayMode] = useState('sequence')
   const [playModes, setPlayModes] = useState<OptionChoice[]>([])
+  /** 自定义快捷键：动作 id → 键码。`null` 表示全用出厂键位。 */
+  const [shortcutOverrides, setShortcutOverrides] = useState<Record<string, string> | null>(null)
+  /** 迷你模式：窗口缩成一小块，界面只剩灵动岛。 */
+  const [miniMode, setMiniMode] = useState(false)
+  /** 窗口置顶。 */
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false)
+  /** 定时：到点之后干什么、什么时候到。 */
+  const [sleep, setSleep] = useState<{ minutes: number; endsAt: number; action: SleepAction } | null>(
+    null,
+  )
+  /** 定时到点之后干什么。没开定时的时候也记着上次选的。 */
+  const [sleepAction, setSleepAction] = useState<SleepAction>('pause')
+  /** 每秒跳一下的钟，用来显示定时还剩多久。 */
+  const [clock, setClock] = useState(() => Date.now())
+  /** 方格墙的搜索词与排序。只影响摆出来的顺序，不动目录本身。 */
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<'name' | 'name-desc'>('name')
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 用户点过方格没有。
@@ -178,6 +228,8 @@ export default function App() {
   const curtainRef = useRef<HTMLDivElement>(null)
   const previewBusy = useRef(false)
   const queuedPreview = useRef<{ source: string; seconds: number } | null>(null)
+  /** 进迷你模式之前的窗口尺寸，退出时还原。 */
+  const miniRestore = useRef<{ width: number; height: number } | null>(null)
 
   // 派生值放在最前面：后面的处理函数要用，不能等到渲染前才算
   const hasMedia = currentFile !== null
@@ -189,17 +241,36 @@ export default function App() {
   const speed = player?.speed ?? 1
   const buffering = player?.buffering === true
 
+  /*
+   * 搜索与排序都在这里做，只影响「怎么摆」，不碰目录本身。
+   * 排序用中文的排序规则并打开数字识别，不然「第10集」会排到「第2集」前面。
+   */
+  const matches = useCallback(
+    (entry: BrowseEntry): boolean => entry.name.toLowerCase().includes(search.trim().toLowerCase()),
+    [search],
+  )
+
+  const byName = useCallback(
+    (left: BrowseEntry, right: BrowseEntry): number => {
+      const order = left.name.localeCompare(right.name, 'zh-Hans-CN', { numeric: true })
+
+      return sort === 'name' ? order : -order
+    },
+    [sort],
+  )
+
   // 引用要稳定：VideoGrid 的 FLIP 依赖它，每次渲染都是新数组的话
   // 会白白重测一遍所有方格的位置
   const videos = useMemo(
-    () => listing?.entries.filter((entry) => entry.kind === 'video') ?? [],
-    [listing],
+    () => (listing?.entries ?? []).filter((entry) => entry.kind === 'video' && matches(entry)).sort(byName),
+    [byName, listing, matches],
   )
 
   /** 子目录现在铺在方格上面，和方格同一套视觉。 */
   const folders = useMemo(
-    () => listing?.entries.filter((entry) => entry.kind === 'directory') ?? [],
-    [listing],
+    () =>
+      (listing?.entries ?? []).filter((entry) => entry.kind === 'directory' && matches(entry)).sort(byName),
+    [byName, listing, matches],
   )
 
   /*
@@ -235,6 +306,12 @@ export default function App() {
 
   const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
 
+  /** 真正生效的键位表：出厂键位加上用户改过的那几条。 */
+  const shortcutMap = useMemo(() => buildShortcutMap(shortcutOverrides), [shortcutOverrides])
+
+  /** 定时还剩多少秒；没开定时就是 `null`。 */
+  const sleepRemaining = sleep === null ? null : remainingSeconds(sleep.endsAt, clock)
+
   // 画面展开播放时，空闲一会儿把顶栏和底栏一起隐去。
   // 暂停、拖动进度、开着倍速菜单时保持显示。
   const chromeVisible = useIdleVisibility({
@@ -253,6 +330,68 @@ export default function App() {
   const reportError = useCallback((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : String(cause))
   }, [])
+
+  /**
+   * 迷你模式：窗口缩成一小块，界面只剩灵动岛。
+   *
+   * 缩之前先量一下当前尺寸，退出时还原回去；不然从小窗退出来会一直卡在小尺寸。
+   * 窗口尺寸和界面布局是两件事，所以这里两件都做。
+   */
+  const applyMiniMode = useCallback(
+    async (next: boolean) => {
+      const current = mainWindow()
+
+      if (current === null) {
+        return
+      }
+
+      try {
+        if (next) {
+          const size = await current.innerSize()
+          miniRestore.current = { width: size.width, height: size.height }
+          await current.setSize(new LogicalSize(MINI_WIDTH, MINI_HEIGHT))
+        } else {
+          const restore = miniRestore.current
+          miniRestore.current = null
+
+          if (restore !== null) {
+            await current.setSize(new LogicalSize(restore.width, restore.height))
+          }
+        }
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    },
+    [reportError],
+  )
+
+  const handleToggleMini = useCallback(() => {
+    const next = !miniMode
+
+    setMiniMode(next)
+    setOpenPanel(null)
+    void applyMiniMode(next)
+    // 记住这个偏好，下次打开还是这样
+    void rememberMiniMode(next)
+      .then((settings) => setMiniMode(settings.miniMode))
+      .catch(() => {})
+  }, [applyMiniMode, miniMode])
+
+  const handleToggleAlwaysOnTop = useCallback(() => {
+    const next = !alwaysOnTop
+
+    setAlwaysOnTop(next)
+
+    const current = mainWindow()
+
+    if (current !== null) {
+      void current.setAlwaysOnTop(next).catch(reportError)
+    }
+
+    void rememberAlwaysOnTop(next)
+      .then((settings) => setAlwaysOnTop(settings.alwaysOnTop))
+      .catch(() => {})
+  }, [alwaysOnTop, reportError])
 
   useEffect(() => {
     let cancelled = false
@@ -281,6 +420,15 @@ export default function App() {
         }
 
         setPlayMode(settings?.playMode ?? 'sequence')
+        setShortcutOverrides(settings?.shortcuts ?? null)
+        setAlwaysOnTop(settings?.alwaysOnTop === true)
+
+        // 上次是迷你模式：窗口跟着缩回去。置顶不用在这儿管，后端启动时已经设过了
+        if (settings?.miniMode === true) {
+          setMiniMode(true)
+          void applyMiniMode(true)
+        }
+
         // 后端没给出选项表（比如某些环境下这个命令不存在）时退回空表：
         // 面板上少一排按钮，总好过整页崩掉
         setPlayModes(Array.isArray(modes) ? modes : [])
@@ -310,7 +458,43 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [reportError])
+  }, [applyMiniMode, reportError])
+
+  /*
+   * 定时到点就动手。钟只在开着定时的时候走：`clock` 一变这条就重新对一次表，
+   * 到点了就清掉定时（先清，免得两秒内连着触发两次）。
+   */
+  useEffect(() => {
+    if (sleep === null) {
+      return
+    }
+
+    if (!hasFired(sleep.endsAt, Date.now())) {
+      const timer = window.setInterval(() => setClock(Date.now()), 1000)
+      return () => window.clearInterval(timer)
+    }
+
+    setSleep(null)
+
+    if (sleep.action === 'close') {
+      const current = mainWindow()
+
+      if (current !== null) {
+        void current.close().catch(reportError)
+      }
+
+      return
+    }
+
+    void (async () => {
+      try {
+        await pauseVideo()
+        setPlayer((previous) => (previous ? { ...previous, paused: true } : previous))
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    })()
+  }, [clock, reportError, sleep])
 
   // 播放列表与收藏夹读一次就够；之后每次改动都用后端返回的那份更新
   useEffect(() => {
@@ -532,13 +716,21 @@ export default function App() {
   }, [currentFile, stripTimes])
 
   const playPath = useCallback(
-    async (path: string, from?: DOMRect) => {
+    async (
+      path: string,
+      from?: DOMRect,
+      /*
+       * 怎么把它交给内核。默认是「按本机文件播」；打网络地址时换成 `playUrl`——
+       * 后端命令是同一个，差别只在调用点上说得更清楚。
+       */
+      open: (target: string) => Promise<void> = playLocalVideo,
+    ) => {
       setError(null)
       // 点下去就算「这一步做过了」，后面起内核要多久都不影响教程推进
       setOpenedVideo(true)
 
       try {
-        await playLocalVideo(path)
+        await open(path)
         setCurrentFile(path)
         setPendingSeek(null)
         previewCache.current.clear()
@@ -838,6 +1030,68 @@ export default function App() {
     }
   }, [playPath, reportError])
 
+  /** 拖进来的东西：是目录就铺方格，是文件就当视频打开。 */
+  const handleDroppedPath = useCallback(
+    async (path: string) => {
+      // 后端本来就是这么分辨目录的，这里不自己猜扩展名
+      const isDirectory = await listDirectory(path)
+        .then(() => true)
+        .catch(() => false)
+
+      if (isDirectory) {
+        await loadDirectory(path)
+        return
+      }
+
+      await playPath(path)
+    },
+    [loadDirectory, playPath],
+  )
+
+  /** 打开一个网络地址（或任何 mpv 认的路径/流）。 */
+  const handleOpenUrl = useCallback(
+    (url: string) => {
+      setOpenPanel(null)
+      // 走 `playUrl`：同一个后端命令，只是把「这是地址」这件事写在调用点上
+      void playPath(url, undefined, playUrl)
+    },
+    [playPath],
+  )
+
+  /** 定时：换成新的时长，或者用 `null` 关掉。 */
+  const handleSleepTimer = useCallback(
+    (minutes: number | null) => {
+      if (minutes === null) {
+        setSleep(null)
+        return
+      }
+
+      setClock(Date.now())
+      setSleep({ minutes, endsAt: sleepDeadline(minutes, Date.now()), action: sleepAction })
+    },
+    [sleepAction],
+  )
+
+  /** 只换「到点之后干什么」，时长不动。 */
+  const handleSleepAction = useCallback((action: SleepAction) => {
+    setSleepAction(action)
+    setSleep((previous) => (previous === null ? null : { ...previous, action }))
+  }, [])
+
+  /** 逐帧步进。mpv 走完一帧会自己停住，界面上就是「按一下动一帧」。 */
+  const handleStepFrame = useCallback(
+    async (forward: boolean) => {
+      try {
+        await stepFrame(forward)
+        // 后端会顺手暂停；先本地跟上，省得图标闪一下
+        setPlayer((previous) => (previous ? { ...previous, paused: true } : previous))
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    },
+    [reportError],
+  )
+
   const handleTogglePause = useCallback(async () => {
     setError(null)
 
@@ -1110,7 +1364,7 @@ export default function App() {
         return
       }
 
-      const action = resolveShortcut(event.code)
+      const action = resolveShortcut(event.code, shortcutMap)
 
       if (!action) {
         return
@@ -1152,6 +1406,15 @@ export default function App() {
         case 'speed-down':
           handleSpeedChange(stepSpeed(speed, -1))
           break
+        case 'frame-forward':
+          void handleStepFrame(true)
+          break
+        case 'frame-backward':
+          void handleStepFrame(false)
+          break
+        case 'toggle-mini':
+          handleToggleMini()
+          break
       }
     }
 
@@ -1160,14 +1423,62 @@ export default function App() {
   }, [
     handleSeekBy,
     handleSpeedChange,
+    handleStepFrame,
     handleToggleFullscreen,
+    handleToggleMini,
     handleToggleMute,
     handleTogglePause,
     handleVolumeChange,
     hasMedia,
+    shortcutMap,
     speed,
     volume,
   ])
+
+  /*
+   * 把文件或文件夹拖进窗口就能用。
+   *
+   * 拖放事件由 Tauri 从 WebView 转出来（`dragDropEnabled` 默认就是开的）。
+   * 拿不到也不影响别的功能：按钮和快捷键都还在，所以这里安静失败。
+   */
+  useEffect(() => {
+    if (!isTauri()) {
+      return
+    }
+
+    let stop: (() => void) | null = null
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+        const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+          if (event.payload.type !== 'drop') {
+            return
+          }
+
+          const [first] = event.payload.paths ?? []
+
+          if (first !== undefined) {
+            void handleDroppedPath(first)
+          }
+        })
+
+        if (cancelled) {
+          unlisten()
+        } else {
+          stop = unlisten
+        }
+      } catch {
+        // 没有拖放能力就算了，不去打扰用户
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+  }, [handleDroppedPath])
 
   const kernelWarning = hasMedia && player !== null && !player.ipcReady ? '播放内核未连接，控制可能无效' : null
   // 桌面端一切正常时不显示内核版本，只在真出问题时开口
@@ -1190,6 +1501,7 @@ export default function App() {
       data-video={expanded && currentFile ? 'true' : 'false'}
       data-chrome={chromeVisible ? 'visible' : 'hidden'}
       data-splash={splash}
+      data-mini={miniMode ? 'true' : 'false'}
     >
       <div className="shell">
         <header className="app__bar">
@@ -1288,6 +1600,45 @@ export default function App() {
                   onRemove={handleToggleFavorite}
                   onShift={handleShiftPlaylist}
                   onReveal={handleRevealFavorite}
+                />
+              </Popover>
+            </div>
+
+            <div className="app__collection app__tools-menu">
+              <button
+                className="app__tool"
+                type="button"
+                onClick={() => setOpenPanel((open) => (open === 'tools' ? null : 'tools'))}
+                aria-haspopup="dialog"
+                aria-expanded={openPanel === 'tools'}
+                aria-label="播放工具"
+                title="播放工具"
+              >
+                🧰
+              </button>
+
+              <Popover
+                open={openPanel === 'tools'}
+                onClose={() => setOpenPanel(null)}
+                label="播放工具"
+                anchorSelector=".app__tools-menu"
+                className="popover--panel popover--down"
+                role="dialog"
+              >
+                <PlaybackTools
+                  source={currentFile}
+                  position={shownPosition}
+                  sleepRemaining={sleepRemaining}
+                  sleepMinutes={sleep?.minutes ?? null}
+                  sleepAction={sleepAction}
+                  onSleepTimer={handleSleepTimer}
+                  onSleepAction={handleSleepAction}
+                  miniMode={miniMode}
+                  alwaysOnTop={alwaysOnTop}
+                  onToggleMini={handleToggleMini}
+                  onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+                  onOpenUrl={handleOpenUrl}
+                  onError={reportError}
                 />
               </Popover>
             </div>
@@ -1420,10 +1771,47 @@ export default function App() {
                 />
               )}
 
+              {/* 搜索与排序只改「怎么摆」，不动目录本身 */}
+              {expanded || listing.entries.length === 0 ? null : (
+                <div className="library__tools">
+                  <input
+                    className="library__search"
+                    type="search"
+                    value={search}
+                    placeholder="按名字找"
+                    aria-label="搜索这个目录"
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+
+                  <div className="library__sort" role="group" aria-label="排序">
+                    <button
+                      className="library__sort-chip"
+                      type="button"
+                      aria-pressed={sort === 'name'}
+                      onClick={() => setSort('name')}
+                    >
+                      名称 ↑
+                    </button>
+                    <button
+                      className="library__sort-chip"
+                      type="button"
+                      aria-pressed={sort === 'name-desc'}
+                      onClick={() => setSort('name-desc')}
+                    >
+                      名称 ↓
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {videos.length === 0 ? (
                 <div className="library__none">
                   <p className="library__hint">
-                    {listing.entries.length === 0 ? '这个目录里没有子目录或视频文件' : '这个目录里没有视频'}
+                    {search.trim() !== ''
+                      ? `没有名字里有「${search.trim()}」的条目`
+                      : listing.entries.length === 0
+                        ? '这个目录里没有子目录或视频文件'
+                        : '这个目录里没有视频'}
                   </p>
                   <button
                     className="library__single"
@@ -1513,7 +1901,19 @@ export default function App() {
       ) : null}
 
       {settingsOpen ? (
-        <SettingsPage onClose={() => setSettingsOpen(false)} onError={reportError} />
+        <SettingsPage
+          onClose={() => setSettingsOpen(false)}
+          onError={reportError}
+          shortcuts={shortcutOverrides}
+          onShortcutsChange={setShortcutOverrides}
+        />
+      ) : null}
+
+      {/* 迷你模式下顶栏是收起来的，退出得留一个看得见的出口 */}
+      {miniMode ? (
+        <button className="app__mini-exit" type="button" onClick={handleToggleMini}>
+          退出迷你模式
+        </button>
       ) : null}
 
       {error ? (

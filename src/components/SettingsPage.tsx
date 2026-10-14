@@ -17,12 +17,17 @@ import {
   type VideoOptions,
 } from '../lib/backend'
 import VideoSettings from './VideoSettings'
+import ShortcutSettings from './ShortcutSettings'
 import './SettingsPage.css'
 
 export interface SettingsPageProps {
   onClose: () => void
   /** 出错交给外面统一提示：界面上只该有一个错误出口。 */
   onError: (cause: unknown) => void
+  /** 用户改过的键位；`null` 表示全用出厂键位。 */
+  shortcuts: Record<string, string> | null
+  /** 改完之后由外面记下来：快捷键要立刻生效，不能等下次启动。 */
+  onShortcutsChange: (shortcuts: Record<string, string> | null) => void
 }
 
 const EFFECTS: { kind: AudioEffectKind; title: string; hint: string }[] = [
@@ -64,7 +69,12 @@ function formatFrequency(hertz: number): string {
  * 数据只有两个来源：`readSettings` 拿当前值，`getAudioOptions` 拿选项表。
  * 每次改动都返回落盘之后的设置，界面直接用它更新——不在前端自己推演结果。
  */
-export default function SettingsPage({ onClose, onError }: SettingsPageProps) {
+export default function SettingsPage({
+  onClose,
+  onError,
+  shortcuts,
+  onShortcutsChange,
+}: SettingsPageProps) {
   const [settings, setSettings] = useState<PlayerSettings | null>(null)
   const [options, setOptions] = useState<AudioOptions | null>(null)
   const [videoOptions, setVideoOptions] = useState<VideoOptions | null>(null)
@@ -360,6 +370,14 @@ export default function SettingsPage({ onClose, onError }: SettingsPageProps) {
               onError={onError}
             />
           )}
+
+          <section className="settings__section">
+            <ShortcutSettings
+              shortcuts={shortcuts}
+              onChange={onShortcutsChange}
+              onError={onError}
+            />
+          </section>
         </div>
 
         <p className="settings__foot">设置存在本机，下次打开还是这样。</p>
