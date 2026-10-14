@@ -114,6 +114,7 @@ pub fn run() {
       mpv::toggle_fullscreen,
       settings::read_settings,
       settings::write_settings,
+      settings::remember_directory,
       sample::prepare_sample_folder,
       collections::read_collections,
       collections::toggle_playlist,

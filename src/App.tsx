@@ -31,6 +31,8 @@ import {
   pickVideoFile,
   playLocalVideo,
   prepareSampleFolder,
+  readSettings,
+  rememberDirectory,
   seekBy,
   seekTo,
   setSpeed,
@@ -250,11 +252,29 @@ export default function App() {
     let cancelled = false
 
     getBackendStatus()
-      .then((next) => {
+      .then(async (next) => {
         if (!cancelled) {
           setStatus(next)
           // 浏览器里要自己铺底色，桌面端窗口是透明的
           document.documentElement.dataset.shell = next.kind
+        }
+
+        /*
+         * 上次打开的目录：直接铺回来，开屏收场时就不是一块空画面了。
+         *
+         * 目录可能已经被删掉或挪走，所以这里失败就安静放过——
+         * 不该在启动的时候先甩一条错误给用户。
+         */
+        const settings = await readSettings().catch(() => null)
+
+        if (cancelled || settings?.lastDirectory == null) {
+          return
+        }
+
+        const listing = await listDirectory(settings.lastDirectory).catch(() => null)
+
+        if (!cancelled && listing !== null) {
+          setListing(listing)
         }
       })
       .catch((cause: unknown) => {
@@ -544,6 +564,9 @@ export default function App() {
         setListing(next)
         // 从「此电脑」点进来，或者从别处跳过来，都要离开那一层
         setAtDrives(false)
+
+        // 记下这个目录，下次启动直接铺回来（记不住也不影响这次浏览）
+        void rememberDirectory(target).catch(() => {})
 
         // 防御：如果换到的目录里没有正在播的这个文件，放大格会消失，
         // 但整窗还是透明的，画面就悬空了。这时直接收起。

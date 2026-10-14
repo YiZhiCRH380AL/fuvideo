@@ -110,7 +110,9 @@ const mocks = vi.hoisted(() => {
       videoHdrRecovery: null,
       screenshotFormat: null,
       screenshotSubtitles: true,
-    },
+      lastDirectory: null,
+    } as Record<string, unknown>,
+    rememberDirectory: vi.fn(),
     togglePause: vi.fn(async () => false),
     pauseVideo: vi.fn(async () => {}),
     seekTo: vi.fn(async (_position: number) => {}),
@@ -126,6 +128,9 @@ const mocks = vi.hoisted(() => {
     thumbnailAt: vi.fn(async (_source: string, _position: number) => 'data:image/jpeg;base64,AAAA'),
   }
 })
+
+/** 让窗口露面那一步会调真实的 invoke，在 jsdom 里必然抛错，桩掉它。 */
+vi.mock('./lib/window', () => ({ revealMainWindow: async () => {} }))
 
 vi.mock('./lib/backend', () => ({
   isTauri: () => true,
@@ -231,6 +236,7 @@ vi.mock('./lib/backend', () => ({
   setVideoRotate: async () => mocks.settings,
   setHwdec: async () => mocks.settings,
   takeScreenshot: async () => String.raw`E:\clips\demo 截图.jpg`,
+  rememberDirectory: (path: string) => mocks.rememberDirectory(path),
 }))
 
 import App from './App'
@@ -243,6 +249,8 @@ beforeEach(() => {
   clearThumbnails()
 
   mocks.snapshot = { ...IDLE }
+  // 上一个用例可能改过设置（比如换成别的「上次目录」），这里复位
+  mocks.settings = { ...mocks.settings, lastDirectory: null }
 
   for (const fn of [
     mocks.togglePause,
@@ -263,6 +271,7 @@ beforeEach(() => {
     mocks.togglePlaylist,
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
+    mocks.rememberDirectory,
   ]) {
     fn.mockClear()
   }
@@ -1219,6 +1228,39 @@ describe('播放列表与收藏夹', () => {
       expect(screen.queryByText('选一个目录，把里面的视频铺成方格')).not.toBeInTheDocument(),
     )
     expect(mocks.playLocalVideo).toHaveBeenCalledWith(DEMO)
+  })
+})
+
+describe('记住上次的目录', () => {
+  it('启动时把上次打开的目录直接铺回来', async () => {
+    mocks.settings = { ...mocks.settings, lastDirectory: CLIPS }
+
+    render(<App />)
+
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS))
+    expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+  })
+
+  /**
+   * 上次那个目录可能已经被删掉或挪走了。
+   * 启动时读不到就安静放过——不该一开窗先甩一条错误给用户。
+   */
+  it('上次的目录读不到时不报错，退回空状态', async () => {
+    mocks.settings = { ...mocks.settings, lastDirectory: String.raw`E:\gone` }
+    mocks.listDirectory.mockRejectedValueOnce(new Error('目录不存在'))
+
+    render(<App />)
+
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(String.raw`E:\gone`))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('选一个目录，把里面的视频铺成方格')).toBeInTheDocument()
+  })
+
+  it('打开一个目录之后会把它记下来', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    await waitFor(() => expect(mocks.rememberDirectory).toHaveBeenCalledWith(CLIPS))
   })
 })
 

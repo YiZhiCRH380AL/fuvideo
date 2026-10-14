@@ -173,6 +173,8 @@ pub struct Settings {
   pub screenshot_format: Option<String>,
   /// 快照是否连字幕一起截。
   pub screenshot_subtitles: bool,
+  /// 上次打开的目录。启动时直接铺回来，省得每次重新找。
+  pub last_directory: Option<String>,
 }
 
 impl Default for Settings {
@@ -217,6 +219,7 @@ impl Default for Settings {
       video_hdr_recovery: None,
       screenshot_format: None,
       screenshot_subtitles: true,
+      last_directory: None,
     }
   }
 }
@@ -304,6 +307,11 @@ impl Settings {
     self.video_hue = clamp_option(self.video_hue, COLOR_RANGE);
     self.video_gamma = clamp_option(self.video_gamma, COLOR_RANGE);
 
+    self.last_directory = self
+      .last_directory
+      .map(|path| path.trim().to_string())
+      .filter(|path| !path.is_empty());
+
     self
   }
 }
@@ -368,6 +376,20 @@ pub fn read_settings(app: tauri::AppHandle) -> Settings {
 #[tauri::command]
 pub fn write_settings(app: tauri::AppHandle, settings: Settings) -> Result<Settings, String> {
   save(&config_dir(&app), settings)
+}
+
+/// 记下这次打开的目录，下次启动直接铺回来。
+///
+/// 单独开一条命令而不是让界面把整份设置写回来：界面手里那份可能是几分钟前读的，
+/// 拿它整体覆盖会把期间改过的音频/画面设置一起冲掉。
+#[tauri::command]
+pub fn remember_directory(app: tauri::AppHandle, path: String) -> Result<Settings, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+
+  current.last_directory = Some(path);
+
+  save(&directory, current)
 }
 
 #[cfg(test)]
@@ -464,6 +486,7 @@ mod tests {
       video_hdr_recovery: Some(0.5),
       screenshot_format: Some("png".to_string()),
       screenshot_subtitles: false,
+      last_directory: Some(r"E:\clips\anime".to_string()),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -594,6 +617,7 @@ mod tests {
       "videoTargetPeak",
       "screenshotFormat",
       "screenshotSubtitles",
+      "lastDirectory",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -647,3 +671,27 @@ mod tests {
     assert_eq!(settings.equalizer_preset, None);
   }
 }
+  /// 空白路径当成没记过：界面传空串时不该把上次的目录覆盖掉。
+  #[test]
+  fn blank_last_directory_is_treated_as_unset() {
+    let settings = Settings {
+      last_directory: Some("   ".to_string()),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.last_directory, None);
+  }
+
+  /// 只有文件名（没带目录）也要原样留着：那是后端自己的事，设置层不做判断。
+  #[test]
+  fn last_directory_keeps_its_value() {
+    let settings = Settings {
+      last_directory: Some(r"E:\clips\anime".to_string()),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.last_directory.as_deref(), Some(r"E:\clips\anime"));
+  }
+

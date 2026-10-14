@@ -119,6 +119,8 @@ export interface PlayerSettings {
   videoHdrRecovery: number | null
   screenshotFormat: string | null
   screenshotSubtitles: boolean
+  /** 上次打开的目录；下次启动直接铺回来。 */
+  lastDirectory: string | null
 }
 
 /** 设置页「画面」那一节要用的选项表。 */
@@ -201,6 +203,7 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   videoHdrRecovery: null,
   screenshotFormat: null,
   screenshotSubtitles: true,
+  lastDirectory: null,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -603,6 +606,11 @@ export function setScreenshotSubtitles(enabled: boolean): Promise<PlayerSettings
 /** 截一张当前画面的图，返回存到哪儿了。 */
 export function takeScreenshot(): Promise<string> {
   return playerCommand<string>('take_screenshot')
+}
+
+/** 记下这次打开的目录，下次启动直接铺回来。 */
+export function rememberDirectory(path: string): Promise<PlayerSettings> {
+  return settingsCommand('remember_directory', { path })
 }
 
 /** 跳转到指定秒数。 */
