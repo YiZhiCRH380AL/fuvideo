@@ -121,6 +121,8 @@ export interface PlayerSettings {
   screenshotSubtitles: boolean
   /** 上次打开的目录；下次启动直接铺回来。 */
   lastDirectory: string | null
+  /** 播放模式：sequence / single / list / shuffle。 */
+  playMode: string
 }
 
 /** 设置页「画面」那一节要用的选项表。 */
@@ -204,6 +206,7 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   screenshotFormat: null,
   screenshotSubtitles: true,
   lastDirectory: null,
+  playMode: 'sequence',
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -606,6 +609,16 @@ export function setScreenshotSubtitles(enabled: boolean): Promise<PlayerSettings
 /** 截一张当前画面的图，返回存到哪儿了。 */
 export function takeScreenshot(): Promise<string> {
   return playerCommand<string>('take_screenshot')
+}
+
+/** 播放模式的选项表（顺序 / 单曲循环 / 列表循环 / 随机）。 */
+export function getPlayOptions(): Promise<OptionChoice[]> {
+  return playerCommand<OptionChoice[]>('play_options')
+}
+
+/** 切播放模式。它只影响应用自己的自动连播逻辑，不碰 mpv。 */
+export function setPlayMode(mode: string): Promise<PlayerSettings> {
+  return settingsCommand('set_play_mode', { mode })
 }
 
 /** 记下这次打开的目录，下次启动直接铺回来。 */

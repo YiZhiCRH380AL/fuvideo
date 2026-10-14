@@ -22,6 +22,7 @@ import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
   getBackendStatus,
   getCollections,
+  getPlayOptions,
   getPlayerState,
   isTauri,
   listDirectory,
@@ -33,6 +34,7 @@ import {
   prepareSampleFolder,
   readSettings,
   rememberDirectory,
+  setPlayMode as savePlayMode,
   seekBy,
   seekTo,
   setSpeed,
@@ -46,6 +48,7 @@ import {
   togglePlaylist,
   type BackendStatus,
   type Collections,
+  type OptionChoice,
   type DirectoryListing,
   type PlayerSnapshot,
 } from './lib/backend'
@@ -141,6 +144,9 @@ export default function App() {
   const [collections, setCollections] = useState<Collections>({ playlist: [], favorites: [] })
   /** 刚从收藏夹跳过来的那一个，会在方格墙上高亮一下。 */
   const [highlightPath, setHighlightPath] = useState<string | null>(null)
+  /** 播放模式（顺序 / 单曲循环 / 列表循环 / 随机），决定「播完一个之后放什么」。 */
+  const [playMode, setPlayMode] = useState('sequence')
+  const [playModes, setPlayModes] = useState<OptionChoice[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 用户点过方格没有。
@@ -265,7 +271,17 @@ export default function App() {
          * 目录可能已经被删掉或挪走，所以这里失败就安静放过——
          * 不该在启动的时候先甩一条错误给用户。
          */
-        const settings = await readSettings().catch(() => null)
+        const [settings, modes] = await Promise.all([
+          readSettings().catch(() => null),
+          getPlayOptions().catch(() => []),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        setPlayMode(settings?.playMode ?? 'sequence')
+        setPlayModes(modes)
 
         if (cancelled || settings?.lastDirectory == null) {
           return
@@ -677,6 +693,15 @@ export default function App() {
     [reportError],
   )
 
+  /** 切播放模式：先改界面，再落盘（落盘失败就把错误摆出来）。 */
+  const handlePickPlayMode = useCallback(
+    (mode: string) => {
+      setPlayMode(mode)
+      savePlayMode(mode).catch(reportError)
+    },
+    [reportError],
+  )
+
   /**
    * 从列表里点某个视频：先切到它所在的目录，再播。
    *
@@ -720,6 +745,41 @@ export default function App() {
   const playedCurrent = useRef<string | null>(null)
 
   /**
+   * 播完之后该放哪个。
+   *
+   * 四种模式：顺序（下一个，到头就停）、单曲循环（还是它）、列表循环（到头回到第一个）、
+   * 随机（挑一个跟当前不同的）。列表在应用这边、不在 mpv 的 playlist 里，
+   * 所以这套由我们自己算，而不是交给 `loop-file` / `loop-playlist`。
+   */
+  const nextAfter = useCallback(
+    (list: string[], current: string): string | undefined => {
+      if (playMode === 'single') {
+        return current
+      }
+
+      if (list.length === 0) {
+        return undefined
+      }
+
+      const index = list.indexOf(current)
+
+      if (playMode === 'list') {
+        return index < 0 ? list[0] : list[(index + 1) % list.length]
+      }
+
+      if (playMode === 'shuffle') {
+        const others = list.filter((path) => path !== current)
+
+        // 列表里只有这一片时，随机也只能是它
+        return others.length === 0 ? list[0] : others[Math.floor(Math.random() * others.length)]
+      }
+
+      return index >= 0 ? list[index + 1] : undefined
+    },
+    [playMode],
+  )
+
+  /**
    * 播完自动播下一个。
    *
    * mpv 播完会把文件卸掉进入待机（`idle-active` 从 false 翻成 true），拿它当判据最可靠：
@@ -746,13 +806,12 @@ export default function App() {
     // 处理过就清掉：待机状态会在每次轮询里反复出现，不清就会一直往下跳
     playedCurrent.current = null
 
-    const index = collections.playlist.indexOf(currentFile)
-    const next = index >= 0 ? collections.playlist[index + 1] : undefined
+    const next = nextAfter(collections.playlist, currentFile)
 
     if (next !== undefined) {
       void playPath(next)
     }
-  }, [collections.playlist, currentFile, playPath, player?.idleActive])
+  }, [collections.playlist, currentFile, nextAfter, playPath, player?.idleActive])
 
   /** 上下集：直接换片，沿用原来那套「载入 + 展开」的流程，不用再点方格。 */
   const handlePlayEpisode = useCallback(
@@ -1185,6 +1244,9 @@ export default function App() {
                 <CollectionsPanel
                   kind="playlist"
                   paths={collections.playlist}
+                  modes={playModes}
+                  mode={playMode}
+                  onPickMode={handlePickPlayMode}
                   onPlay={handlePlayFromList}
                   onRemove={handleTogglePlaylist}
                   onShift={handleShiftPlaylist}
@@ -1217,6 +1279,9 @@ export default function App() {
                 <CollectionsPanel
                   kind="favorites"
                   paths={collections.favorites}
+                  modes={playModes}
+                  mode={playMode}
+                  onPickMode={handlePickPlayMode}
                   onPlay={handlePlayFromList}
                   onRemove={handleToggleFavorite}
                   onShift={handleShiftPlaylist}

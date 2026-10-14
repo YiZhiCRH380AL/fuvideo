@@ -113,6 +113,8 @@ const mocks = vi.hoisted(() => {
       lastDirectory: null,
     } as Record<string, unknown>,
     rememberDirectory: vi.fn(),
+    getPlayOptions: vi.fn(),
+    setPlayMode: vi.fn(),
     togglePause: vi.fn(async () => false),
     pauseVideo: vi.fn(async () => {}),
     seekTo: vi.fn(async (_position: number) => {}),
@@ -237,6 +239,11 @@ vi.mock('./lib/backend', () => ({
   setHwdec: async () => mocks.settings,
   takeScreenshot: async () => String.raw`E:\clips\demo 截图.jpg`,
   rememberDirectory: (path: string) => mocks.rememberDirectory(path),
+  getPlayOptions: async () => mocks.getPlayOptions(),
+  setPlayMode: async (mode: string) => {
+    mocks.setPlayMode(mode)
+    return mocks.settings
+  },
 }))
 
 import App from './App'
@@ -272,6 +279,8 @@ beforeEach(() => {
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
     mocks.rememberDirectory,
+    mocks.getPlayOptions,
+    mocks.setPlayMode,
   ]) {
     fn.mockClear()
   }
@@ -285,6 +294,12 @@ beforeEach(() => {
   )
   mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,AAAA')
   mocks.prepareSampleFolder.mockResolvedValue(mocks.sampleFolder)
+  mocks.getPlayOptions.mockResolvedValue([
+    { id: 'sequence', label: '顺序播放' },
+    { id: 'single', label: '单曲循环' },
+    { id: 'list', label: '列表循环' },
+    { id: 'shuffle', label: '随机播放' },
+  ])
 
   // 列表的 mock 要真的增删改，界面拿返回值更新自己
   mocks.collections = { playlist: [], favorites: [] }
@@ -1261,6 +1276,53 @@ describe('记住上次的目录', () => {
     await chooseDirectory()
 
     await waitFor(() => expect(mocks.rememberDirectory).toHaveBeenCalledWith(CLIPS))
+  })
+})
+
+describe('播放模式', () => {
+  /** 播完当前这一片：把快照切成待机。 */
+  async function finishCurrent(): Promise<void> {
+    mocks.snapshot = { ...mocks.snapshot, idleActive: true }
+  }
+
+  it('列表循环：走到最后一片之后回到第一片', async () => {
+    mocks.settings = { ...mocks.settings, playMode: 'list' }
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+
+    render(<App />)
+    await chooseDirectory()
+    // 从列表里的最后一片开始
+    await userEvent.click(grid().getByRole('button', { name: 'other.mkv' }))
+    await waitFor(() => expect(screen.getByTestId('expanded-tile')).toBeInTheDocument())
+    await finishCurrent()
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenLastCalledWith(DEMO))
+  })
+
+  it('随机：挑一个跟当前不同的', async () => {
+    mocks.settings = { ...mocks.settings, playMode: 'shuffle' }
+    mocks.collections = { playlist: [DEMO, OTHER, THIRD], favorites: [] }
+
+    await openPlayingVideo()
+    await finishCurrent()
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledTimes(2))
+
+    const next = mocks.playLocalVideo.mock.calls[1][0]
+
+    expect([DEMO, OTHER, THIRD]).toContain(next)
+    expect(next).not.toBe(DEMO)
+  })
+
+  it('面板顶上能切播放模式，并把它存下来', async () => {
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+    const modes = within(await screen.findByRole('group', { name: '播放模式' }))
+    await userEvent.click(modes.getByRole('button', { name: '随机播放' }))
+
+    await waitFor(() => expect(mocks.setPlayMode).toHaveBeenCalledWith('shuffle'))
+    expect(modes.getByRole('button', { name: '随机播放' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

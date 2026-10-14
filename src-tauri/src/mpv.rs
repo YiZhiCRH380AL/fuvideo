@@ -1593,6 +1593,39 @@ pub fn video_options() -> video::VideoOptions {
   video::VideoOptions::default()
 }
 
+/// 播放模式：顺序 / 单曲循环 / 列表循环 / 随机。
+///
+/// 这一项**不碰 mpv**：自动连播是应用自己算的（列表在应用这边，不在 mpv 的播放列表里），
+/// 所以只存设置就行。
+#[tauri::command(async)]
+pub fn set_play_mode(
+  app: tauri::AppHandle,
+  mode: String,
+) -> Result<Settings, String> {
+  if !settings::PLAY_MODES.contains(&mode.as_str()) {
+    return Err(format!("不支持的播放模式: {mode}"));
+  }
+
+  save_settings(&app, |settings| settings.play_mode = mode)
+}
+
+/// 播放模式的选项表，标签由后端给，界面不抄一份。
+#[tauri::command]
+pub fn play_options() -> Vec<audio::OptionChoice> {
+  [
+    ("sequence", "顺序播放"),
+    ("single", "单曲循环"),
+    ("list", "列表循环"),
+    ("shuffle", "随机播放"),
+  ]
+  .into_iter()
+  .map(|(id, label)| audio::OptionChoice {
+    id: id.to_string(),
+    label: label.to_string(),
+  })
+  .collect()
+}
+
 /// 硬件解码方式。
 ///
 /// 切换会让 mpv 重建视频输出，画面会闪一下；有些后端在这台机器上根本用不了

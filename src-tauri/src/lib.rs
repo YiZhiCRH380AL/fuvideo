@@ -94,6 +94,8 @@ pub fn run() {
       mpv::set_audio_format,
       mpv::set_audio_spdif,
       mpv::video_options,
+      mpv::play_options,
+      mpv::set_play_mode,
       mpv::set_hwdec,
       mpv::set_video_filter_mode,
       mpv::set_video_aspect,

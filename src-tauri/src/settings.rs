@@ -66,6 +66,9 @@ pub const VIDEO_ROTATIONS: &[i64] = &[0, 90, 180, 270];
 /// 色彩那五项：都要在 -100..100 之间，0 是中性。
 pub const COLOR_CHANNELS: &[&str] = &["brightness", "contrast", "saturation", "hue", "gamma"];
 
+/// 播放模式：顺序、单曲循环、列表循环、随机。见 [crate::settings::Settings::play_mode]。
+pub const PLAY_MODES: &[&str] = &["sequence", "single", "list", "shuffle"];
+
 /// 色彩与锐化的取值区间（跟 mpv 对齐）。
 const COLOR_RANGE: (f64, f64) = (-100.0, 100.0);
 const SHARPEN_RANGE: (f64, f64) = (0.0, 5.0);
@@ -175,6 +178,8 @@ pub struct Settings {
   pub screenshot_subtitles: bool,
   /// 上次打开的目录。启动时直接铺回来，省得每次重新找。
   pub last_directory: Option<String>,
+  /// 播放模式，见 [PLAY_MODES]。决定「播完一个之后放什么」。
+  pub play_mode: String,
 }
 
 impl Default for Settings {
@@ -220,6 +225,7 @@ impl Default for Settings {
       screenshot_format: None,
       screenshot_subtitles: true,
       last_directory: None,
+      play_mode: default_play_mode(),
     }
   }
 }
@@ -312,8 +318,17 @@ impl Settings {
       .map(|path| path.trim().to_string())
       .filter(|path| !path.is_empty());
 
+    if !PLAY_MODES.contains(&self.play_mode.as_str()) {
+      self.play_mode = default_play_mode();
+    }
+
     self
   }
+}
+
+/// 默认顺序播放：播完列表里的下一个，到末尾就停。
+fn default_play_mode() -> String {
+  "sequence".to_string()
 }
 
 /// 把可选的数值夹进区间；NaN 这种坏值直接当没设置过。
@@ -487,6 +502,7 @@ mod tests {
       screenshot_format: Some("png".to_string()),
       screenshot_subtitles: false,
       last_directory: Some(r"E:\clips\anime".to_string()),
+      play_mode: "shuffle".to_string(),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -618,6 +634,7 @@ mod tests {
       "screenshotFormat",
       "screenshotSubtitles",
       "lastDirectory",
+      "playMode",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -693,5 +710,17 @@ mod tests {
     .normalized();
 
     assert_eq!(settings.last_directory.as_deref(), Some(r"E:\clips\anime"));
+  }
+
+  #[test]
+  fn unknown_play_mode_falls_back_to_sequence() {
+    let settings = Settings {
+      play_mode: "random".to_string(),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.play_mode, "sequence");
+    assert_eq!(Settings::default().play_mode, "sequence", "默认是顺序播放");
   }
 

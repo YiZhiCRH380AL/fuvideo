@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { OptionChoice } from '../lib/backend'
 import { fileName, parentDirectory } from '../lib/path'
 import { cachedThumbnail, loadThumbnail } from '../lib/thumbnail-cache'
 
@@ -7,6 +8,10 @@ export type CollectionKind = 'playlist' | 'favorites'
 export interface CollectionsPanelProps {
   kind: CollectionKind
   paths: string[]
+  /** 播放模式（只有播放列表用得上）。 */
+  modes: OptionChoice[]
+  mode: string
+  onPickMode: (mode: string) => void
   /** 点文件名：放这个视频。 */
   onPlay: (path: string) => void
   /** 从列表里移出。 */
@@ -36,6 +41,9 @@ const EMPTY: Record<CollectionKind, string> = {
 export default function CollectionsPanel({
   kind,
   paths,
+  modes,
+  mode,
+  onPickMode,
   onPlay,
   onRemove,
   onShift,
@@ -83,14 +91,20 @@ export default function CollectionsPanel({
 
   if (paths.length === 0) {
     return (
-      <p className="paths__empty" data-testid={`${kind}-empty`}>
-        {EMPTY[kind]}
-      </p>
+      <>
+        {kind === 'playlist' ? <ModeRow modes={modes} mode={mode} onPick={onPickMode} /> : null}
+        <p className="paths__empty" data-testid={`${kind}-empty`}>
+          {EMPTY[kind]}
+        </p>
+      </>
     )
   }
 
   return (
-    <ul className="paths" data-testid={`${kind}-list`}>
+    <>
+      {kind === 'playlist' ? <ModeRow modes={modes} mode={mode} onPick={onPickMode} /> : null}
+
+      <ul className="paths" data-testid={`${kind}-list`}>
       {paths.map((path, index) => (
         <li className="paths__item" key={path}>
           <div className="paths__row">
@@ -155,6 +169,34 @@ export default function CollectionsPanel({
           ) : null}
         </li>
       ))}
-    </ul>
+      </ul>
+    </>
+  )
+}
+
+/** 播放模式那一排。顺序和随机本来就属于列表，所以摆在列表顶上。 */
+function ModeRow({
+  modes,
+  mode,
+  onPick,
+}: {
+  modes: OptionChoice[]
+  mode: string
+  onPick: (mode: string) => void
+}) {
+  return (
+    <div className="paths__modes" role="group" aria-label="播放模式">
+      {modes.map((item) => (
+        <button
+          className="paths__mode"
+          key={item.id}
+          type="button"
+          aria-pressed={mode === item.id}
+          onClick={() => onPick(item.id)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   )
 }

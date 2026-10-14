@@ -1221,6 +1221,36 @@
 }
 
 /* 播放列表 / 收藏夹的面板 */
+/* 播放列表顶上的播放模式：顺序 / 单曲 / 列表循环 / 随机 */
+.paths__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.paths__mode {
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.paths__mode:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.paths__mode[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .paths {
   display: flex;
   flex-direction: column;
