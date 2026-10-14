@@ -22,8 +22,10 @@
 「`playPath(同一路径)` 之后 `playedCurrent` 的复位时机」。
 
 验证：`npm run typecheck`、`npm run lint`（仍是那 2 条有意保留的警告）、
-`npm run test:run`（197 个）、`npm run build`、`cd src-tauri && cargo test`（89 个）全绿
-（`test:e2e` 这轮没跑，下一步补跑）。
+`npm run test:run`（197 个）、`npm run test:e2e`（15 个）、`npm run build`、
+`cd src-tauri && cargo test`（89 个）全绿。
+e2e 一开始挂了 2 条：假后端对未知命令返回 `null`，`playModes` 直接被设成 null 就崩了——
+这其实是真 bug（后端没给选项表时该兜住），已修。
 
 **下一步是 P4 第 3 步：逐帧**（`frame-step` / `frame-back-step`，两个快捷键 + README 的快捷键表）。
 
@@ -59,15 +61,12 @@
   GPL / LGPL 走」——二次分发安装包时要一并遵循。这一条既保护作者也保护二次分发者。
 - 反馈邮箱保留。
 
-## 下一步：P4 播放控制与应用层（计划已定，尚未开工）
+## 下一步：P4 播放控制与应用层（第 1、2 步已完成，第 3 步起未开工）
 
 按「小而完整、每步都能单独提交」的顺序做：
 
-1. **记住上次目录**：设置里存 `lastDirectory`，启动后自动铺回方格墙（开屏收场就不再是空画面）。
-   动 settings.rs + App.tsx 的启动流程 + 测试。
-2. **播放模式**：顺序 / 单曲循环 / 列表循环 / 随机。放在**播放列表面板的标题处**——
-   顺序和随机本来就属于列表。自动连播按它决定下一个：`loop-file` / `loop-playlist`
-   可以让 mpv 自己转，但**随机得应用自己算**（列表在应用这边，不在 mpv 的 playlist 里）。
+1. ~~**记住上次目录**~~ 已完成（见上面那一节）。
+2. ~~**播放模式**~~ 已完成（见上面那一节；**单曲循环还缺一条用例**，见那里的说明）。
 3. **逐帧**：`frame-step` / `frame-back-step`，两个快捷键 + README 的快捷键表。
 4. **章节**：`chapter-list` / `chapter`，面板里列出章节并跳过去。
 5. **AB 循环**：`ab-loop-a` / `ab-loop-b` / `ab-loop-count`，界面上「设 A / 设 B / 清除」。
@@ -76,6 +75,8 @@
 8. **定时关闭 / 定时暂停**：应用层的计时器。
 9. **快捷键自定义**：现在按键全在 [shortcuts.ts](src/lib/shortcuts.ts) 里写死，改成可配置。
 10. 路线图里的小项：方格墙排序与搜索、开屏时长做成设置项、M3 多主题 token。
+
+**进度**：10 步里做完 2 步（第 1、2 步），第 3 步起未开工。
 
 **已经做完、别再重复做的**：
 
