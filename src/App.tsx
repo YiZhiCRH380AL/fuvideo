@@ -79,8 +79,21 @@ import { revealMainWindow } from './lib/window'
 const POLL_INTERVAL_MS = 300
 
 /** 迷你模式的窗口尺寸：16:9 的一小块，搁在角落看片用。 */
-const MINI_WIDTH = 480
-const MINI_HEIGHT = 270
+const MINI_WIDTH = 560
+const MINI_HEIGHT = 315
+
+/**
+ * 主窗口的尺寸下限，和 `tauri.conf.json` 里那几个值保持一致。
+ *
+ * 迷你模式要缩到比它还小，所以进迷你模式前得先把下限放开，退出时再放回去；
+ * 不放开的话窗口会被自己的约束卡住，点了「迷你」看起来没反应。
+ */
+const MAIN_MIN_WIDTH = 640
+const MAIN_MIN_HEIGHT = 400
+
+/** 迷你模式下放开的下限。 */
+const MINI_MIN_WIDTH = 320
+const MINI_MIN_HEIGHT = 180
 
 /**
  * 主窗口句柄；拿不到就返回 `null`。
@@ -349,10 +362,20 @@ export default function App() {
         if (next) {
           const size = await current.innerSize()
           miniRestore.current = { width: size.width, height: size.height }
+          // 先放开下限，否则窗口会被 640×400 卡住，看起来像没反应
+          await current.setSizeConstraints({
+            minWidth: MINI_MIN_WIDTH,
+            minHeight: MINI_MIN_HEIGHT,
+          })
           await current.setSize(new LogicalSize(MINI_WIDTH, MINI_HEIGHT))
         } else {
           const restore = miniRestore.current
           miniRestore.current = null
+
+          await current.setSizeConstraints({
+            minWidth: MAIN_MIN_WIDTH,
+            minHeight: MAIN_MIN_HEIGHT,
+          })
 
           if (restore !== null) {
             await current.setSize(new LogicalSize(restore.width, restore.height))
