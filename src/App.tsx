@@ -281,7 +281,9 @@ export default function App() {
         }
 
         setPlayMode(settings?.playMode ?? 'sequence')
-        setPlayModes(modes)
+        // 后端没给出选项表（比如某些环境下这个命令不存在）时退回空表：
+        // 面板上少一排按钮，总好过整页崩掉
+        setPlayModes(Array.isArray(modes) ? modes : [])
 
         if (cancelled || settings?.lastDirectory == null) {
           return
