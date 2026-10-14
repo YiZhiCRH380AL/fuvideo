@@ -1492,7 +1492,7 @@ describe('播放工具面板', () => {
     expect(await within(panel).findByTestId('tools-sleep')).toHaveTextContent('就退出')
 
     // 关掉之后回到提示语
-    await userEvent.click(within(panel).getByRole('button', { name: '关' }))
+    await userEvent.click(within(panel).getByRole('button', { name: '关闭定时' }))
     expect(await within(panel).findByTestId('tools-sleep')).toHaveTextContent('到点之后自动动手')
   })
 

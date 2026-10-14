@@ -194,6 +194,17 @@ export default function PlaybackTools({
         <h4 className="tools__title">定时</h4>
 
         <div className="tools__row" role="group" aria-label="定时时长">
+          {/* 「关」摆在最前面：它和时长是同一个选择，放后面会单独挤到第二行 */}
+          <button
+            className="tools__chip"
+            type="button"
+            aria-label="关闭定时"
+            aria-pressed={sleepMinutes === null}
+            onClick={() => onSleepTimer(null)}
+          >
+            关
+          </button>
+
           {SLEEP_MINUTES.map((minutes) => (
             <button
               className="tools__chip"
@@ -205,9 +216,6 @@ export default function PlaybackTools({
               {minutes} 分
             </button>
           ))}
-          <button className="tools__chip" type="button" onClick={() => onSleepTimer(null)} aria-pressed={sleepMinutes === null}>
-            关
-          </button>
         </div>
 
         <div className="tools__row" role="group" aria-label="定时到点做什么">

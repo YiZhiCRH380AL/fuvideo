@@ -92,6 +92,14 @@ async function installFakeTauri(
               return pixel
             case 'read_collections':
               return copyCollections()
+            // 播放工具面板：章节表与 AB 点。面板那边对拿不到的情况有兜底
+            case 'chapters':
+              return [
+                { index: 0, title: '开场', time: 0 },
+                { index: 1, title: '正片', time: 65 },
+              ]
+            case 'ab_loop':
+              return { a: null, b: null }
             case 'toggle_playlist': {
               const path = args.path as string
               collections.playlist = collections.playlist.includes(path)
@@ -404,5 +412,82 @@ test('放大播放时，下面那些方格不会被压扁', async ({ page }) => 
   expect(wall.every((tile) => tile.height > 100)).toBe(true)
   // 而且卡片只比封面高出一个名字的量：被图片原生高度撑成柱子时这里会是几百
   expect(wall.every((tile) => tile.slack < 60)).toBe(true)
+})
+
+/**
+ * 播放工具面板：章节、AB 循环、定时、窗口、打开地址五块都要在，
+ * 而且面板本身不能撑出窗口——它是顶栏底下的一层浮层，撑出去就点不到了。
+ */
+test('播放工具面板：五块内容都在，且不撑出窗口', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  // 有片子才有章节表去问后端
+  // 名字要精确匹配：方格上那两颗动作按钮的可访问名字里也带着文件名
+  await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+  await expect(page.getByTestId('expanded-tile')).toBeVisible()
+
+  await page.getByRole('button', { name: '播放工具' }).click()
+  const panel = page.getByTestId('playback-tools')
+  await expect(panel).toBeVisible()
+
+  // 转场幕布 520ms 后自己撤掉；不撤的话整屏看着都是暗的
+  await expect(page.getByTestId('curtain')).toHaveCount(0, { timeout: 2000 })
+
+  // 章节来自假后端，两段都列出来
+  await expect(panel.getByRole('button', { name: /开场/ })).toBeVisible()
+  await expect(panel.getByRole('button', { name: /正片/ })).toBeVisible()
+  await expect(panel.getByRole('button', { name: /设 A/ })).toBeVisible()
+  await expect(panel.getByRole('button', { name: '15 分' })).toBeVisible()
+  await expect(panel.getByRole('checkbox', { name: /迷你模式/ })).toBeVisible()
+  await expect(panel.getByRole('textbox', { name: '视频地址' })).toBeVisible()
+
+  const box = await panel.boundingBox()
+  const viewport = page.viewportSize()
+
+  expect(box).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  // 浮层要整块留在窗口里：左边不能是负数，右边不能越界
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width)
+
+  // 等动画都停下来再截图，否则拍到的是半透明的一帧
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: 'test-results/shots/playback-tools.png' })
+})
+
+/** 方格墙的搜索与排序：只改怎么摆，不动目录本身。 */
+test('方格墙可以按名字搜、按名字排', async ({ page }) => {
+  await installFakeTauri(page, { videoCount: 3 })
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  const search = page.getByRole('searchbox', { name: '搜索这个目录' })
+  await search.fill('demo-2')
+
+  await expect(page.getByRole('button', { name: 'demo-2.mp4', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'demo-1.mp4', exact: true })).toHaveCount(0)
+
+  // 搜不到东西时给的是「没有匹配」，不是「这个目录里没有视频」
+  await search.fill('zzz')
+  await expect(page.getByText(/没有名字里有「zzz」的条目/)).toBeVisible()
+
+  await search.fill('')
+  await page.getByRole('button', { name: '名称 ↓' }).click()
+
+  const order = await page
+    .getByTestId('video-grid')
+    .locator('.tile__name')
+    .allTextContents()
+
+  expect(order[0]).toBe('demo-3.mp4')
+  expect(order[order.length - 1]).toBe('demo-1.mp4')
 })
 

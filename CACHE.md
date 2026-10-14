@@ -77,8 +77,13 @@
 
 验证：`npm run typecheck`、`npm run lint`（4 条 `react(set-state-in-effect)` 警告：
 两处是播放器外部同步、两处是定时到点，都属于有意保留；lint 仍然退出 0）、
-`npm run test:run`（**223** 个）、`npm run test:e2e`（**15** 个）、`npm run build`、
+`npm run test:run`（**223** 个）、`npm run test:e2e`（**17** 个）、`npm run build`、
 `cd src-tauri && cargo test`（**99** 个）全绿。
+
+e2e 里新加两条，顺手拿真浏览器量了「播放工具」面板的实际布局：
+- `test-results/shots/playback-tools.png`：五块内容都在，面板整块留在窗口里；
+  截图前要等转场幕布撤掉（520ms），否则拍到的是半透明的一帧，看着像整屏发暗。
+- 定时那一排原来会把「关」挤到第二行——把开关摆到时长前面就一行放得下了。
 
 **额外踩的坑**：`cargo test` 接管道会一直不返回——漏下来的 mpv 子进程攥着继承过去的 stdout 句柄，
 管道永远等不到 EOF（仓库里那段注释说的就是这件事）。这次是靠杀掉 3 个残留 mpv 才拿到结果。
