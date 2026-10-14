@@ -883,6 +883,15 @@ pub fn seek_by(state: tauri::State<'_, PlayerState>, offset: f64) -> Result<(), 
   state.with_ipc(|client| client.seek_relative(offset))
 }
 
+/// 逐帧步进。mpv 走完一帧会顺手暂停，所以「按一下」的观感就是「前进一帧然后停住」。
+///
+/// 倒着走一帧靠的是 mpv 的 `frame-back-step`，它要求精确寻址（`--hr-seek`），
+/// 默认配置下就是开的；个别封装格式解不了就报错给界面，不做无声的兜底。
+#[tauri::command(async)]
+pub fn step_frame(state: tauri::State<'_, PlayerState>, forward: bool) -> Result<(), String> {
+  state.with_ipc(|client| client.step_frame(forward))
+}
+
 /// 设置音量，范围限制在 mpv 允许的 0-150 之间。
 #[tauri::command(async)]
 pub fn set_volume(state: tauri::State<'_, PlayerState>, volume: f64) -> Result<(), String> {
@@ -1069,6 +1078,103 @@ pub fn player_details(state: tauri::State<'_, PlayerState>) -> PlayerDetails {
       .flatten()
       .unwrap_or(false),
   }
+}
+
+/* ---------------- 章节 ---------------- */
+
+/// 一条章节。`index` 是它在章节表里的位置，跳转时原样发给 mpv。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterInfo {
+  pub index: i64,
+  /// 章节名。有些片子只给时间不给名字，这时留空。
+  pub title: Option<String>,
+  /// 章节起点，秒。
+  pub time: f64,
+}
+
+/// 解析 mpv 的 `chapter-list`。缺 `time` 的那条整条丢掉：界面上点不动它。
+pub fn parse_chapters(value: &Value) -> Vec<ChapterInfo> {
+  let Some(items) = value.as_array() else {
+    return Vec::new();
+  };
+
+  items
+    .iter()
+    .enumerate()
+    .filter_map(|(index, item)| {
+      Some(ChapterInfo {
+        index: index as i64,
+        title: text_field(item, "title"),
+        time: item.get("time")?.as_f64()?,
+      })
+    })
+    .collect()
+}
+
+/// 读章节表。没在播放、或者这部片子没有章节时都是空表。
+#[tauri::command(async)]
+pub fn chapters(state: tauri::State<'_, PlayerState>) -> Vec<ChapterInfo> {
+  if state.current_path().is_none() {
+    return Vec::new();
+  }
+
+  state
+    .with_ipc(|client| client.get_value("chapter-list"))
+    .ok()
+    .flatten()
+    .map(|value| parse_chapters(&value))
+    .unwrap_or_default()
+}
+
+/// 跳到第几个章节。章节表是 mpv 自己那份，这里只传位置。
+#[tauri::command(async)]
+pub fn select_chapter(state: tauri::State<'_, PlayerState>, index: i64) -> Result<(), String> {
+  state.with_ipc(|client| client.select_chapter(index))
+}
+
+/* ---------------- AB 循环 ---------------- */
+
+/// AB 循环的两个端点。`None` 表示那一端还没设。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoopPoints {
+  pub a: Option<f64>,
+  pub b: Option<f64>,
+}
+
+/// mpv 的 `ab-loop-a/b` 是「数值或字面量 `no`」的属性，读回来两种形态都要认。
+pub fn parse_loop_point(value: Option<Value>) -> Option<f64> {
+  match value? {
+    Value::Number(number) => number.as_f64(),
+    Value::String(text) => text.parse::<f64>().ok(),
+    _ => None,
+  }
+}
+
+/// 读 AB 循环的两个端点。
+#[tauri::command(async)]
+pub fn ab_loop(state: tauri::State<'_, PlayerState>) -> LoopPoints {
+  let read = |name: &str| -> Option<f64> {
+    parse_loop_point(state.with_ipc(|client| client.get_value(name)).ok().flatten())
+  };
+
+  LoopPoints {
+    a: read("ab-loop-a"),
+    b: read("ab-loop-b"),
+  }
+}
+
+/// 设 A 点；传 `None` 表示清除。
+#[tauri::command(async)]
+pub fn set_loop_a(state: tauri::State<'_, PlayerState>, seconds: Option<f64>) -> Result<(), String> {
+  state.with_ipc(|client| client.set_loop_a(seconds))
+}
+
+/// 设 B 点；传 `None` 表示清除。
+#[tauri::command(async)]
+pub fn set_loop_b(state: tauri::State<'_, PlayerState>, seconds: Option<f64>) -> Result<(), String> {
+  state.with_ipc(|client| client.set_loop_b(seconds))
 }
 
 /* ---------------- 音频输出设备 ---------------- */
@@ -2999,5 +3105,197 @@ mod tests {
     let hardware = state.with_ipc(|client| client.get_string("hwdec-current")).ok().flatten();
 
     assert!(hardware.is_some(), "hwdec-current 应该能读出来");
+  }
+
+  /* ---------------- 章节、AB 循环、逐帧 ---------------- */
+
+  #[test]
+  fn parse_chapters_reads_the_chapter_list() {
+    let value = serde_json::json!([
+      { "title": "开场", "time": 0.0 },
+      { "title": "正片", "time": 125.5 },
+    ]);
+
+    let chapters = parse_chapters(&value);
+
+    assert_eq!(chapters.len(), 2);
+    assert_eq!(chapters[0].index, 0);
+    assert_eq!(chapters[1].title.as_deref(), Some("正片"));
+    assert!((chapters[1].time - 125.5).abs() < 0.001);
+  }
+
+  /// 没有时间点的章节点了也跳不过去，整条丢掉。
+  /// 但剩下的那条要留着**原始位置**，不然跳转会落到别的章节上。
+  #[test]
+  fn parse_chapters_drops_entries_without_a_time() {
+    let value = serde_json::json!([{ "title": "没时间" }, { "title": "有时间", "time": 3.0 }]);
+
+    let chapters = parse_chapters(&value);
+
+    assert_eq!(chapters.len(), 1);
+    assert_eq!(chapters[0].index, 1);
+  }
+
+  #[test]
+  fn parse_chapters_tolerates_a_missing_property() {
+    assert!(parse_chapters(&Value::Null).is_empty());
+  }
+
+  /// `ab-loop-a/b` 是「数值或字面量 `no`」的属性，两种形态都得认。
+  #[test]
+  fn loop_points_read_both_shapes_mpv_uses() {
+    assert_eq!(parse_loop_point(Some(serde_json::json!(12.5))), Some(12.5));
+    assert_eq!(parse_loop_point(Some(serde_json::json!("3.25"))), Some(3.25));
+    assert_eq!(parse_loop_point(Some(serde_json::json!("no"))), None);
+    assert_eq!(parse_loop_point(Some(Value::Null)), None);
+    assert_eq!(parse_loop_point(None), None);
+  }
+
+  /// 读一次 AB 循环的端点。
+  fn loop_point(client: &ipc::MpvIpc, name: &str) -> Option<f64> {
+    parse_loop_point(client.get_value(name).ok().flatten())
+  }
+
+  /// AB 循环的两个端点：设得上、读得回、清得掉。
+  ///
+  /// 「清掉」这一步最容易踩坑：mpv 没设端点时属性是**字面量 `no`**，
+  /// 拿浮点去写会被回一句 invalid parameter，所以清除必须走字符串。
+  #[test]
+  fn ab_loop_points_round_trip_through_mpv() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过 AB 循环集成测试");
+      return;
+    }
+
+    let (_guard, client) = spawn_headless("test-ab-loop", &[]);
+
+    client
+      .load_file("av://lavfi:testsrc=duration=6:size=320x240:rate=25")
+      .expect("载入视频");
+
+    assert!(
+      wait_for_number(&client, "duration", Duration::from_secs(20)).is_some(),
+      "时长该能读出来"
+    );
+
+    assert_eq!(loop_point(&client, "ab-loop-a"), None);
+
+    client.set_loop_a(Some(1.5)).expect("设 A 点");
+    client.set_loop_b(Some(3.0)).expect("设 B 点");
+
+    assert_eq!(loop_point(&client, "ab-loop-a"), Some(1.5));
+    assert_eq!(loop_point(&client, "ab-loop-b"), Some(3.0));
+
+    client.set_loop_a(None).expect("清 A 点");
+    client.set_loop_b(None).expect("清 B 点");
+
+    assert_eq!(loop_point(&client, "ab-loop-a"), None);
+    assert_eq!(loop_point(&client, "ab-loop-b"), None);
+  }
+
+  /// 逐帧：两条命令都要被 mpv 收下。
+  ///
+  /// **这里只能验到「命令可用」这一步**：`frame-step` 靠视频输出报出「下一帧画出来了」
+  /// 才知道停下来，而集成测试跑在 `--vo=null` 下，永远不会报这个事件——
+  /// 实测走一帧之后 mpv 会继续往下播，位置断言没有意义（试过：写死的断言会随机红）。
+  /// 所以这条用例挡的是「命令名写错 / 属性名写错 / mpv 回一句 invalid parameter」这一类
+  /// 真实踩过的坑，步进的观感要靠真机看。
+  #[test]
+  fn frame_step_commands_are_accepted_by_mpv() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过逐帧集成测试");
+      return;
+    }
+
+    let (_guard, client) = spawn_headless("test-frame-step", &[]);
+
+    client
+      .load_file("av://lavfi:testsrc=duration=5:size=320x240:rate=25")
+      .expect("载入视频");
+
+    assert!(
+      wait_for_number(&client, "duration", Duration::from_secs(20)).is_some(),
+      "时长该能读出来"
+    );
+
+    client.step_frame(true).expect("mpv 该收下前进一帧");
+    client.step_frame(false).expect("mpv 该收下后退一帧");
+  }
+
+  /// 章节：列得出来、点得动。章节表来自播放的文件，不是我们自己编的。
+  #[test]
+  fn chapters_are_listed_and_selectable() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过章节集成测试");
+      return;
+    }
+
+    let directory = std::env::temp_dir().join(format!("fuvideo-chapters-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("建目录");
+
+    let chapter_file = directory.join("chapters.txt");
+    /*
+     * 用 ffmetadata 格式。那种「`CHAPTER01=00:00:00.000`」的老 OGM 写法在 mpv 0.41
+     * 上实测读不出章节（`chapter-list` 一直是空），别照老资料写成那一版。
+     */
+    std::fs::write(
+      &chapter_file,
+      concat!(
+        ";FFMETADATA1\n",
+        "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=2000\ntitle=第一段\n",
+        "[CHAPTER]\nTIMEBASE=1/1000\nSTART=2000\nEND=4000\ntitle=第二段\n",
+      ),
+    )
+    .expect("写章节文件");
+
+    /*
+     * `--chapters-file` 是**文件局部选项**，只在载入那一刻生效：先启动再 `loadfile`
+     * 的话它已经过期了（实测 chapter-list 一直是空的）。所以这里把章节文件和源
+     * 一起从启动参数给进去。
+     */
+    let (_guard, client) = spawn_headless(
+      "test-chapters",
+      &[
+        format!("--chapters-file={}", chapter_file.display()),
+        "av://lavfi:testsrc=duration=6:size=320x240:rate=25".to_string(),
+      ],
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut listed = Vec::new();
+
+    while Instant::now() < deadline {
+      listed = client
+        .get_value("chapter-list")
+        .ok()
+        .flatten()
+        .map(|value| parse_chapters(&value))
+        .unwrap_or_default();
+
+      if !listed.is_empty() {
+        break;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+
+    assert_eq!(listed.len(), 2, "章节表该有两段: {listed:?}");
+    assert_eq!(listed[1].title.as_deref(), Some("第二段"));
+    assert!((listed[1].time - 2.0).abs() < 0.5);
+
+    client.select_chapter(1).expect("跳到第二段");
+
+    assert_eq!(
+      client.get_number("chapter").ok().flatten(),
+      Some(1.0),
+      "跳过去之后 chapter 应当停在第二段"
+    );
+    assert!(
+      wait_for_number_value(&client, "time-pos", 2.0, Duration::from_secs(10)),
+      "跳过去之后播放位置该落在第二段的起点上"
+    );
+
+    let _ = std::fs::remove_dir_all(&directory);
   }
 }

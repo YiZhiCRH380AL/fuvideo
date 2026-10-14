@@ -8,6 +8,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -68,6 +69,28 @@ pub const COLOR_CHANNELS: &[&str] = &["brightness", "contrast", "saturation", "h
 
 /// 播放模式：顺序、单曲循环、列表循环、随机。见 [crate::settings::Settings::play_mode]。
 pub const PLAY_MODES: &[&str] = &["sequence", "single", "list", "shuffle"];
+
+/// 可以改键的动作。和前端 [shortcuts.ts](src/lib/shortcuts.ts) 里的那份一一对应，
+/// 这里留一份是为了能把手改配置里的错别字挡掉。
+pub const SHORTCUT_ACTIONS: &[&str] = &[
+  "toggle-play",
+  "seek-forward",
+  "seek-backward",
+  "jump-forward",
+  "jump-backward",
+  "volume-up",
+  "volume-down",
+  "toggle-mute",
+  "toggle-fullscreen",
+  "toggle-mini",
+  "speed-up",
+  "speed-down",
+  "frame-forward",
+  "frame-backward",
+];
+
+/// 快捷键的表最长的长度上限：`KeyboardEvent.code` 都是短标识符。
+const SHORTCUT_CODE_LIMIT: usize = 24;
 
 /// 色彩与锐化的取值区间（跟 mpv 对齐）。
 const COLOR_RANGE: (f64, f64) = (-100.0, 100.0);
@@ -180,6 +203,13 @@ pub struct Settings {
   pub last_directory: Option<String>,
   /// 播放模式，见 [PLAY_MODES]。决定「播完一个之后放什么」。
   pub play_mode: String,
+  /// 窗口置顶：小窗搁在角落看片时，不容易被别的窗口盖住。
+  pub always_on_top: bool,
+  /// 迷你模式：窗口缩成一小块，只看画面。
+  pub mini_mode: bool,
+  /// 自定义快捷键：动作 id → `KeyboardEvent.code`。
+  /// `None` 表示一条都没改过，界面直接用默认表。
+  pub shortcuts: Option<BTreeMap<String, String>>,
 }
 
 impl Default for Settings {
@@ -226,6 +256,9 @@ impl Default for Settings {
       screenshot_subtitles: true,
       last_directory: None,
       play_mode: default_play_mode(),
+      always_on_top: false,
+      mini_mode: false,
+      shortcuts: None,
     }
   }
 }
@@ -322,8 +355,39 @@ impl Settings {
       self.play_mode = default_play_mode();
     }
 
+    self.shortcuts = self.shortcuts.map(normalize_shortcuts).filter(|map| !map.is_empty());
+
     self
   }
+}
+
+/// 把自定义快捷键表洗一遍：动作得是认识的动作，键码得像个 `KeyboardEvent.code`，
+/// 一个键码只能绑一个动作（绑重了的按动作名的字典序留先遇到的那条）。
+///
+/// 键码认出来的是「物理键」而不是「按出来的那个字」：这样换成别的键盘布局，
+/// 快捷键还落在原来那颗键上。
+fn normalize_shortcuts(map: BTreeMap<String, String>) -> BTreeMap<String, String> {
+  let mut cleaned = BTreeMap::new();
+  let mut used: Vec<String> = Vec::new();
+
+  for (action, code) in map {
+    if !SHORTCUT_ACTIONS.contains(&action.as_str()) || !is_key_code(&code) || used.contains(&code) {
+      continue;
+    }
+
+    used.push(code.clone());
+    cleaned.insert(action, code);
+  }
+
+  cleaned
+}
+
+/// 键码是 `KeyA` / `ArrowLeft` / `BracketLeft` 这样的标识符，一律字母开头、只含字母数字。
+fn is_key_code(code: &str) -> bool {
+  !code.is_empty()
+    && code.len() <= SHORTCUT_CODE_LIMIT
+    && code.chars().next().is_some_and(|first| first.is_ascii_alphabetic())
+    && code.chars().all(|letter| letter.is_ascii_alphanumeric())
 }
 
 /// 默认顺序播放：播完列表里的下一个，到末尾就停。
@@ -393,18 +457,60 @@ pub fn write_settings(app: tauri::AppHandle, settings: Settings) -> Result<Setti
   save(&config_dir(&app), settings)
 }
 
-/// 记下这次打开的目录，下次启动直接铺回来。
+/// 读—改—写一步到位。
 ///
-/// 单独开一条命令而不是让界面把整份设置写回来：界面手里那份可能是几分钟前读的，
-/// 拿它整体覆盖会把期间改过的音频/画面设置一起冲掉。
-#[tauri::command]
-pub fn remember_directory(app: tauri::AppHandle, path: String) -> Result<Settings, String> {
-  let directory = config_dir(&app);
+/// 界面上这些开关都是「只改这一项」，让前端把整份设置传回来会把它没碰过的项
+/// （音频、画面）一起冲掉，所以每项偏好各开一条命令。
+fn update(app: &tauri::AppHandle, change: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
+  let directory = config_dir(app);
   let mut current = load(&directory);
 
-  current.last_directory = Some(path);
+  change(&mut current);
 
   save(&directory, current)
+}
+
+/// 记下这次打开的目录，下次启动直接铺回来。
+#[tauri::command]
+pub fn remember_directory(app: tauri::AppHandle, path: String) -> Result<Settings, String> {
+  update(&app, |settings| settings.last_directory = Some(path))
+}
+
+/// 置顶开关，落盘。
+#[tauri::command]
+pub fn remember_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<Settings, String> {
+  update(&app, |settings| settings.always_on_top = enabled)
+}
+
+/// 迷你模式开关，落盘。
+#[tauri::command]
+pub fn remember_mini_mode(app: tauri::AppHandle, enabled: bool) -> Result<Settings, String> {
+  update(&app, |settings| settings.mini_mode = enabled)
+}
+
+/// 改一个动作的快捷键。`code` 传 `None` 表示这一条恢复默认。
+#[tauri::command]
+pub fn set_shortcut(app: tauri::AppHandle, action: String, code: Option<String>) -> Result<Settings, String> {
+  update(&app, |settings| {
+    let mut map = settings.shortcuts.take().unwrap_or_default();
+
+    match code {
+      Some(code) => {
+        map.insert(action, code);
+      }
+      None => {
+        map.remove(&action);
+      }
+    }
+
+    settings.shortcuts = if map.is_empty() { None } else { Some(map) };
+  })
+}
+
+/// 全部快捷键恢复默认。
+#[tauri::command]
+pub fn reset_shortcuts(app: tauri::AppHandle) -> Result<Settings, String> {
+  update(&app, |settings| settings.shortcuts = None)
 }
 
 #[cfg(test)]
@@ -503,6 +609,9 @@ mod tests {
       screenshot_subtitles: false,
       last_directory: Some(r"E:\clips\anime".to_string()),
       play_mode: "shuffle".to_string(),
+      always_on_top: true,
+      mini_mode: true,
+      shortcuts: Some(BTreeMap::from([("toggle-mute".to_string(), "KeyQ".to_string())])),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -635,6 +744,9 @@ mod tests {
       "screenshotSubtitles",
       "lastDirectory",
       "playMode",
+      "alwaysOnTop",
+      "miniMode",
+      "shortcuts",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -687,7 +799,7 @@ mod tests {
     assert_eq!(settings.audio_filter_mode, "simple");
     assert_eq!(settings.equalizer_preset, None);
   }
-}
+
   /// 空白路径当成没记过：界面传空串时不该把上次的目录覆盖掉。
   #[test]
   fn blank_last_directory_is_treated_as_unset() {
@@ -723,4 +835,66 @@ mod tests {
     assert_eq!(settings.play_mode, "sequence");
     assert_eq!(Settings::default().play_mode, "sequence", "默认是顺序播放");
   }
+
+  /// 改过键才写进文件；一条都没改时是 `None`，界面直接用默认表。
+  #[test]
+  fn shortcuts_default_to_none_and_survive_a_round_trip() {
+    assert_eq!(Settings::default().shortcuts, None);
+
+    let directory = temp_dir("shortcuts");
+    let saved = save(
+      &directory,
+      Settings {
+        shortcuts: Some(BTreeMap::from([("toggle-mute".to_string(), "KeyQ".to_string())])),
+        ..Settings::default()
+      },
+    )
+    .expect("写设置");
+
+    assert_eq!(
+      saved.shortcuts.as_ref().and_then(|map| map.get("toggle-mute")).map(String::as_str),
+      Some("KeyQ")
+    );
+    assert_eq!(load(&directory).shortcuts, saved.shortcuts);
+  }
+
+  /// 手改配置里的错别字不该让整份设置作废，也不该让一个键同时触发两件事。
+  #[test]
+  fn unknown_actions_and_bad_key_codes_are_dropped() {
+    let settings = Settings {
+      shortcuts: Some(BTreeMap::from([
+        ("toggle-mute".to_string(), "KeyQ".to_string()),
+        ("不认识的动作".to_string(), "KeyW".to_string()),
+        ("speed-up".to_string(), "".to_string()),
+        ("speed-down".to_string(), "KeyA KeyB".to_string()),
+        ("toggle-play".to_string(), "KeyQ".to_string()),
+      ])),
+      ..Settings::default()
+    }
+    .normalized();
+
+    let map = settings.shortcuts.expect("还剩得下一条");
+
+    assert_eq!(map.get("toggle-mute").map(String::as_str), Some("KeyQ"));
+    assert!(!map.contains_key("不认识的动作"), "不认识的动作应该被丢掉");
+    assert!(!map.contains_key("speed-up"), "空键码应该被丢掉");
+    assert!(!map.contains_key("speed-down"), "带空格的键码应该被丢掉");
+    assert!(
+      !map.contains_key("toggle-play"),
+      "键码撞车时只能留一条，不然一个键会触发两件事"
+    );
+  }
+
+  /// 全部被洗掉之后就当成「没改过」，别在文件里留一个空表。
+  #[test]
+  fn shortcuts_with_nothing_usable_fall_back_to_none() {
+    let settings = Settings {
+      shortcuts: Some(BTreeMap::from([("认不出的".to_string(), "KeyZ".to_string())])),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.shortcuts, None);
+  }
+}
 

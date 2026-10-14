@@ -268,6 +268,36 @@ impl MpvIpc {
 
     self.request(json!(["screenshot-to-file", path, flag])).map(|_| ())
   }
+
+  /// 走一帧。mpv 会顺手暂停，所以按一下就是「走一帧然后停住」。
+  pub fn step_frame(&self, forward: bool) -> Result<(), IpcError> {
+    let command = if forward { "frame-step" } else { "frame-back-step" };
+
+    self.request(json!([command])).map(|_| ())
+  }
+
+  /// 跳到第几个章节（从 0 开始）。
+  pub fn select_chapter(&self, index: i64) -> Result<(), IpcError> {
+    self.set_integer("chapter", index)
+  }
+
+  /// 设 A 点。传 `None` 表示清除。
+  pub fn set_loop_a(&self, seconds: Option<f64>) -> Result<(), IpcError> {
+    self.set_loop_point("ab-loop-a", seconds)
+  }
+
+  /// 设 B 点。传 `None` 表示清除。
+  pub fn set_loop_b(&self, seconds: Option<f64>) -> Result<(), IpcError> {
+    self.set_loop_point("ab-loop-b", seconds)
+  }
+
+  /// AB 循环的两端都是「数值或字面量 `no`」的属性，清除时只能写 `no`。
+  fn set_loop_point(&self, name: &str, seconds: Option<f64>) -> Result<(), IpcError> {
+    match seconds {
+      Some(value) => self.set_number(name, value),
+      None => self.set_string(name, "no"),
+    }
+  }
 }
 
 /// 反复尝试连接管道，直到超时。

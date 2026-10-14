@@ -41,6 +41,12 @@ pub fn run() {
         )?;
       }
 
+      // 上次开着置顶就接着置顶；迷你模式由前端自己铺（它还要跟着换界面布局）
+      if let Some(window) = app.get_webview_window("main") {
+        let stored = settings::load(&settings::config_dir(app.handle()));
+        let _ = window.set_always_on_top(stored.always_on_top);
+      }
+
       // 兜底：前端要是没能把窗口叫起来（脚本报错、开发服务器没起来），
       // 过一会儿自己显示，别让应用变成「看不见的窗口」。
       let handle = app.handle().clone();
@@ -69,6 +75,12 @@ pub fn run() {
       mpv::pause_video,
       mpv::seek_to,
       mpv::seek_by,
+      mpv::step_frame,
+      mpv::chapters,
+      mpv::select_chapter,
+      mpv::ab_loop,
+      mpv::set_loop_a,
+      mpv::set_loop_b,
       mpv::set_volume,
       mpv::toggle_mute,
       mpv::set_speed,
@@ -117,6 +129,10 @@ pub fn run() {
       settings::read_settings,
       settings::write_settings,
       settings::remember_directory,
+      settings::remember_always_on_top,
+      settings::remember_mini_mode,
+      settings::set_shortcut,
+      settings::reset_shortcuts,
       sample::prepare_sample_folder,
       collections::read_collections,
       collections::toggle_playlist,
