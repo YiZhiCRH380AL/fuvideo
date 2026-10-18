@@ -32,6 +32,7 @@
     "targets": "all",
     "resources": [
       "binaries/mpv/*",
+      "binaries/yt-dlp/*",
       "resources/sample/*"
     ],
     "icon": [

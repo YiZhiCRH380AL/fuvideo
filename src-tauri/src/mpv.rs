@@ -2704,6 +2704,25 @@ mod tests {
     );
   }
 
+  /// 仓库里那份 yt-dlp 必须在，而且真能跑——安装包靠它解析网页地址。
+  #[test]
+  fn bundled_ytdlp_ships_with_the_repo_and_runs() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(r"binaries\yt-dlp\yt-dlp.exe");
+
+    assert!(path.is_file(), "缺少内置的 yt-dlp: {}", path.display());
+
+    let output = Command::new(&path)
+      .arg("--version")
+      .output()
+      .expect("运行内置的 yt-dlp");
+
+    assert!(output.status.success(), "yt-dlp --version 退出码非零");
+
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    assert!(!version.is_empty(), "yt-dlp 没有报出版本号");
+  }
+
   #[test]
   fn candidate_list_holds_full_executable_paths() {
     // 这里存的是完整 exe 路径。曾经把它当成目录再 join 一次文件名，

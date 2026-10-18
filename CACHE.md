@@ -2,6 +2,26 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：把 yt-dlp 内置进安装包
+
+- 下载了 **yt-dlp 2026.08.19**（17.8 MB），放在 `src-tauri/binaries/yt-dlp/yt-dlp.exe`，
+  用 GitHub API 给的 SHA256 校验过：
+  `66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a`。
+  这台机器直连 `github.com:443` 不通，但 `api.github.com` 与
+  `objects.githubusercontent.com` 通 —— 走 API 资产地址（octet-stream）就能下，
+  以后更新也照这条路走。
+- `tauri.conf.json` 的 `bundle.resources` 加了 `binaries/yt-dlp/*`。
+- `binaries/` 原来整目录被 gitignore（mpv 一百多 MB 不进仓库）。改成
+  `binaries/*` + 单独放行 `binaries/yt-dlp/`：**yt-dlp 进仓库**，mpv 仍然不进，
+  这样 clone 下来就能打出带内置 yt-dlp 的包。
+- `tauri dev` 下 Resource 目录指向 target/debug，找不到仓库里的那份；
+  `lib.rs` 的 setup 里加了一个开发兜底（`CARGO_MANIFEST_DIR/binaries/yt-dlp`）。
+- 新增用例 `bundled_ytdlp_ships_with_the_repo_and_runs`：文件在、能跑、有版本号。
+- 运行链路早就通了：`build_player_args` 对找到的 yt-dlp 加
+  `--script-opts=ytdl_hook-ytdl_path=…`，`probe_mpv` 报 `ytdlAvailable`。
+- 验证：Rust **144**（新增 1 条内置检查）、前端 255、e2e 19、build、lint 全绿。
+  跑整套 Rust 测试从 0.9s 变成 ~5s，是 yt-dlp 自身启动慢，不是挂住。
+
 ## 上一阶段：修迷你模式报错、置顶不生效、网页地址不播
 
 **迷你模式报错 + 置顶不生效：同一个根因——Tauri 2 的窗口权限。**

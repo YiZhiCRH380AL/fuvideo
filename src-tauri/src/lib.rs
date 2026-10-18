@@ -50,14 +50,26 @@ pub fn run() {
         mpv::set_bundled_mpv(bundled);
       }
 
-      // yt-dlp 是可选的：装了就用，没装也不影响本地播放
-      if let Ok(bundled) = app
+      /*
+       * yt-dlp 是可选的：装了就用，没装也不影响本地播放。
+       *
+       * 发布版从 Resource 目录拿；`tauri dev` 下 Resource 指向 target/debug，
+       * 那份不在那儿，所以再兜一个仓库里的 binaries 目录——否则开发时永远测不到内置的那份。
+       */
+      let bundled_ytdlp = app
         .path()
         .resolve("binaries/yt-dlp/yt-dlp.exe", tauri::path::BaseDirectory::Resource)
-      {
-        if bundled.is_file() {
-          mpv::set_bundled_ytdlp(bundled);
-        }
+        .ok()
+        .filter(|path| path.is_file())
+        .or_else(|| {
+          let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries/yt-dlp/yt-dlp.exe");
+
+          dev.is_file().then_some(dev)
+        });
+
+      if let Some(bundled) = bundled_ytdlp {
+        mpv::set_bundled_ytdlp(bundled);
       }
 
       if cfg!(debug_assertions) {

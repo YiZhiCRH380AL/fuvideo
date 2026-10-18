@@ -56,8 +56,11 @@ blob-report/
 
 # ---- 媒体大文件（如不需要可删除本段）----
 
-# ---- 随安装包分发的 mpv（体积过大，不进仓库）----
-src-tauri/binaries/
+# ---- 随安装包分发的二进制 ----
+# mpv 一百多 MB，不进仓库；yt-dlp 十几 MB，进仓库，保证 clone 下来就能打出内置版本
+src-tauri/binaries/*
+!src-tauri/binaries/yt-dlp/
+!src-tauri/binaries/yt-dlp/yt-dlp.exe
 *.mp4
 *.mov
 *.avi
