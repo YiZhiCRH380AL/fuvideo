@@ -491,3 +491,68 @@ test('方格墙可以按名字搜、按名字排', async ({ page }) => {
   expect(order[order.length - 1]).toBe('demo-1.mp4')
 })
 
+/**
+ * 窄窗口体检。
+ *
+ * 迷你模式把窗口缩到 560×315，而 640×400 是主窗口的尺寸下限。这两个尺寸下的布局
+ * 一直没人量过（也不该自己开窗口去试），这里把浏览器视口调成同样的尺寸，
+ * 量「有没有出界 / 被裁」——不是看截图顺不顺眼。
+ */
+for (const viewport of [
+  { width: 560, height: 315 },
+  { width: 640, height: 400 },
+]) {
+  test(`窄窗口 ${viewport.width}×${viewport.height}：灵动岛与 ⋮ 面板都不出界`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport)
+    await installFakeTauri(page)
+    await page.goto('/')
+    await waitForBoot(page)
+
+    await page.getByRole('button', { name: '选择目录' }).first().click()
+    await expect(page.getByTestId('video-grid')).toBeVisible()
+
+    await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+    await expect(page.getByTestId('expanded-tile')).toBeVisible()
+    // 转场幕布 520ms 后撤掉，等它走完再量
+    await expect(page.getByTestId('curtain')).toHaveCount(0, { timeout: 2000 })
+
+    const island = page.locator('.island')
+    const islandBox = await island.boundingBox()
+
+    expect(islandBox).not.toBeNull()
+    // 整块留在视口里：左、右、下三条边都不能越界
+    expect(islandBox!.x).toBeGreaterThanOrEqual(-0.5)
+    expect(islandBox!.x + islandBox!.width).toBeLessThanOrEqual(viewport.width + 0.5)
+    expect(islandBox!.y + islandBox!.height).toBeLessThanOrEqual(viewport.height + 0.5)
+
+    // 里面那一排控件不能横向撑出去（撑出去的部分会被裁掉，用户就点不到了）
+    const islandOverflow = await island.evaluate((node) => node.scrollWidth - node.clientWidth)
+
+    expect(islandOverflow).toBeLessThanOrEqual(1)
+
+    await page.getByRole('button', { name: '播放工具' }).click()
+
+    const panel = page.locator('.app__tools-menu .popover')
+    const panelBox = await panel.boundingBox()
+
+    expect(panelBox).not.toBeNull()
+    expect(panelBox!.x).toBeGreaterThanOrEqual(-0.5)
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(viewport.width + 0.5)
+    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(viewport.height + 0.5)
+
+    // 放不下的时候得能滚，而不是把底下的内容裁掉
+    const panelScroll = await panel.evaluate((node) => ({
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+    }))
+
+    expect(panelScroll.scrollHeight).toBeGreaterThan(0)
+    expect(panelScroll.clientHeight).toBeGreaterThan(0)
+
+    await page.waitForTimeout(600)
+    await page.screenshot({ path: `test-results/shots/narrow-${viewport.width}.png` })
+  })
+}
+

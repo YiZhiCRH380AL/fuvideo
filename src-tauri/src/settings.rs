@@ -99,6 +99,10 @@ const SHORTCUT_CODE_LIMIT: usize = 24;
 const COLOR_RANGE: (f64, f64) = (-100.0, 100.0);
 const SHARPEN_RANGE: (f64, f64) = (0.0, 5.0);
 const ZOOM_RANGE: (f64, f64) = (-20.0, 20.0);
+/// 音量条就是 0–100，不用 mpv 的软音量上限。
+const VOLUME_RANGE: (f64, f64) = (0.0, 100.0);
+/// 倍速的可调范围：比这更快听不清、更慢没有意义。
+const SPEED_RANGE: (f64, f64) = (0.25, 4.0);
 const TARGET_PEAK_RANGE: (f64, f64) = (10.0, 10_000.0);
 const HDR_RECOVERY_RANGE: (f64, f64) = (0.0, 2.0);
 
@@ -220,6 +224,10 @@ pub struct Settings {
   pub shortcuts: Option<BTreeMap<String, String>>,
   /// 开屏停留时长档位：off / fast / normal。
   pub splash_speed: String,
+  /// 上次的音量（0–100）。启动时当 `--volume` 传下去。
+  pub volume: Option<f64>,
+  /// 上次的倍速。启动时当 `--speed` 传下去。
+  pub speed: Option<f64>,
 }
 
 impl Default for Settings {
@@ -270,6 +278,8 @@ impl Default for Settings {
       mini_mode: false,
       shortcuts: None,
       splash_speed: default_splash_speed(),
+      volume: None,
+      speed: None,
     }
   }
 }
@@ -371,6 +381,9 @@ impl Settings {
     if !SPLASH_SPEEDS.contains(&self.splash_speed.as_str()) {
       self.splash_speed = default_splash_speed();
     }
+
+    self.volume = clamp_option(self.volume, VOLUME_RANGE);
+    self.speed = clamp_option(self.speed, SPEED_RANGE);
 
     self
   }
@@ -534,6 +547,14 @@ pub fn set_splash_speed(app: tauri::AppHandle, speed: String) -> Result<Settings
   update(&app, |settings| settings.splash_speed = speed)
 }
 
+/// 记住退出时的音量与倍速。退出时由 lib.rs 调，不走界面。
+pub fn remember_playback(app: &tauri::AppHandle, volume: f64, speed: f64) -> Result<Settings, String> {
+  update(app, |settings| {
+    settings.volume = Some(volume);
+    settings.speed = Some(speed);
+  })
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -634,6 +655,8 @@ mod tests {
       mini_mode: true,
       shortcuts: Some(BTreeMap::from([("toggle-mute".to_string(), "KeyQ".to_string())])),
       splash_speed: "fast".to_string(),
+      volume: Some(42.0),
+      speed: Some(1.25),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -770,6 +793,8 @@ mod tests {
       "miniMode",
       "shortcuts",
       "splashSpeed",
+      "volume",
+      "speed",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -884,6 +909,32 @@ mod tests {
 
       assert_eq!(&settings.splash_speed, speed);
     }
+  }
+
+  /// 退出时记的音量与倍速：越界的折回可用区间，坏值当没设置过。
+  #[test]
+  fn playback_prefs_are_clamped() {
+    assert_eq!(Settings::default().volume, None);
+    assert_eq!(Settings::default().speed, None);
+
+    let settings = Settings {
+      volume: Some(180.0),
+      speed: Some(0.0),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.volume, Some(VOLUME_RANGE.1));
+    assert_eq!(settings.speed, Some(SPEED_RANGE.0));
+
+    let broken = Settings {
+      volume: Some(f64::NAN),
+      speed: None,
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(broken.volume, None);
   }
 
   /// 改过键才写进文件；一条都没改时是 `None`，界面直接用默认表。

@@ -267,6 +267,21 @@ impl PlayerState {
     let _ = crate::recent::remember(directory, &path, position);
   }
 
+  /// 退出时要记住的音量与倍速。还没连上内核（这次没播过）时返回 `None`，
+  /// 别拿默认值把上次存的覆盖掉。
+  pub fn playback_prefs(&self) -> Option<(f64, f64)> {
+    let volume = self
+      .with_ipc(|client| client.get_number("volume"))
+      .ok()
+      .flatten()?;
+    let speed = self
+      .with_ipc(|client| client.get_number("speed"))
+      .ok()
+      .flatten()?;
+
+    Some((volume, speed))
+  }
+
   /// 播放中记下时长；播完之后靠它告诉界面「停在片尾」。
   fn remember_duration(&self, duration: f64) {
     if duration > 0.0 {
@@ -525,6 +540,15 @@ pub fn build_player_args(
 
   if settings.audio_spdif {
     args.push(format!("--audio-spdif={}", audio::SPDIF_CODECS));
+  }
+
+  // 上次的音量与倍速：启动时就带上，省得每次开机先调一遍
+  if let Some(volume) = settings.volume {
+    args.push(format!("--volume={volume}"));
+  }
+
+  if let Some(speed) = settings.speed {
+    args.push(format!("--speed={speed}"));
   }
 
   // 画面这边只有画质档位进命令行：其余项运行时都能写，硬解本来就在上面
@@ -2134,6 +2158,8 @@ mod tests {
       equalizer_preset: Some("music".to_string()),
       equalizer_bands: Some(vec![3.0; settings::EQUALIZER_BANDS]),
       video_profile: Some("high".to_string()),
+      volume: Some(55.0),
+      speed: Some(1.5),
       ..Settings::default()
     };
     let args = build_player_args(1, r"\\.\pipe\p", &settings, Path::new(r"E:\config"));
@@ -2151,6 +2177,8 @@ mod tests {
     assert!(args.contains(&"--audio-format=float".to_string()));
     assert!(args.contains(&format!("--audio-spdif={}", audio::SPDIF_CODECS)));
     assert!(args.contains(&"--profile=gpu-hq".to_string()));
+    assert!(args.contains(&"--volume=55".to_string()));
+    assert!(args.contains(&"--speed=1.5".to_string()));
   }
 
   #[test]

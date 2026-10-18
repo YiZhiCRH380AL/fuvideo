@@ -131,6 +131,10 @@ export interface PlayerSettings {
   shortcuts: Record<string, string> | null
   /** 开屏停留时长：off / fast / normal。 */
   splashSpeed: string
+  /** 上次的音量（0–100）；启动时直接带上。 */
+  volume: number | null
+  /** 上次的倍速；启动时直接带上。 */
+  speed: number | null
 }
 
 /** 一个章节。 */
@@ -247,6 +251,8 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   miniMode: false,
   shortcuts: null,
   splashSpeed: 'normal',
+  volume: null,
+  speed: null,
 }
 
 const IDLE_DETAILS: PlayerDetails = {

@@ -168,6 +168,10 @@ pub fn run() {
       // 先把「看到哪儿」记进最近播放，再让内核自己退
       let state = app_handle.state::<mpv::PlayerState>();
       state.remember_progress(&settings::config_dir(app_handle));
+      // 音量与倍速也记住：下次启动直接带上，不用每次开机重调
+      if let Some((volume, speed)) = state.playback_prefs() {
+        let _ = settings::remember_playback(app_handle, volume, speed);
+      }
       // 先让播放内核自己退出：它要趁这个时候把 watch-later（播放位置、
       // 每片的音轨与字幕选择）落盘。直接 kill 掉就什么都留不下。
       state.shutdown();

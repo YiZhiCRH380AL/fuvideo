@@ -118,6 +118,8 @@ const mocks = vi.hoisted(() => {
       miniMode: false,
       shortcuts: null,
       splashSpeed: 'normal',
+      volume: null,
+      speed: null,
     } as Record<string, unknown>,
     rememberDirectory: vi.fn(),
     rememberAlwaysOnTop: vi.fn(),
