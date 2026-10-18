@@ -89,6 +89,10 @@ const MEDIA_EXTENSIONS: &[&str] = &[
   ".m3u8", ".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg", ".opus",
 ];
 
+/// 网页地址打不开、又没装 yt-dlp 时的统一说法。
+const YTDL_MISSING_HINT: &str =
+  "这个网页地址需要 yt-dlp 才能解析。把 yt-dlp.exe 放进 PATH 或 C:\\yt-dlp\\，然后重启应用再试。";
+
 /// 随安装包一起分发的 mpv。有它就用它，不必要求用户自己装。
 static BUNDLED_MPV: OnceLock<PathBuf> = OnceLock::new();
 
@@ -517,6 +521,13 @@ pub fn find_ytdlp() -> Option<PathBuf> {
   find_ytdlp_with(BUNDLED_YTDLP.get())
 }
 
+/// 拼 `--script-opts`。它的值用 `,` 分隔、`=` 赋值，路径里的逗号要转义。
+fn ytdl_script_opt(path: &Path) -> String {
+  let text = path.to_string_lossy().replace(',', r"\,");
+
+  format!("--script-opts=ytdl_hook-ytdl_path={text}")
+}
+
 /// 探测指定路径的 mpv，`None` 表示没找到可执行文件。
 pub fn probe_at(executable: Option<&Path>) -> MpvProbe {
   let ytdlp = find_ytdlp();
@@ -638,11 +649,9 @@ pub fn build_player_args(
     args.push(format!("--speed={speed}"));
   }
 
-  // 自带 yt-dlp 时明确告诉 ytdl_hook 去哪儿找；装在 PATH 里的它自己会找。
-  if let Some(ytdlp) = BUNDLED_YTDLP.get() {
-    if ytdlp.is_file() {
-      args.push(format!("--script-opts=ytdl_hook-ytdl_path={}", ytdlp.display()));
-    }
+  // 找到 yt-dlp 就明确告诉 ytdl_hook 在哪儿：PATH 里的一并给绝对路径，省得再找。
+  if let Some(ytdlp) = find_ytdlp() {
+    args.push(ytdl_script_opt(&ytdlp));
   }
 
   // 画面这边只有画质档位进命令行：其余项运行时都能写，硬解本来就在上面
@@ -865,9 +874,7 @@ fn play_target(
    * 让用户等十几秒再报错，不如当场说清楚该装什么。
    */
   if is_known_site(&path) && find_ytdlp().is_none() {
-    return Err(
-      "这个网页地址需要 yt-dlp 才能解析。装好 yt-dlp 后重试，或者直接放视频直链。".to_string(),
-    );
+    return Err(YTDL_MISSING_HINT.to_string());
   }
 
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
@@ -1000,8 +1007,7 @@ fn wait_until_loaded(state: &PlayerState, timeout: Duration) -> bool {
 fn load_failure_message(path: &str) -> String {
   if is_web_page(path) {
     if find_ytdlp().is_none() {
-      return "这个网页地址需要 yt-dlp 才能解析。装好 yt-dlp 后重试，或者直接放视频直链。"
-        .to_string();
+      return YTDL_MISSING_HINT.to_string();
     }
 
     return "mpv 没能打开这个网页地址（站点可能要求登录，或者地址已经失效）。".to_string();
@@ -2683,6 +2689,19 @@ mod tests {
     assert_eq!(load_timeout("https://www.youtube.com/watch?v=1"), PAGE_LOAD_TIMEOUT);
     assert_eq!(load_timeout("https://cdn.test/a.mp4"), LOAD_TIMEOUT);
     assert_eq!(load_timeout(r"E:\clips\a.mkv"), LOAD_TIMEOUT);
+  }
+
+  /// `--script-opts` 的值用逗号分隔，路径里的逗号要转义，不然会被当成下一个选项。
+  #[test]
+  fn ytdl_script_opt_escapes_commas() {
+    assert_eq!(
+      ytdl_script_opt(Path::new(r"E:\tools\yt-dlp.exe")),
+      r"--script-opts=ytdl_hook-ytdl_path=E:\tools\yt-dlp.exe"
+    );
+    assert_eq!(
+      ytdl_script_opt(Path::new(r"E:\a,b\yt-dlp.exe")),
+      r"--script-opts=ytdl_hook-ytdl_path=E:\a\,b\yt-dlp.exe"
+    );
   }
 
   #[test]

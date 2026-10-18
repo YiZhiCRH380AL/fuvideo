@@ -23,7 +23,17 @@
 - 本机 `Get-Command yt-dlp` 为空 → B 站地址目前一定打不开，这是预期；装好后再试。
 - 新增判定 `is_web_page` / `has_media_extension` / `is_known_site` / `load_timeout`，各有单测。
 
-验证：Rust **142**（新增 4 条）、前端 **255**（新增 1 条）、e2e 19、typecheck、build、lint 全绿。
+**补充（用户复测反馈「提示装好后重试」之后）**
+
+- 实测这台机器**确实没装 yt-dlp**：`where yt-dlp` 为空，winget / scoop / pip / 常见目录都查过。
+- `build_player_args` 现在对**任何**找到的 yt-dlp 都加 `--script-opts=ytdl_hook-ytdl_path=…`
+  （原来只对安装包自带那份），所以放在 `C:\yt-dlp\` 也能用；路径里的逗号会转义。
+- 错误提示改成可照做的说法：「把 yt-dlp.exe 放进 PATH 或 C:\yt-dlp\，然后重启应用再试」。
+- **重启是必须的**：mpv 是常驻子进程，PATH 与 yt-dlp 位置只在启动时读一次；
+  装完不重启，已经在跑的内核看不到。
+
+验证：Rust **143**（新增 4 条判定 + 1 条参数转义）、前端 **255**、e2e 19、
+typecheck、build、lint 全绿。
 
 ## 上一阶段：输入设备 + yt-dlp（P5 收尾）
 
