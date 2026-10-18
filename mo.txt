@@ -1,7 +1,0 @@
-● Video  --vid=1  (h264 640x360 25.0836 fps 51 kbps) [default]
-● Audio  --aid=1  (aac 1ch 48000 Hz 69 kbps) [default]
-AO: [null] 48000Hz mono 1ch floatp
-VO: [null] 640x360 yuv444p
-AV: 00:00:00 / 00:00:12 (0%) A-V:  0.000
-AV: 00:00:00 / 00:00:12 (0%) A-V: -0.040
-Exiting... (End of file)
