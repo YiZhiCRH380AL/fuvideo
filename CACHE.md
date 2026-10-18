@@ -2,6 +2,16 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 上一阶段：0.2.0-Alpha 打包与更新文案
+
+- 版本号三处（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`）
+  改成 **0.2.0-Alpha**；`Cargo.lock` 由 cargo 自动跟随。
+- 应用内版本来自 vite 的 `__APP_VERSION__`（读 package.json），构建产物里已确认是 0.2.0-Alpha。
+- `npm run tauri build -- --bundles nsis` 出包：**53.2 MB**（比上一版多出内置 yt-dlp 的 17.8 MB）。
+- 校验：安装包对应的 `fuvideo.exe` 文件版本与产品版本都是 0.2.0-Alpha；
+  `target/release/binaries/` 里有 `mpv.exe`、`d3dcompiler_43.dll`、`yt-dlp.exe`。
+- 新增 [RELEASE_NOTES.md](RELEASE_NOTES.md)：相对 **0.1.0-Alpha**（不是 0.1.1）整理的新增与修复。
+
 ## 上一阶段：网址/设备播放时，目录区还挂着空状态引导
 
 - 症状：从空状态直接输网址播放，画面中间那句「选一个目录，把里面的视频铺成方格」不消失。
@@ -1278,15 +1288,13 @@ P1 加的东西教程里没讲，这次补上：
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（108 个）、
 `npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（23 个）全绿。
 
-## 当前产物（0.1.1-Alpha）
+## 当前产物（0.2.0-Alpha）
 
-> **版本号与发布方式都由用户拍板**：功能没做完整之前版本号保持 `0.1.1-Alpha`，
-> 不因为「加了很多功能」就升号。打包与发 Release 也一样——**用户说发才发**，
-> 平时不要自己跑 `tauri build`，也不要在 GitHub 上建 Release。
->
-> 现在 `src-tauri/target/release/` 里的东西是早先那次的产物，P3 画面与 P4 十条都没进去。
+> **版本号与发布方式都由用户拍板**。0.2.0-Alpha 是用户要求的（2026-10-18）；
+> 更新文案见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。以后不要自己升号，也不要在
+> GitHub 上建 Release——用户说发才发。
 
-版本号带 `-Alpha`，MSI 目标不接受非数字的预发布号，所以真要打包时只打 NSIS：
+版本号带 `-Alpha`，MSI 目标不接受非数字的预发布号，所以只打 NSIS：
 
 ```
 npm run tauri build -- --bundles nsis
@@ -1295,8 +1303,9 @@ npm run tauri build -- --bundles nsis
 | 产物 | 位置 |
 | --- | --- |
 | 主程序 | `src-tauri/target/release/fuvideo.exe` |
-| 安装包 | `src-tauri/target/release/bundle/nsis/fuvideo_0.1.1-Alpha_x64-setup.exe`（36.1 MB） |
+| 安装包 | `src-tauri/target/release/bundle/nsis/fuvideo_0.2.0-Alpha_x64-setup.exe`（53.2 MB） |
 
+安装包里带 `mpv.exe` + `d3dcompiler_43.dll` + `yt-dlp.exe`（17.8 MB）。
 `target/` 在 `.gitignore` 里，产物不进仓库。
 
 ## 路线图：播放器能力扩展（P0–P4 已完成，P5 待决策）
