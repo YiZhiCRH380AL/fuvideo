@@ -1493,6 +1493,47 @@
   color: var(--accent);
 }
 
+.paths__actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 2px 4px;
+}
+
+.paths__action {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.paths__action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.paths__action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.paths__notice {
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .paths {
   display: flex;
   flex-direction: column;

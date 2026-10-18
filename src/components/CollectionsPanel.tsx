@@ -20,6 +20,12 @@ export interface CollectionsPanelProps {
   onShift: (path: string, delta: number) => void
   /** 收藏夹用：跳到这个视频所在的目录，并把那一格高亮出来。 */
   onReveal: (path: string) => void
+  /** 导出成 m3u8（两种列表都有）。 */
+  onExport: (kind: CollectionKind) => void
+  /** 从 m3u8 导入（只有播放列表有）。 */
+  onImport: () => void
+  /** 导出/导入之后的一句结果。 */
+  notice: string | null
 }
 
 const TITLES: Record<CollectionKind, string> = {
@@ -48,6 +54,9 @@ export default function CollectionsPanel({
   onRemove,
   onShift,
   onReveal,
+  onExport,
+  onImport,
+  notice,
 }: CollectionsPanelProps) {
   /** 每一行的封面首帧。抓到一张补一张，抓不到就留一块空底。 */
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
@@ -89,9 +98,38 @@ export default function CollectionsPanel({
    */
   const thumbFor = (path: string): string | undefined => thumbs[path] ?? cachedThumbnail(path)
 
+  /** 两个按钮 + 一句结果。列表空的时候导出没有意义，直接禁用。 */
+  const actions = (
+    <>
+      <div className="paths__actions">
+        <button
+          className="paths__action"
+          type="button"
+          disabled={paths.length === 0}
+          onClick={() => onExport(kind)}
+        >
+          导出 .m3u8
+        </button>
+
+        {kind === 'playlist' ? (
+          <button className="paths__action" type="button" onClick={onImport}>
+            导入 .m3u8
+          </button>
+        ) : null}
+      </div>
+
+      {notice === null ? null : (
+        <p className="paths__notice" data-testid={`${kind}-notice`}>
+          {notice}
+        </p>
+      )}
+    </>
+  )
+
   if (paths.length === 0) {
     return (
       <>
+        {actions}
         {kind === 'playlist' ? <ModeRow modes={modes} mode={mode} onPick={onPickMode} /> : null}
         <p className="paths__empty" data-testid={`${kind}-empty`}>
           {EMPTY[kind]}
@@ -102,6 +140,7 @@ export default function CollectionsPanel({
 
   return (
     <>
+      {actions}
       {kind === 'playlist' ? <ModeRow modes={modes} mode={mode} onPick={onPickMode} /> : null}
 
       <ul className="paths" data-testid={`${kind}-list`}>

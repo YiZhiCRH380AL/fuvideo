@@ -139,6 +139,8 @@ pub fn run() {
       collections::toggle_playlist,
       collections::shift_in_playlist,
       collections::toggle_favorite,
+      collections::export_collection,
+      collections::import_playlist,
       library::pick_directory,
       library::list_directory,
       library::list_drives,

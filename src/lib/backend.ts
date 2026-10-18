@@ -550,6 +550,22 @@ export function toggleFavorite(path: string): Promise<Collections> {
 }
 
 /**
+ * 把播放列表或收藏夹导出成 m3u8，返回写到哪儿了。
+ * 用户取消时返回 null。
+ */
+export function exportCollection(kind: 'playlist' | 'favorites'): Promise<string | null> {
+  return playerCommand<string | null>('export_collection', { kind })
+}
+
+/**
+ * 从一个 m3u8 导入播放列表（并进现有的），返回改完之后的列表。
+ * 用户取消时返回 null。
+ */
+export function importPlaylist(): Promise<Collections | null> {
+  return playerCommand<Collections | null>('import_playlist')
+}
+
+/**
  * 暂停播放。已经暂停了就是空操作。
  *
  * 收起画面要走这条而不是 `togglePause`：收起可能被连着触发两次，

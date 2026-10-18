@@ -27,6 +27,8 @@ import {
   getCollections,
   getPlayOptions,
   getPlayerState,
+  exportCollection,
+  importPlaylist,
   isTauri,
   listDirectory,
   listDrives,
@@ -189,6 +191,8 @@ export default function App() {
   )
   /** 播放列表与收藏夹。两者都只是一串路径，顺序就是播放顺序。 */
   const [collections, setCollections] = useState<Collections>({ playlist: [], favorites: [] })
+  /** 导出/导入之后给用户看的一句话。 */
+  const [collectionNotice, setCollectionNotice] = useState<string | null>(null)
   /** 刚从收藏夹跳过来的那一个，会在方格墙上高亮一下。 */
   const [highlightPath, setHighlightPath] = useState<string | null>(null)
   /** 播放模式（顺序 / 单曲循环 / 列表循环 / 随机），决定「播完一个之后放什么」。 */
@@ -947,6 +951,41 @@ export default function App() {
    *
    * 先切目录再高亮：方格墙是换目录之后才铺出来的，顺序反了就没有格子可指。
    */
+  const handleExportCollection = useCallback(
+    async (kind: 'playlist' | 'favorites') => {
+      setCollectionNotice(null)
+
+      try {
+        const saved = await exportCollection(kind)
+
+        if (saved !== null) {
+          setCollectionNotice(`已导出到 ${saved}`)
+        }
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    },
+    [reportError],
+  )
+
+  const handleImportPlaylist = useCallback(async () => {
+    setCollectionNotice(null)
+
+    try {
+      const next = await importPlaylist()
+
+      // 用户取消是 null；假后端没有这条命令时也是 null
+      if (next === null || !Array.isArray(next.playlist)) {
+        return
+      }
+
+      setCollections(next)
+      setCollectionNotice(`已导入，播放列表现在有 ${next.playlist.length} 个视频`)
+    } catch (cause: unknown) {
+      reportError(cause)
+    }
+  }, [reportError])
+
   const handleRevealFavorite = useCallback(
     async (path: string) => {
       setOpenPanel(null)
@@ -1569,7 +1608,10 @@ export default function App() {
               <button
                 className="app__tool"
                 type="button"
-                onClick={() => setOpenPanel((open) => (open === 'playlist' ? null : 'playlist'))}
+                onClick={() => {
+                  setCollectionNotice(null)
+                  setOpenPanel((open) => (open === 'playlist' ? null : 'playlist'))
+                }}
                 aria-haspopup="dialog"
                 aria-expanded={openPanel === 'playlist'}
                 aria-label="播放列表"
@@ -1596,6 +1638,9 @@ export default function App() {
                   onRemove={handleTogglePlaylist}
                   onShift={handleShiftPlaylist}
                   onReveal={handleRevealFavorite}
+                  onExport={(kind) => void handleExportCollection(kind)}
+                  onImport={() => void handleImportPlaylist()}
+                  notice={collectionNotice}
                 />
               </Popover>
             </div>
@@ -1604,7 +1649,10 @@ export default function App() {
               <button
                 className="app__tool"
                 type="button"
-                onClick={() => setOpenPanel((open) => (open === 'favorites' ? null : 'favorites'))}
+                onClick={() => {
+                  setCollectionNotice(null)
+                  setOpenPanel((open) => (open === 'favorites' ? null : 'favorites'))
+                }}
                 aria-haspopup="dialog"
                 aria-expanded={openPanel === 'favorites'}
                 aria-label="收藏夹"
@@ -1631,6 +1679,9 @@ export default function App() {
                   onRemove={handleToggleFavorite}
                   onShift={handleShiftPlaylist}
                   onReveal={handleRevealFavorite}
+                  onExport={(kind) => void handleExportCollection(kind)}
+                  onImport={() => void handleImportPlaylist()}
+                  notice={collectionNotice}
                 />
               </Popover>
             </div>

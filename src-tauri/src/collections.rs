@@ -71,6 +71,103 @@ pub fn save(directory: &Path, collections: Collections) -> Result<Collections, S
   Ok(normalized)
 }
 
+/// m3u8 的第一行。
+const M3U8_HEADER: &str = "#EXTM3U";
+
+/// 把一串路径写成 m3u8。
+///
+/// 不写 `#EXTINF`：那行要时长，而我们手里只有路径，m3u8 允许只有 `#EXTM3U` 加路径。
+/// 路径统一成正斜杠——Windows 上的 mpv / VLC / 剪辑软件都认，别的平台也不会把
+/// 反斜杠当成转义。
+pub fn to_m3u8(paths: &[String]) -> String {
+  let mut text = String::from(M3U8_HEADER);
+  text.push('\n');
+
+  for path in paths {
+    text.push_str(&path.replace('\\', "/"));
+    text.push('\n');
+  }
+
+  text
+}
+
+/// 解析 m3u8。
+///
+/// 相对路径按**列表文件所在目录**解析，这是 m3u8 的标准语义；`file://` 前缀去掉。
+/// **不检查文件是否还存在**：列表是书签，文件暂时挪走了也不该在导入时被悄悄丢掉。
+pub fn parse_m3u8(text: &str, directory: Option<&Path>) -> Vec<String> {
+  let mut paths = Vec::new();
+
+  for line in text.lines() {
+    let line = line.trim();
+
+    if line.is_empty() || line.starts_with('#') {
+      continue;
+    }
+
+    let raw = strip_file_scheme(line);
+    let path = Path::new(&raw);
+
+    let resolved = if path.is_absolute() || raw.contains("://") {
+      raw.to_string()
+    } else if let Some(directory) = directory {
+      directory.join(path).to_string_lossy().to_string()
+    } else {
+      raw.to_string()
+    };
+
+    paths.push(normalize_separators(resolved));
+  }
+
+  normalize(paths)
+}
+
+/// 把绝对 Windows 路径统一成反斜杠。
+///
+/// 相对路径拼到目录上之后会得到 `E:\clips\sub/b.mp4` 这种混着两种分隔符的结果：
+/// 能用，但和列表里别的路径长得不一样，去重时会被当成两条。URIs 不动。
+fn normalize_separators(path: String) -> String {
+  if path.contains("://") {
+    return path;
+  }
+
+  let absolute = path.as_bytes().get(1) == Some(&b':') || path.starts_with(r"\\");
+
+  if absolute {
+    path.replace('/', r"\")
+  } else {
+    path
+  }
+}
+
+/// 去掉 `file://` 前缀并还原成 Windows 路径：
+/// `file:///E:/a.mkv` → `E:/a.mkv`，`file://server/share/b.mp4` → `\\server\share\b.mp4`。
+fn strip_file_scheme(line: &str) -> String {
+  let Some(rest) = line.strip_prefix("file://") else {
+    return line.to_string();
+  };
+
+  if let Some(without_slash) = rest.strip_prefix('/') {
+    // 盘符形式（/E:/…）才去掉那个斜杠
+    if without_slash.as_bytes().len() >= 2 && without_slash.as_bytes()[1] == b':' {
+      return without_slash.to_string();
+    }
+
+    return rest.to_string();
+  }
+
+  // UNC：file://server/share/… → \\server\share\…
+  format!(r"\\{}", rest.replace('/', r"\"))
+}
+
+/// 把导入的路径并进现有列表：已有的跳过，新的按顺序追加。
+pub fn merge_playlist(existing: &[String], incoming: &[String]) -> Vec<String> {
+  let mut merged = existing.to_vec();
+  merged.extend(incoming.iter().cloned());
+
+  normalize(merged)
+}
+
 /// 加进列表；已经在里面就移出去。
 ///
 /// 界面上那颗按钮是开关：鼠标移到方格上，加过一次之后再点是移出。
@@ -140,6 +237,60 @@ pub fn toggle_favorite(app: tauri::AppHandle, path: String) -> Result<Collection
 
   toggle(&mut current.favorites, &path);
   save(&directory, current)
+}
+
+/// 把播放列表或收藏夹导出成 m3u8。用户取消时返回 `None`。
+#[tauri::command(async)]
+pub fn export_collection(app: tauri::AppHandle, kind: String) -> Result<Option<String>, String> {
+  let current = load(&config_dir(&app));
+
+  let (paths, default_name) = match kind.as_str() {
+    "favorites" => (current.favorites, "收藏夹.m3u8"),
+    _ => (current.playlist, "播放列表.m3u8"),
+  };
+
+  if paths.is_empty() {
+    return Err("列表是空的，没有可导出的内容".to_string());
+  }
+
+  let Some(target) = rfd::FileDialog::new()
+    .set_title("导出列表")
+    .set_file_name(default_name)
+    .add_filter("M3U8 播放列表", &["m3u8"])
+    .save_file()
+  else {
+    return Ok(None);
+  };
+
+  fs::write(&target, to_m3u8(&paths)).map_err(|error| format!("写入列表失败: {error}"))?;
+
+  Ok(Some(target.to_string_lossy().to_string()))
+}
+
+/// 从一个 m3u8 导入：并进现有播放列表，返回改完之后的列表。用户取消时返回 `None`。
+#[tauri::command(async)]
+pub fn import_playlist(app: tauri::AppHandle) -> Result<Option<Collections>, String> {
+  let Some(source) = rfd::FileDialog::new()
+    .set_title("导入播放列表")
+    .add_filter("M3U8 播放列表", &["m3u8", "m3u"])
+    .pick_file()
+  else {
+    return Ok(None);
+  };
+
+  let text = fs::read_to_string(&source).map_err(|error| format!("读取列表失败: {error}"))?;
+  let incoming = parse_m3u8(&text, source.parent());
+
+  if incoming.is_empty() {
+    return Err("这个文件里没有可用的路径".to_string());
+  }
+
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+
+  current.playlist = merge_playlist(&current.playlist, &incoming);
+
+  save(&directory, current).map(Some)
 }
 
 #[cfg(test)]
@@ -244,5 +395,65 @@ mod tests {
     for key in ["playlist", "favorites"] {
       assert!(value.get(key).is_some(), "列表里缺少字段 {key}");
     }
+  }
+
+  /* ---------------- m3u8 导出 / 导入 ---------------- */
+
+  #[test]
+  fn m3u8_export_writes_a_header_and_one_path_per_line() {
+    let text = to_m3u8(&[r"E:\clips\a.mkv".to_string(), r"E:\clips\b.mp4".to_string()]);
+
+    assert_eq!(text, "#EXTM3U\nE:/clips/a.mkv\nE:/clips/b.mp4\n");
+  }
+
+  #[test]
+  fn m3u8_round_trip_keeps_order() {
+    let paths = vec![r"E:\clips\b.mp4".to_string(), r"E:\clips\a.mkv".to_string()];
+    let parsed = parse_m3u8(&to_m3u8(&paths), None);
+
+    // 导出写正斜杠（跨平台），读回来统一成 Windows 的反斜杠
+    assert_eq!(parsed, paths);
+  }
+
+  #[test]
+  fn m3u8_import_skips_comments_and_blank_lines() {
+    let text = "#EXTM3U\n#EXTINF:123,标题\n\nE:/clips/a.mkv\n  \n# 注释\nE:/clips/b.mp4\n";
+    let parsed = parse_m3u8(text, None);
+
+    assert_eq!(parsed, vec![r"E:\clips\a.mkv", r"E:\clips\b.mp4"]);
+  }
+
+  /// 相对路径按列表文件所在目录解析——这是 m3u8 的标准语义。
+  #[test]
+  fn m3u8_import_resolves_relative_paths_against_the_file() {
+    let parsed = parse_m3u8("a.mkv\nsub/b.mp4\n", Some(Path::new(r"E:\clips")));
+
+    assert_eq!(parsed, vec![r"E:\clips\a.mkv", r"E:\clips\sub\b.mp4"]);
+  }
+
+  #[test]
+  fn m3u8_import_strips_the_file_scheme() {
+    assert_eq!(
+      parse_m3u8("file:///E:/clips/a.mkv\nfile://server/share/b.mp4\n", None),
+      vec![r"E:\clips\a.mkv", r"\\server\share\b.mp4"]
+    );
+  }
+
+  /// 重复项会导入两次，之后自动连播就在原地打转——这里一并清掉。
+  #[test]
+  fn m3u8_import_dedupes_within_the_file() {
+    let parsed = parse_m3u8("E:/a.mkv\nE:/a.mkv\nE:/b.mp4\n", None);
+
+    assert_eq!(parsed, vec![r"E:\a.mkv", r"E:\b.mp4"]);
+  }
+
+  #[test]
+  fn merge_appends_only_new_paths() {
+    let merged = merge_playlist(
+      &[r"E:\a.mkv".to_string()],
+      &[r"E:\a.mkv".to_string(), r"E:\b.mp4".to_string()],
+    );
+
+    assert_eq!(merged, vec![r"E:\a.mkv", r"E:\b.mp4"]);
   }
 }

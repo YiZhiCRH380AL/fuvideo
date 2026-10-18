@@ -69,6 +69,8 @@ const mocks = vi.hoisted(() => {
     togglePlaylist: vi.fn(),
     shiftInPlaylist: vi.fn(),
     toggleFavorite: vi.fn(),
+    exportCollection: vi.fn(),
+    importPlaylist: vi.fn(),
     // 设置页要用的一份设置：字段和 Rust 侧对齐，少一个字段界面就会读成 undefined
     settings: {
       hwdec: 'auto-safe',
@@ -173,6 +175,8 @@ vi.mock('./lib/backend', () => ({
   togglePlaylist: (path: string) => mocks.togglePlaylist(path),
   shiftInPlaylist: (path: string, delta: number) => mocks.shiftInPlaylist(path, delta),
   toggleFavorite: (path: string) => mocks.toggleFavorite(path),
+  exportCollection: (kind: 'playlist' | 'favorites') => mocks.exportCollection(kind),
+  importPlaylist: () => mocks.importPlaylist(),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
   listDrives: () => mocks.listDrives(),
   thumbnailAt: (source: string, position: number) => mocks.thumbnailAt(source, position),
@@ -336,6 +340,8 @@ beforeEach(() => {
     mocks.togglePlaylist,
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
+    mocks.exportCollection,
+    mocks.importPlaylist,
     mocks.rememberDirectory,
     mocks.rememberAlwaysOnTop,
     mocks.rememberMiniMode,
@@ -353,6 +359,8 @@ beforeEach(() => {
 
   mocks.getChapters.mockResolvedValue([])
   mocks.getLoopPoints.mockResolvedValue({ a: null, b: null })
+  mocks.exportCollection.mockResolvedValue(String.raw`E:\clips\playlist.m3u8`)
+  mocks.importPlaylist.mockResolvedValue(null)
   mocks.togglePause.mockResolvedValue(false)
   mocks.toggleMute.mockResolvedValue(true)
   mocks.toggleFullscreen.mockResolvedValue(true)
@@ -1576,5 +1584,54 @@ describe('逐帧快捷键', () => {
 
     fireEvent.keyDown(window, { code: 'Comma' })
     await waitFor(() => expect(mocks.stepFrame).toHaveBeenCalledWith(false))
+  })
+})
+
+describe('播放列表导出 / 导入', () => {
+  /** 打开播放列表面板。 */
+  async function openPlaylist(): Promise<HTMLElement> {
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+
+    return screen.getByRole('dialog', { name: '播放列表' })
+  }
+
+  it('导出走后端，并把写到哪儿显示出来', async () => {
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+    render(<App />)
+
+    const dialog = await openPlaylist()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '导出 .m3u8' }))
+
+    await waitFor(() => expect(mocks.exportCollection).toHaveBeenCalledWith('playlist'))
+    expect(await screen.findByTestId('playlist-notice')).toHaveTextContent('playlist.m3u8')
+  })
+
+  it('导入会把并好的列表铺回来，并说清楚现在有几个', async () => {
+    mocks.importPlaylist.mockResolvedValue({ playlist: [DEMO, OTHER], favorites: [] })
+    render(<App />)
+
+    const dialog = await openPlaylist()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '导入 .m3u8' }))
+
+    await waitFor(() => expect(mocks.importPlaylist).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('playlist-notice')).toHaveTextContent('2 个视频')
+    expect(screen.getByTestId('playlist-list')).toHaveTextContent('other.mkv')
+  })
+
+  /** 用户点「取消」时后端给的是 null：什么都不该变，也不该弹错误。 */
+  it('导入取消时列表和提示都不动', async () => {
+    mocks.collections = { playlist: [DEMO], favorites: [] }
+    mocks.importPlaylist.mockResolvedValue(null)
+    render(<App />)
+
+    const dialog = await openPlaylist()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '导入 .m3u8' }))
+
+    await waitFor(() => expect(mocks.importPlaylist).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('playlist-notice')).toBeNull()
+    expect(screen.getByTestId('playlist-list')).toHaveTextContent('demo.mp4')
   })
 })
