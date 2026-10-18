@@ -17,6 +17,7 @@
 - `tauri dev` 下 Resource 目录指向 target/debug，找不到仓库里的那份；
   `lib.rs` 的 setup 里加了一个开发兜底（`CARGO_MANIFEST_DIR/binaries/yt-dlp`）。
 - 新增用例 `bundled_ytdlp_ships_with_the_repo_and_runs`：文件在、能跑、有版本号。
+- 网页地址的等待上限从 12 秒放宽到 20 秒（yt-dlp 解析慢的时候 12 秒会误判成打不开）。
 - 运行链路早就通了：`build_player_args` 对找到的 yt-dlp 加
   `--script-opts=ytdl_hook-ytdl_path=…`，`probe_mpv` 报 `ytdlAvailable`。
 - 验证：Rust **144**（新增 1 条内置检查）、前端 255、e2e 19、build、lint 全绿。

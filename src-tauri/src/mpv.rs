@@ -70,7 +70,8 @@ const QUIT_TIMEOUT: Duration = Duration::from_secs(3);
 ///
 /// 本地文件几十毫秒就好；网络流要握手；网页地址还要等 yt-dlp 解析，给得宽一点。
 const LOAD_TIMEOUT: Duration = Duration::from_secs(6);
-const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(12);
+/// 网页地址还要等 yt-dlp 解析出直链，慢的时候十几秒也正常。
+const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// 这些站点的地址必须靠 yt-dlp 解析，mpv 自己打不开网页。
 const KNOWN_SITE_HOSTS: &[&str] = &[
