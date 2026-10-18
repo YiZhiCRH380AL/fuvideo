@@ -170,6 +170,19 @@ export interface Recent {
   entries: RecentEntry[]
 }
 
+/** 一条书签：某部片子的第几秒。 */
+export interface Bookmark {
+  path: string
+  /** 时间点，秒。 */
+  position: number
+  /** 打标记的时刻（Unix 秒），只用来排先后。 */
+  createdAt: number
+}
+
+export interface Bookmarks {
+  entries: Bookmark[]
+}
+
 /** 设置页「画面」那一节要用的选项表。 */
 export interface VideoOptions {
   colorLimit: number
@@ -760,6 +773,21 @@ export function clearRecent(): Promise<Recent> {
 /** 从最近播放里去掉一条。 */
 export function forgetRecent(path: string): Promise<Recent> {
   return playerCommand<Recent>('forget_recent', { path })
+}
+
+/** 读全部书签（界面按当前文件过滤）。 */
+export function getBookmarks(): Promise<Bookmarks> {
+  return playerCommand<Bookmarks>('read_bookmarks')
+}
+
+/** 在某个时间点加一条书签，返回改完之后的整份。 */
+export function addBookmark(path: string, position: number): Promise<Bookmarks> {
+  return playerCommand<Bookmarks>('add_bookmark', { path, position })
+}
+
+/** 去掉某个文件在某个时间点的那条书签。 */
+export function removeBookmark(path: string, position: number): Promise<Bookmarks> {
+  return playerCommand<Bookmarks>('remove_bookmark', { path, position })
 }
 
 /** 设 A 点；传 null 表示清除。 */

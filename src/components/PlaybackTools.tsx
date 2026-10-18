@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  addBookmark,
   clearRecent,
   forgetRecent,
+  getBookmarks,
   getChapters,
   getLoopPoints,
   getRecent,
+  removeBookmark,
   selectChapter,
+  seekTo,
   setLoopA,
   setLoopB,
+  type Bookmark,
   type ChapterInfo,
   type LoopPoints,
   type RecentEntry,
@@ -76,6 +81,7 @@ export default function PlaybackTools({
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [loop, setLoop] = useState<LoopPoints>({ a: null, b: null })
   const [recent, setRecent] = useState<RecentEntry[]>([])
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [url, setUrl] = useState('')
 
   /** 重读章节表与 AB 点。换片、跳章节、设端点之后都要来一次。 */
@@ -119,6 +125,63 @@ export default function PlaybackTools({
   useEffect(() => {
     void loadRecent()
   }, [loadRecent])
+
+  /**
+   * 书签是全局一份，界面上只摆当前这部片子的。
+   *
+   * 存在本机、按路径分组：换片之后不用重新读，过滤一下就行。
+   */
+  const loadBookmarks = useCallback(async () => {
+    try {
+      const next = await getBookmarks()
+
+      setBookmarks(Array.isArray(next?.entries) ? next.entries : [])
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    void loadBookmarks()
+  }, [loadBookmarks])
+
+  const mine = bookmarks.filter((bookmark) => bookmark.path === source)
+
+  const markBookmark = useCallback(async () => {
+    if (source === null) {
+      return
+    }
+
+    try {
+      const next = await addBookmark(source, Math.max(0, position))
+      setBookmarks(Array.isArray(next?.entries) ? next.entries : [])
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }, [onError, position, source])
+
+  const dropBookmark = useCallback(
+    async (bookmark: Bookmark) => {
+      try {
+        const next = await removeBookmark(bookmark.path, bookmark.position)
+        setBookmarks(Array.isArray(next?.entries) ? next.entries : [])
+      } catch (cause: unknown) {
+        onError(cause)
+      }
+    },
+    [onError],
+  )
+
+  const jumpTo = useCallback(
+    async (seconds: number) => {
+      try {
+        await seekTo(seconds)
+      } catch (cause: unknown) {
+        onError(cause)
+      }
+    },
+    [onError],
+  )
 
   const clear = useCallback(async () => {
     try {
@@ -251,6 +314,52 @@ export default function PlaybackTools({
                   <span className="tools__chapter-name">
                     {chapter.title ?? `第 ${chapter.index + 1} 章`}
                   </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="tools__block">
+        <div className="tools__head">
+          <h4 className="tools__title">书签</h4>
+
+          <button
+            className="tools__link"
+            type="button"
+            disabled={source === null}
+            onClick={() => void markBookmark()}
+          >
+            在 {formatDuration(position)} 加
+          </button>
+        </div>
+
+        {mine.length === 0 ? (
+          <p className="tools__hint" data-testid="tools-bookmarks-empty">
+            {source === null ? '先放一个视频再加书签' : '这部片子还没有书签'}
+          </p>
+        ) : (
+          <ul className="tools__chapters tools__recent" data-testid="tools-bookmarks">
+            {mine.map((bookmark) => (
+              <li className="tools__recent-row" key={bookmark.position}>
+                <button
+                  className="tools__chapter"
+                  type="button"
+                  title={`跳到 ${formatDuration(bookmark.position)}`}
+                  onClick={() => void jumpTo(bookmark.position)}
+                >
+                  <span className="tools__chapter-name">{formatDuration(bookmark.position)}</span>
+                </button>
+
+                <button
+                  className="tools__remove"
+                  type="button"
+                  aria-label={`去掉 ${formatDuration(bookmark.position)} 的书签`}
+                  title="去掉这条书签"
+                  onClick={() => void dropBookmark(bookmark)}
+                >
+                  ✕
                 </button>
               </li>
             ))}

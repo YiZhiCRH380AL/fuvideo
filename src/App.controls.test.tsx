@@ -138,6 +138,15 @@ const mocks = vi.hoisted(() => {
     forgetRecent: vi.fn(async (_path: string) => ({
       entries: [] as { path: string; playedAt: number; position: number }[],
     })),
+    getBookmarks: vi.fn(async () => ({
+      entries: [] as { path: string; position: number; createdAt: number }[],
+    })),
+    addBookmark: vi.fn(async (_path: string, _position: number) => ({
+      entries: [] as { path: string; position: number; createdAt: number }[],
+    })),
+    removeBookmark: vi.fn(async (_path: string, _position: number) => ({
+      entries: [] as { path: string; position: number; createdAt: number }[],
+    })),
     selectChapter: vi.fn(async (_index: number) => {}),
     setLoopA: vi.fn(async (_seconds: number | null) => {}),
     setLoopB: vi.fn(async (_seconds: number | null) => {}),
@@ -307,6 +316,9 @@ vi.mock('./lib/backend', () => ({
   getRecent: () => mocks.getRecent(),
   clearRecent: () => mocks.clearRecent(),
   forgetRecent: (path: string) => mocks.forgetRecent(path),
+  getBookmarks: () => mocks.getBookmarks(),
+  addBookmark: (path: string, position: number) => mocks.addBookmark(path, position),
+  removeBookmark: (path: string, position: number) => mocks.removeBookmark(path, position),
   clearCollection: (kind: 'playlist' | 'favorites') => mocks.clearCollection(kind),
   setLoopA: (seconds: number | null) => mocks.setLoopA(seconds),
   setLoopB: (seconds: number | null) => mocks.setLoopB(seconds),
@@ -366,6 +378,9 @@ beforeEach(() => {
     mocks.getRecent,
     mocks.clearRecent,
     mocks.forgetRecent,
+    mocks.getBookmarks,
+    mocks.addBookmark,
+    mocks.removeBookmark,
     mocks.clearCollection,
     mocks.selectChapter,
     mocks.setLoopA,
@@ -382,6 +397,7 @@ beforeEach(() => {
   mocks.getRecent.mockResolvedValue({ entries: [] })
   mocks.clearRecent.mockResolvedValue({ entries: [] })
   mocks.forgetRecent.mockResolvedValue({ entries: [] })
+  mocks.getBookmarks.mockResolvedValue({ entries: [] })
   mocks.clearCollection.mockImplementation(async (kind: string) =>
     kind === 'favorites'
       ? { ...mocks.collections, favorites: [] }
@@ -1779,5 +1795,63 @@ describe('列表清空与单条移除', () => {
       expect(within(list).queryByRole('button', { name: /^demo\.mp4/ })).toBeNull(),
     )
     expect(within(list).getByRole('button', { name: /^other\.mkv/ })).toBeInTheDocument()
+  })
+})
+
+describe('书签', () => {
+  const bookmark = (path: string, position: number) => ({ path, position, createdAt: 100 })
+
+  /** 打开播放工具面板。 */
+  async function openTools(): Promise<HTMLElement> {
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+
+    return screen.findByTestId('playback-tools')
+  }
+
+  it('只列当前这部片子的书签，点一条跳到那个时间点', async () => {
+    mocks.getBookmarks.mockResolvedValue({
+      entries: [bookmark(DEMO, 65), bookmark(OTHER, 12)],
+    })
+
+    await openPlayingVideo()
+    const panel = await openTools()
+    const list = await within(panel).findByTestId('tools-bookmarks')
+
+    expect(within(list).getByRole('button', { name: '1:05' })).toBeInTheDocument()
+    // 别的片子的书签不该出现在当前文件下面
+    expect(within(list).queryByRole('button', { name: '0:12' })).toBeNull()
+
+    await userEvent.click(within(list).getByRole('button', { name: '1:05' }))
+
+    await waitFor(() => expect(mocks.seekTo).toHaveBeenCalledWith(65))
+  })
+
+  it('在当前位置加一条，位置用的是播放进度', async () => {
+    mocks.addBookmark.mockResolvedValue({ entries: [bookmark(DEMO, 65)] })
+
+    await openPlayingVideo({ position: 65 })
+    const panel = await openTools()
+
+    await userEvent.click(within(panel).getByRole('button', { name: '在 1:05 加' }))
+
+    await waitFor(() => expect(mocks.addBookmark).toHaveBeenCalledWith(DEMO, 65))
+    expect(await within(panel).findByTestId('tools-bookmarks')).toHaveTextContent('1:05')
+  })
+
+  it('✕ 只去掉那一条书签', async () => {
+    mocks.getBookmarks.mockResolvedValue({
+      entries: [bookmark(DEMO, 65), bookmark(DEMO, 90)],
+    })
+    mocks.removeBookmark.mockResolvedValue({ entries: [bookmark(DEMO, 90)] })
+
+    await openPlayingVideo()
+    const panel = await openTools()
+    const list = await within(panel).findByTestId('tools-bookmarks')
+
+    await userEvent.click(within(list).getByRole('button', { name: '去掉 1:05 的书签' }))
+
+    await waitFor(() => expect(mocks.removeBookmark).toHaveBeenCalledWith(DEMO, 65))
+    await waitFor(() => expect(within(list).queryByRole('button', { name: '1:05' })).toBeNull())
+    expect(within(list).getByRole('button', { name: '1:30' })).toBeInTheDocument()
   })
 })

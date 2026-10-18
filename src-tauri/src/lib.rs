@@ -1,4 +1,5 @@
 mod audio;
+mod bookmarks;
 mod collections;
 mod library;
 mod mpv;
@@ -162,6 +163,9 @@ pub fn run() {
       collections::clear_collection,
       collections::export_collection,
       collections::import_playlist,
+      bookmarks::read_bookmarks,
+      bookmarks::add_bookmark,
+      bookmarks::remove_bookmark,
       recent::read_recent,
       recent::clear_recent,
       recent::forget_recent,

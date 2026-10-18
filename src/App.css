@@ -96,6 +96,11 @@
   color: var(--accent);
 }
 
+.tools__link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .tools__hint {
   margin: 0;
   color: var(--text-muted);
