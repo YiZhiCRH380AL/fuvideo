@@ -203,6 +203,48 @@
   flex: 1;
 }
 
+.tools__recent-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tools__recent-row .tools__chapter {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 单条移除：悬停整行才露出来，和方格上的动作按钮一套做法 */
+.tools__remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.tools__recent-row:hover .tools__remove,
+.tools__remove:focus-visible {
+  opacity: 1;
+}
+
+.tools__remove:hover {
+  color: var(--danger);
+}
+
 .tools__toggle {
   display: flex;
   align-items: center;
@@ -1548,6 +1590,12 @@
 .paths__action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* 清空是破坏性操作：按下第一下之后变红，提醒「再点就没了」 */
+.paths__action--danger[data-confirming='true'] {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .paths__notice {

@@ -134,6 +134,13 @@ pub fn remember(directory: &Path, path: &str, position: f64) -> Result<Recent, S
   save(directory, current)
 }
 
+/// 从最近播放里去掉一条。不在里面就是空操作。
+pub fn forget(entries: &mut Vec<RecentEntry>, path: &str) {
+  let path = path.trim();
+
+  entries.retain(|entry| entry.path != path);
+}
+
 fn now_seconds() -> u64 {
   std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
@@ -151,6 +158,17 @@ pub fn read_recent(app: tauri::AppHandle) -> Recent {
 #[tauri::command]
 pub fn clear_recent(app: tauri::AppHandle) -> Result<Recent, String> {
   save(&crate::settings::config_dir(&app), Recent::default())
+}
+
+/// 从最近播放里去掉一条。返回改完之后的列表。
+#[tauri::command]
+pub fn forget_recent(app: tauri::AppHandle, path: String) -> Result<Recent, String> {
+  let directory = crate::settings::config_dir(&app);
+  let mut current = load(&directory);
+
+  forget(&mut current.entries, &path);
+
+  save(&directory, current)
 }
 
 #[cfg(test)]
@@ -279,5 +297,33 @@ mod tests {
     assert_eq!(load(&directory).entries[0].position, 42.0);
 
     let _ = fs::remove_dir_all(&directory);
+  }
+
+  /// 只去掉点名的那一条，别的条目和顺序都不动。
+  #[test]
+  fn forget_removes_only_the_named_entry() {
+    let mut entries = vec![
+      entry(r"E:\a.mkv", 300, 10.0),
+      entry(r"E:\b.mp4", 200, 20.0),
+      entry(r"E:\c.mkv", 100, 30.0),
+    ];
+
+    forget(&mut entries, r"E:\b.mp4");
+
+    assert_eq!(
+      entries.iter().map(|item| item.path.as_str()).collect::<Vec<_>>(),
+      vec![r"E:\a.mkv", r"E:\c.mkv"]
+    );
+  }
+
+  /// 不在列表里的路径是空操作：不该把整份记录弄坏。
+  #[test]
+  fn forgetting_something_absent_changes_nothing() {
+    let mut entries = vec![entry(r"E:\a.mkv", 300, 10.0)];
+
+    forget(&mut entries, r"E:\nope.mkv");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].path, r"E:\a.mkv");
   }
 }

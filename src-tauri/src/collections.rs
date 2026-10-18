@@ -195,6 +195,15 @@ fn shift(paths: &mut [String], path: &str, delta: i32) {
   paths.swap(index, target as usize);
 }
 
+/// 清空某一侧，另一侧不动。
+fn clear_list(collections: &mut Collections, kind: &str) {
+  if kind == "favorites" {
+    collections.favorites.clear();
+  } else {
+    collections.playlist.clear();
+  }
+}
+
 fn config_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
   crate::settings::config_dir(app)
 }
@@ -236,6 +245,17 @@ pub fn toggle_favorite(app: tauri::AppHandle, path: String) -> Result<Collection
   let mut current = load(&directory);
 
   toggle(&mut current.favorites, &path);
+  save(&directory, current)
+}
+
+/// 一键清空播放列表或收藏夹。另一侧不动。
+#[tauri::command]
+pub fn clear_collection(app: tauri::AppHandle, kind: String) -> Result<Collections, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+
+  clear_list(&mut current, &kind);
+
   save(&directory, current)
 }
 
@@ -455,5 +475,21 @@ mod tests {
     );
 
     assert_eq!(merged, vec![r"E:\a.mkv", r"E:\b.mp4"]);
+  }
+
+  /// 清空只动被点的那一侧：清播放列表不该把收藏夹也清掉。
+  #[test]
+  fn clearing_one_list_leaves_the_other_alone() {
+    let mut collections = Collections {
+      playlist: vec![r"E:\a.mkv".to_string()],
+      favorites: vec![r"E:\b.mp4".to_string()],
+    };
+
+    clear_list(&mut collections, "playlist");
+    assert!(collections.playlist.is_empty());
+    assert_eq!(collections.favorites, vec![r"E:\b.mp4"]);
+
+    clear_list(&mut collections, "favorites");
+    assert!(collections.favorites.is_empty());
   }
 }

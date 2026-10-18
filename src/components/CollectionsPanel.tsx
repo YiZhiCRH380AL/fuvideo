@@ -24,6 +24,8 @@ export interface CollectionsPanelProps {
   onExport: (kind: CollectionKind) => void
   /** 从 m3u8 导入（只有播放列表有）。 */
   onImport: () => void
+  /** 一键清空这一侧。 */
+  onClear: (kind: CollectionKind) => void
   /** 导出/导入之后的一句结果。 */
   notice: string | null
 }
@@ -56,10 +58,18 @@ export default function CollectionsPanel({
   onReveal,
   onExport,
   onImport,
+  onClear,
   notice,
 }: CollectionsPanelProps) {
   /** 每一行的封面首帧。抓到一张补一张，抓不到就留一块空底。 */
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
+  /**
+   * 清空要按两下：第一下变成「确认清空？」，第二下才真的清。
+   *
+   * 这份列表是用户一条条攒出来的，误点一下全没了太难受；面板一关就重置，
+   * 不会留下一个「待确认」的状态。
+   */
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -98,7 +108,7 @@ export default function CollectionsPanel({
    */
   const thumbFor = (path: string): string | undefined => thumbs[path] ?? cachedThumbnail(path)
 
-  /** 两个按钮 + 一句结果。列表空的时候导出没有意义，直接禁用。 */
+  /** 导出 / 导入 / 清空 + 一句结果。列表空的时候前两个没有意义，直接禁用。 */
   const actions = (
     <>
       <div className="paths__actions">
@@ -116,6 +126,24 @@ export default function CollectionsPanel({
             导入 .m3u8
           </button>
         ) : null}
+
+        <button
+          className="paths__action paths__action--danger"
+          type="button"
+          data-confirming={confirming ? 'true' : 'false'}
+          disabled={paths.length === 0}
+          onClick={() => {
+            if (!confirming) {
+              setConfirming(true)
+              return
+            }
+
+            setConfirming(false)
+            onClear(kind)
+          }}
+        >
+          {confirming ? '确认清空？' : '清空'}
+        </button>
       </div>
 
       {notice === null ? null : (

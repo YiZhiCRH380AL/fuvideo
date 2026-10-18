@@ -69,6 +69,7 @@ const mocks = vi.hoisted(() => {
     togglePlaylist: vi.fn(),
     shiftInPlaylist: vi.fn(),
     toggleFavorite: vi.fn(),
+    clearCollection: vi.fn(async (_kind: string) => ({ playlist: [] as string[], favorites: [] as string[] })),
     exportCollection: vi.fn(),
     importPlaylist: vi.fn(),
     // 设置页要用的一份设置：字段和 Rust 侧对齐，少一个字段界面就会读成 undefined
@@ -127,7 +128,10 @@ const mocks = vi.hoisted(() => {
     getChapters: vi.fn(async () => [] as { index: number; title: string | null; time: number }[]),
     getLoopPoints: vi.fn(async () => ({ a: null as number | null, b: null as number | null })),
     getRecent: vi.fn(async () => ({ entries: [] as { path: string; playedAt: number; position: number }[] })),
-    clearRecent: vi.fn(async () => ({ entries: [] })),
+    clearRecent: vi.fn(async () => ({ entries: [] as { path: string; playedAt: number; position: number }[] })),
+    forgetRecent: vi.fn(async (_path: string) => ({
+      entries: [] as { path: string; playedAt: number; position: number }[],
+    })),
     selectChapter: vi.fn(async (_index: number) => {}),
     setLoopA: vi.fn(async (_seconds: number | null) => {}),
     setLoopB: vi.fn(async (_seconds: number | null) => {}),
@@ -296,6 +300,8 @@ vi.mock('./lib/backend', () => ({
   getLoopPoints: () => mocks.getLoopPoints(),
   getRecent: () => mocks.getRecent(),
   clearRecent: () => mocks.clearRecent(),
+  forgetRecent: (path: string) => mocks.forgetRecent(path),
+  clearCollection: (kind: 'playlist' | 'favorites') => mocks.clearCollection(kind),
   setLoopA: (seconds: number | null) => mocks.setLoopA(seconds),
   setLoopB: (seconds: number | null) => mocks.setLoopB(seconds),
   getPlayOptions: async () => mocks.getPlayOptions(),
@@ -353,6 +359,8 @@ beforeEach(() => {
     mocks.getLoopPoints,
     mocks.getRecent,
     mocks.clearRecent,
+    mocks.forgetRecent,
+    mocks.clearCollection,
     mocks.selectChapter,
     mocks.setLoopA,
     mocks.setLoopB,
@@ -367,6 +375,12 @@ beforeEach(() => {
   mocks.getLoopPoints.mockResolvedValue({ a: null, b: null })
   mocks.getRecent.mockResolvedValue({ entries: [] })
   mocks.clearRecent.mockResolvedValue({ entries: [] })
+  mocks.forgetRecent.mockResolvedValue({ entries: [] })
+  mocks.clearCollection.mockImplementation(async (kind: string) =>
+    kind === 'favorites'
+      ? { ...mocks.collections, favorites: [] }
+      : { ...mocks.collections, playlist: [] },
+  )
   mocks.exportCollection.mockResolvedValue(String.raw`E:\clips\playlist.m3u8`)
   mocks.importPlaylist.mockResolvedValue(null)
   mocks.togglePause.mockResolvedValue(false)
@@ -1659,10 +1673,11 @@ describe('最近播放', () => {
     const list = await screen.findByTestId('tools-recent')
 
     // 看过的显示停在哪，没看过的显示「从头」
-    expect(within(list).getByRole('button', { name: /demo\.mp4/ })).toHaveTextContent('1:05')
-    expect(within(list).getByRole('button', { name: /other\.mkv/ })).toHaveTextContent('从头')
+    // 用 ^ 锚住文件名：每行还有一颗「从最近播放里去掉 …」的按钮，也带文件名
+    expect(within(list).getByRole('button', { name: /^demo\.mp4/ })).toHaveTextContent('1:05')
+    expect(within(list).getByRole('button', { name: /^other\.mkv/ })).toHaveTextContent('从头')
 
-    await userEvent.click(within(list).getByRole('button', { name: /demo\.mp4/ }))
+    await userEvent.click(within(list).getByRole('button', { name: /^demo\.mp4/ }))
 
     await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledWith(DEMO))
   })
@@ -1681,5 +1696,53 @@ describe('最近播放', () => {
 
     await waitFor(() => expect(mocks.clearRecent).toHaveBeenCalledTimes(1))
     expect(await screen.findByTestId('tools-recent-empty')).toBeInTheDocument()
+  })
+})
+
+describe('列表清空与单条移除', () => {
+  /** 清空会丢东西，所以要点两下；第一下只把按钮变成「确认清空？」。 */
+  it('清空要按两下，第二下才真的清', async () => {
+    mocks.collections = { playlist: [DEMO, OTHER], favorites: [] }
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+    const dialog = screen.getByRole('dialog', { name: '播放列表' })
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '清空' }))
+
+    expect(within(dialog).getByRole('button', { name: '确认清空？' })).toBeInTheDocument()
+    expect(mocks.clearCollection).not.toHaveBeenCalled()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认清空？' }))
+
+    await waitFor(() => expect(mocks.clearCollection).toHaveBeenCalledWith('playlist'))
+    expect(await screen.findByTestId('playlist-notice')).toHaveTextContent('播放列表已清空')
+    expect(await screen.findByTestId('playlist-empty')).toBeInTheDocument()
+  })
+
+  it('最近播放点 ✕ 只去掉那一条', async () => {
+    mocks.getRecent.mockResolvedValue({
+      entries: [
+        { path: DEMO, playedAt: 200, position: 65 },
+        { path: OTHER, playedAt: 100, position: 0 },
+      ],
+    })
+    mocks.forgetRecent.mockResolvedValue({
+      entries: [{ path: OTHER, playedAt: 100, position: 0 }],
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+    const list = await screen.findByTestId('tools-recent')
+
+    await userEvent.click(
+      within(list).getByRole('button', { name: '从最近播放里去掉 demo.mp4' }),
+    )
+
+    await waitFor(() => expect(mocks.forgetRecent).toHaveBeenCalledWith(DEMO))
+    await waitFor(() =>
+      expect(within(list).queryByRole('button', { name: /^demo\.mp4/ })).toBeNull(),
+    )
+    expect(within(list).getByRole('button', { name: /^other\.mkv/ })).toBeInTheDocument()
   })
 })

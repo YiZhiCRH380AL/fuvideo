@@ -27,6 +27,7 @@ import {
   getCollections,
   getPlayOptions,
   getPlayerState,
+  clearCollection,
   exportCollection,
   importPlaylist,
   isTauri,
@@ -986,6 +987,20 @@ export default function App() {
     }
   }, [reportError])
 
+  const handleClearCollection = useCallback(
+    async (kind: 'playlist' | 'favorites') => {
+      setCollectionNotice(null)
+
+      try {
+        setCollections(await clearCollection(kind))
+        setCollectionNotice(kind === 'playlist' ? '播放列表已清空' : '收藏夹已清空')
+      } catch (cause: unknown) {
+        reportError(cause)
+      }
+    },
+    [reportError],
+  )
+
   const handleRevealFavorite = useCallback(
     async (path: string) => {
       setOpenPanel(null)
@@ -1640,6 +1655,7 @@ export default function App() {
                   onReveal={handleRevealFavorite}
                   onExport={(kind) => void handleExportCollection(kind)}
                   onImport={() => void handleImportPlaylist()}
+                  onClear={(kind) => void handleClearCollection(kind)}
                   notice={collectionNotice}
                 />
               </Popover>
@@ -1681,6 +1697,7 @@ export default function App() {
                   onReveal={handleRevealFavorite}
                   onExport={(kind) => void handleExportCollection(kind)}
                   onImport={() => void handleImportPlaylist()}
+                  onClear={(kind) => void handleClearCollection(kind)}
                   notice={collectionNotice}
                 />
               </Popover>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   clearRecent,
+  forgetRecent,
   getChapters,
   getLoopPoints,
   getRecent,
@@ -128,6 +129,19 @@ export default function PlaybackTools({
     }
   }, [onError])
 
+  /** 只去掉点名的那一条；别的记录不动。 */
+  const forget = useCallback(
+    async (path: string) => {
+      try {
+        const next = await forgetRecent(path)
+        setRecent(Array.isArray(next?.entries) ? next.entries : [])
+      } catch (cause: unknown) {
+        onError(cause)
+      }
+    },
+    [onError],
+  )
+
   const jump = useCallback(
     async (index: number) => {
       try {
@@ -189,7 +203,7 @@ export default function PlaybackTools({
         ) : (
           <ul className="tools__chapters tools__recent" data-testid="tools-recent">
             {recent.map((entry) => (
-              <li key={entry.path}>
+              <li className="tools__recent-row" key={entry.path}>
                 <button
                   className="tools__chapter"
                   type="button"
@@ -200,6 +214,16 @@ export default function PlaybackTools({
                   <span className="tools__chapter-time">
                     {entry.position > 0 ? formatDuration(entry.position) : '从头'}
                   </span>
+                </button>
+
+                <button
+                  className="tools__remove"
+                  type="button"
+                  aria-label={`从最近播放里去掉 ${fileName(entry.path)}`}
+                  title="从最近播放里去掉"
+                  onClick={() => void forget(entry.path)}
+                >
+                  ✕
                 </button>
               </li>
             ))}

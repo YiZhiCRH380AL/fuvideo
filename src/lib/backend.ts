@@ -562,6 +562,11 @@ export function toggleFavorite(path: string): Promise<Collections> {
   return playerCommand<Collections>('toggle_favorite', { path })
 }
 
+/** 一键清空播放列表或收藏夹（另一侧不动）。 */
+export function clearCollection(kind: 'playlist' | 'favorites'): Promise<Collections> {
+  return playerCommand<Collections>('clear_collection', { kind })
+}
+
 /**
  * 把播放列表或收藏夹导出成 m3u8，返回写到哪儿了。
  * 用户取消时返回 null。
@@ -735,6 +740,11 @@ export function getRecent(): Promise<Recent> {
 /** 清空最近播放记录。 */
 export function clearRecent(): Promise<Recent> {
   return playerCommand<Recent>('clear_recent')
+}
+
+/** 从最近播放里去掉一条。 */
+export function forgetRecent(path: string): Promise<Recent> {
+  return playerCommand<Recent>('forget_recent', { path })
 }
 
 /** 设 A 点；传 null 表示清除。 */
