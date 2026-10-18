@@ -1,4 +1,4 @@
-﻿//! mpv 播放内核的探测与进程管理。
+//! mpv 播放内核的探测与进程管理。
 //!
 //! 结构是「HTML 界面 + mpv 渲染」：mpv 作为子进程启动，通过 `--wid` 嵌入主窗口，
 //! 并把自己创建的窗口压到 z-order 底部，让透明的 WebView 界面浮在画面之上。
@@ -3297,7 +3297,8 @@ mod tests {
       .load_file(&format!("http://127.0.0.1:{port}/sample.mp4"))
       .expect("打开 HTTP 流");
 
-    let duration = wait_for_number(&client, "duration", Duration::from_secs(20)).unwrap_or(0.0);
+    // 并行跑整套测试时 mpv 起得慢一点，给足时间
+    let duration = wait_for_number(&client, "duration", Duration::from_secs(30)).unwrap_or(0.0);
 
     assert!(duration > 10.0, "网络流该能读出时长，实际 {duration}");
 
