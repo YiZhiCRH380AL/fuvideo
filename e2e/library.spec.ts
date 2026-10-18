@@ -77,7 +77,13 @@ async function installFakeTauri(
         invoke: async (cmd: string, args: Record<string, unknown>) => {
           switch (cmd) {
             case 'probe_mpv':
-              return { available: true, version: '0.41.0', path: 'C:\\mpv\\mpv.exe' }
+              return {
+                available: true,
+                version: '0.41.0',
+                path: 'C:\\mpv\\mpv.exe',
+                ytdlAvailable: true,
+                ytdlPath: 'C:\\yt-dlp\\yt-dlp.exe',
+              }
             case 'pick_directory':
               return clips
             case 'prepare_sample_folder':

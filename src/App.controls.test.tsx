@@ -147,6 +147,12 @@ const mocks = vi.hoisted(() => {
     removeBookmark: vi.fn(async (_path: string, _position: number) => ({
       entries: [] as { path: string; position: number; createdAt: number }[],
     })),
+    getCaptureDevices: vi.fn(async () => ({
+      cameras: [] as string[],
+      microphones: [] as string[],
+    })),
+    playCaptureDevice: vi.fn(async (_kind: string, _name: string) => {}),
+    getBackendStatus: vi.fn(),
     selectChapter: vi.fn(async (_index: number) => {}),
     setLoopA: vi.fn(async (_seconds: number | null) => {}),
     setLoopB: vi.fn(async (_seconds: number | null) => {}),
@@ -172,13 +178,7 @@ vi.mock('./lib/window', () => ({ revealMainWindow: async () => {} }))
 
 vi.mock('./lib/backend', () => ({
   isTauri: () => true,
-  getBackendStatus: async () => ({
-    kind: 'tauri',
-    mpvAvailable: true,
-    mpvVersion: '0.41.0',
-    mpvPath: 'C:/mpv/mpv.exe',
-    message: '播放内核 mpv 0.41.0',
-  }),
+  getBackendStatus: () => mocks.getBackendStatus(),
   pickVideoFile: async () => String.raw`E:\clips\demo.mp4`,
   playLocalVideo: (path: string) => mocks.playLocalVideo(path),
   getPlayerState: async () => mocks.snapshot,
@@ -319,6 +319,8 @@ vi.mock('./lib/backend', () => ({
   getBookmarks: () => mocks.getBookmarks(),
   addBookmark: (path: string, position: number) => mocks.addBookmark(path, position),
   removeBookmark: (path: string, position: number) => mocks.removeBookmark(path, position),
+  getCaptureDevices: () => mocks.getCaptureDevices(),
+  playCaptureDevice: (kind: string, name: string) => mocks.playCaptureDevice(kind, name),
   clearCollection: (kind: 'playlist' | 'favorites') => mocks.clearCollection(kind),
   setLoopA: (seconds: number | null) => mocks.setLoopA(seconds),
   setLoopB: (seconds: number | null) => mocks.setLoopB(seconds),
@@ -381,6 +383,8 @@ beforeEach(() => {
     mocks.getBookmarks,
     mocks.addBookmark,
     mocks.removeBookmark,
+    mocks.getCaptureDevices,
+    mocks.playCaptureDevice,
     mocks.clearCollection,
     mocks.selectChapter,
     mocks.setLoopA,
@@ -398,6 +402,15 @@ beforeEach(() => {
   mocks.clearRecent.mockResolvedValue({ entries: [] })
   mocks.forgetRecent.mockResolvedValue({ entries: [] })
   mocks.getBookmarks.mockResolvedValue({ entries: [] })
+  mocks.getCaptureDevices.mockResolvedValue({ cameras: [], microphones: [] })
+  mocks.getBackendStatus.mockResolvedValue({
+    kind: 'tauri',
+    mpvAvailable: true,
+    mpvVersion: '0.41.0',
+    mpvPath: 'C:/mpv/mpv.exe',
+    ytdlAvailable: true,
+    message: '播放内核 mpv 0.41.0',
+  })
   mocks.clearCollection.mockImplementation(async (kind: string) =>
     kind === 'favorites'
       ? { ...mocks.collections, favorites: [] }
@@ -1853,5 +1866,65 @@ describe('书签', () => {
     await waitFor(() => expect(mocks.removeBookmark).toHaveBeenCalledWith(DEMO, 65))
     await waitFor(() => expect(within(list).queryByRole('button', { name: '1:05' })).toBeNull())
     expect(within(list).getByRole('button', { name: '1:30' })).toBeInTheDocument()
+  })
+})
+
+describe('输入设备', () => {
+  it('选中摄像头再打开：后端拿到名字，灵动岛显示它', async () => {
+    mocks.getCaptureDevices.mockResolvedValue({
+      cameras: ['Integrated Camera', 'USB Capture'],
+      microphones: ['麦克风 (Realtek)'],
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+    const panel = await screen.findByTestId('playback-tools')
+
+    const camera = await within(panel).findByRole('combobox', { name: '摄像头' })
+    // 默认选中第一个，省一次点击
+    expect(camera).toHaveValue('Integrated Camera')
+
+    await userEvent.selectOptions(camera, 'USB Capture')
+    await userEvent.click(within(panel).getByRole('button', { name: '打开摄像头' }))
+
+    await waitFor(() =>
+      expect(mocks.playCaptureDevice).toHaveBeenCalledWith('video', 'USB Capture'),
+    )
+
+    // 面板关掉之后，灵动岛上是设备名（不是 av://dshow: 地址）
+    expect(await screen.findByText('USB Capture')).toBeInTheDocument()
+  })
+
+  it('没有找到设备时给一句空状态', async () => {
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+
+    expect(await screen.findByTestId('tools-devices-empty')).toHaveTextContent('没有找到')
+  })
+})
+
+describe('在线视频（yt-dlp）', () => {
+  it('没装 yt-dlp 时在地址栏下面说明，装了就不啰嗦', async () => {
+    mocks.getBackendStatus.mockResolvedValue({
+      kind: 'tauri',
+      mpvAvailable: true,
+      mpvVersion: '0.41.0',
+      mpvPath: 'C:/mpv/mpv.exe',
+      ytdlAvailable: false,
+      message: '播放内核 mpv 0.41.0',
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+
+    expect(await screen.findByTestId('tools-ytdl-missing')).toHaveTextContent('yt-dlp')
+  })
+
+  it('装了 yt-dlp 就不显示那条提示', async () => {
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+    await screen.findByTestId('playback-tools')
+
+    expect(screen.queryByTestId('tools-ytdl-missing')).toBeNull()
   })
 })

@@ -4,6 +4,7 @@ import {
   clearRecent,
   forgetRecent,
   getBookmarks,
+    getCaptureDevices,
   getChapters,
   getLoopPoints,
   getRecent,
@@ -13,6 +14,7 @@ import {
   setLoopA,
   setLoopB,
   type Bookmark,
+    type CaptureDevices,
   type ChapterInfo,
   type LoopPoints,
   type RecentEntry,
@@ -43,6 +45,10 @@ export interface PlaybackToolsProps {
   onOpenUrl: (url: string) => void
   /** 点一条最近播放：直接放那个文件（续播交给 watch-later）。 */
   onPlayRecent: (path: string) => void
+  /** 打开一个输入设备（摄像头 / 麦克风）。 */
+  onPlayCapture: (kind: 'video' | 'audio', name: string) => void
+  /** 有没有 yt-dlp；`null` 表示还没探测完。 */
+  ytdlAvailable: boolean | null
   onError: (cause: unknown) => void
 }
 
@@ -76,12 +82,17 @@ export default function PlaybackTools({
   onToggleAlwaysOnTop,
   onOpenUrl,
   onPlayRecent,
+  onPlayCapture,
+  ytdlAvailable,
   onError,
 }: PlaybackToolsProps) {
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [loop, setLoop] = useState<LoopPoints>({ a: null, b: null })
   const [recent, setRecent] = useState<RecentEntry[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [devices, setDevices] = useState<CaptureDevices>({ cameras: [], microphones: [] })
+  const [camera, setCamera] = useState('')
+  const [microphone, setMicrophone] = useState('')
   const [url, setUrl] = useState('')
 
   /** 重读章节表与 AB 点。换片、跳章节、设端点之后都要来一次。 */
@@ -144,6 +155,29 @@ export default function PlaybackTools({
   useEffect(() => {
     void loadBookmarks()
   }, [loadBookmarks])
+
+  /**
+   * 输入设备走 Media Foundation 枚举，面板打开时拉一次。
+   *
+   * 默认选中第一个：大多数机器只有一个摄像头/麦克风，省一次点击。
+   */
+  const loadDevices = useCallback(async () => {
+    try {
+      const next = await getCaptureDevices()
+      const cameras = Array.isArray(next?.cameras) ? next.cameras : []
+      const microphones = Array.isArray(next?.microphones) ? next.microphones : []
+
+      setDevices({ cameras, microphones })
+      setCamera((current) => (current !== '' ? current : (cameras[0] ?? '')))
+      setMicrophone((current) => (current !== '' ? current : (microphones[0] ?? '')))
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    void loadDevices()
+  }, [loadDevices])
 
   const mine = bookmarks.filter((bookmark) => bookmark.path === source)
 
@@ -482,6 +516,82 @@ export default function PlaybackTools({
             打开
           </button>
         </form>
+
+        {ytdlAvailable === false ? (
+          <p className="tools__hint" data-testid="tools-ytdl-missing">
+            没找到 yt-dlp：B 站 / YouTube 这类网页地址需要它；直接放视频文件或视频直链不受影响。
+          </p>
+        ) : null}
+      </section>
+
+      <section className="tools__block">
+        <div className="tools__head">
+          <h4 className="tools__title">输入设备</h4>
+
+          <button className="tools__link" type="button" onClick={() => void loadDevices()}>
+            刷新
+          </button>
+        </div>
+
+        {devices.cameras.length === 0 && devices.microphones.length === 0 ? (
+          <p className="tools__hint" data-testid="tools-devices-empty">
+            没有找到摄像头或麦克风
+          </p>
+        ) : (
+          <>
+            {devices.cameras.length > 0 ? (
+              <div className="tools__row">
+                <select
+                  className="tools__select"
+                  aria-label="摄像头"
+                  value={camera}
+                  onChange={(event) => setCamera(event.target.value)}
+                >
+                  {devices.cameras.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className="tools__action"
+                  type="button"
+                  aria-label="打开摄像头"
+                  onClick={() => onPlayCapture('video', camera)}
+                >
+                  打开
+                </button>
+              </div>
+            ) : null}
+
+            {devices.microphones.length > 0 ? (
+              <div className="tools__row">
+                <select
+                  className="tools__select"
+                  aria-label="麦克风"
+                  value={microphone}
+                  onChange={(event) => setMicrophone(event.target.value)}
+                >
+                  {devices.microphones.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className="tools__action"
+                  type="button"
+                  aria-label="打开麦克风"
+                  onClick={() => onPlayCapture('audio', microphone)}
+                >
+                  打开
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </section>
     </div>
   )

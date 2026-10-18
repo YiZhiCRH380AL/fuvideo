@@ -30,16 +30,30 @@ describe('isTauri', () => {
 
 describe('describeProbe', () => {
   it('探测到 mpv 时带出版本号', () => {
-    const status = describeProbe({ available: true, version: '0.40.0', path: 'C:/mpv/mpv.exe' })
+    const status = describeProbe({
+      available: true,
+      version: '0.40.0',
+      path: 'C:/mpv/mpv.exe',
+      ytdlAvailable: true,
+      ytdlPath: 'C:/yt-dlp/yt-dlp.exe',
+    })
 
     expect(status.mpvAvailable).toBe(true)
+    expect(status.ytdlAvailable).toBe(true)
     expect(status.message).toContain('0.40.0')
   })
 
   it('没有 mpv 时给出可读提示', () => {
-    const status = describeProbe({ available: false, version: null, path: null })
+    const status = describeProbe({
+      available: false,
+      version: null,
+      path: null,
+      ytdlAvailable: false,
+      ytdlPath: null,
+    })
 
     expect(status.mpvAvailable).toBe(false)
+    expect(status.ytdlAvailable).toBe(false)
     expect(status.message).toContain('未检测到 mpv')
   })
 })

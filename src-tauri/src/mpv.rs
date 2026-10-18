@@ -25,6 +25,9 @@ pub(crate) mod ipc;
 /// 允许通过环境变量指定 mpv 可执行文件，便于开发时指向自备的解压版 mpv。
 pub const MPV_PATH_ENV: &str = "FUVIDEO_MPV_PATH";
 
+/// 允许通过环境变量指定 yt-dlp 的位置，便于开发时指向自备的那份。
+pub const YTDLP_PATH_ENV: &str = "FUVIDEO_YTDLP_PATH";
+
 /// 每次播放用一个全新的管道名。
 ///
 /// 固定名字会踩坑：上一次的 mpv 还没完全退出时管道依然存在，
@@ -48,6 +51,14 @@ const MPV_FILE_CANDIDATES: &[&str] = &[
 
 const MPV_EXECUTABLE: &str = "mpv.exe";
 
+const YTDLP_EXECUTABLE: &str = "yt-dlp.exe";
+
+/// PATH 里找不到时兜底的常见位置。
+const YTDLP_FILE_CANDIDATES: &[&str] = &[
+  r"C:\yt-dlp\yt-dlp.exe",
+  r"C:\Program Files\yt-dlp\yt-dlp.exe",
+];
+
 /// 等 mpv 建出子窗口的上限。建窗是异步的，只能轮询。
 const CHILD_WINDOW_TIMEOUT: Duration = Duration::from_secs(2);
 /// 等 IPC 管道出现的上限。冷启动时 mpv 要几十到几百毫秒才把管道建好。
@@ -58,9 +69,17 @@ const QUIT_TIMEOUT: Duration = Duration::from_secs(3);
 /// 随安装包一起分发的 mpv。有它就用它，不必要求用户自己装。
 static BUNDLED_MPV: OnceLock<PathBuf> = OnceLock::new();
 
+/// 随安装包一起分发的 yt-dlp（可选）。没有也不影响本地文件与直链。
+static BUNDLED_YTDLP: OnceLock<PathBuf> = OnceLock::new();
+
 /// 启动时登记安装包自带的 mpv 路径。
 pub fn set_bundled_mpv(path: PathBuf) {
   let _ = BUNDLED_MPV.set(path);
+}
+
+/// 启动时登记安装包自带的 yt-dlp 路径。
+pub fn set_bundled_ytdlp(path: PathBuf) {
+  let _ = BUNDLED_YTDLP.set(path);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -69,6 +88,9 @@ pub struct MpvProbe {
   pub available: bool,
   pub version: Option<String>,
   pub path: Option<String>,
+  /// 有没有 yt-dlp：网页视频（B 站 / YouTube 这类）靠它解析。
+  pub ytdl_available: bool,
+  pub ytdl_path: Option<String>,
 }
 
 #[derive(Default)]
@@ -438,13 +460,53 @@ pub fn find_mpv() -> Option<PathBuf> {
   find_mpv_with(BUNDLED_MPV.get())
 }
 
+/// 定位 yt-dlp：安装包自带 > 环境变量 > PATH > 常见安装目录。
+pub fn find_ytdlp_with(bundled: Option<&PathBuf>) -> Option<PathBuf> {
+  if let Some(path) = bundled {
+    if path.is_file() {
+      return Some(path.clone());
+    }
+  }
+
+  if let Some(custom) = std::env::var_os(YTDLP_PATH_ENV) {
+    let candidate = PathBuf::from(custom);
+
+    if candidate.is_file() {
+      return Some(candidate);
+    }
+  }
+
+  find_in_path(YTDLP_EXECUTABLE).or_else(|| find_first_file(ytdlp_candidates()))
+}
+
+/// yt-dlp 的常见落点：安装目录之外，还有用户级安装位置。
+fn ytdlp_candidates() -> Vec<PathBuf> {
+  let mut files: Vec<PathBuf> = YTDLP_FILE_CANDIDATES.iter().map(PathBuf::from).collect();
+
+  if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+    files.push(PathBuf::from(local).join(r"Programs\yt-dlp\yt-dlp.exe"));
+  }
+
+  files
+}
+
+pub fn find_ytdlp() -> Option<PathBuf> {
+  find_ytdlp_with(BUNDLED_YTDLP.get())
+}
+
 /// 探测指定路径的 mpv，`None` 表示没找到可执行文件。
 pub fn probe_at(executable: Option<&Path>) -> MpvProbe {
+  let ytdlp = find_ytdlp();
+  let ytdl_available = ytdlp.is_some();
+  let ytdl_path = ytdlp.map(|path| path.to_string_lossy().to_string());
+
   let Some(executable) = executable else {
     return MpvProbe {
       available: false,
       version: None,
       path: None,
+      ytdl_available,
+      ytdl_path,
     };
   };
 
@@ -452,6 +514,8 @@ pub fn probe_at(executable: Option<&Path>) -> MpvProbe {
     available: true,
     version: read_version(executable),
     path: Some(executable.to_string_lossy().to_string()),
+    ytdl_available,
+    ytdl_path,
   }
 }
 
@@ -549,6 +613,13 @@ pub fn build_player_args(
 
   if let Some(speed) = settings.speed {
     args.push(format!("--speed={speed}"));
+  }
+
+  // 自带 yt-dlp 时明确告诉 ytdl_hook 去哪儿找；装在 PATH 里的它自己会找。
+  if let Some(ytdlp) = BUNDLED_YTDLP.get() {
+    if ytdlp.is_file() {
+      args.push(format!("--script-opts=ytdl_hook-ytdl_path={}", ytdlp.display()));
+    }
   }
 
   // 画面这边只有画质档位进命令行：其余项运行时都能写，硬解本来就在上面
@@ -739,10 +810,37 @@ pub fn play_video(
   state: tauri::State<'_, PlayerState>,
   path: String,
 ) -> Result<(), String> {
+  play_target(&app, &window, &state, path)
+}
+
+/// 打开一个输入设备（摄像头 / 采集卡 / 麦克风）。
+///
+/// 走 ffmpeg 的 dshow 输入：`av://dshow:video=<名字>`。设备名由 [devices](crate::devices)
+/// 用 Media Foundation 枚举出来，转义也在那边做。
+#[tauri::command(async)]
+pub fn play_capture_device(
+  app: tauri::AppHandle,
+  window: tauri::WebviewWindow,
+  state: tauri::State<'_, PlayerState>,
+  kind: String,
+  name: String,
+) -> Result<(), String> {
+  play_target(&app, &window, &state, crate::devices::dshow_url(&kind, &name))
+}
+
+/// 播放一个「目标」：本机文件、网络地址、或者 `av://dshow:…` 这样的设备地址。
+///
+/// `play_video` 与 `play_capture_device` 都走这里，换片逻辑只有一份。
+fn play_target(
+  app: &tauri::AppHandle,
+  window: &tauri::WebviewWindow,
+  state: &PlayerState,
+  path: String,
+) -> Result<(), String> {
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
   let window_handle = window.hwnd().map_err(|error| format!("获取窗口句柄失败: {error}"))?.0 as isize;
   let size = window.inner_size().map_err(|error| format!("读取窗口尺寸失败: {error}"))?;
-  let config_dir = settings::config_dir(&app);
+  let config_dir = settings::config_dir(app);
   let settings = settings::load(&config_dir);
 
   state.ensure_process(
@@ -771,10 +869,10 @@ pub fn play_video(
 
   // 音频效果是全局偏好，但 `af` 也在 watch-later 的默认记录里：不重新压一遍的话，
   // 换到一部以前看过的片子就会带回它当时的那条链，和设置页显示的对不上。
-  apply_audio_settings(&state, &settings);
+  apply_audio_settings(state, &settings);
 
   // 画面同理：`video-zoom` / `brightness` / `vf` 都在 watch-later 的记录里
-  apply_video_settings(&state, &settings);
+  apply_video_settings(state, &settings);
 
   // 首次播放时 mpv 可能还没把窗口建出来，载入文件后再补一次对齐
   let _ = state.sync_embedded_window(window_handle, (size.width, size.height));
@@ -2403,6 +2501,25 @@ mod tests {
     assert!(probe.get("available").is_some());
     assert!(probe.get("version").is_some());
     assert!(probe.get("path").is_some());
+    assert!(probe.get("ytdlAvailable").is_some());
+    assert!(probe.get("ytdlPath").is_some());
+  }
+
+  /// 自带的那份优先；文件不存在就当没带，继续往下找。
+  #[test]
+  fn ytdlp_finder_prefers_the_bundled_copy() {
+    let directory = std::env::temp_dir().join(format!("fuvideo-ytdlp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("建目录");
+
+    let bundled = directory.join("yt-dlp.exe");
+
+    assert_eq!(find_ytdlp_with(Some(&bundled)), None, "文件不存在时不该被选中");
+
+    std::fs::write(&bundled, b"fake").expect("写假文件");
+    assert_eq!(find_ytdlp_with(Some(&bundled)), Some(bundled.clone()));
+
+    let _ = std::fs::remove_dir_all(&directory);
   }
 
   #[test]
@@ -3224,6 +3341,7 @@ mod tests {
   fn serve_file_over_http(path: PathBuf) -> (u16, std::sync::mpsc::Sender<()>) {
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::Arc;
     use std::sync::mpsc::{channel, TryRecvError};
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("绑定本地端口");
@@ -3231,7 +3349,7 @@ mod tests {
     let (stop_tx, stop_rx) = channel::<()>();
 
     thread::spawn(move || {
-      let bytes = std::fs::read(&path).expect("读测试视频");
+      let bytes = Arc::new(std::fs::read(&path).expect("读测试视频"));
       let _ = listener.set_nonblocking(true);
 
       loop {
@@ -3242,32 +3360,40 @@ mod tests {
 
         match listener.accept() {
           Ok((mut stream, _)) => {
-            // 把请求头读掉就行，内容不关心
-            let mut buffer = [0u8; 4096];
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
-
             /*
-             * ffmpeg 一律带 `Range: bytes=0-` 来问，那就规规矩矩回 206。
-             * 只回 200 整份时 mpv 实测会直接放弃这条流（path 读回来是 None）。
+             * 一个连接一个线程：mpv 探测时会同时开不止一条连接，
+             * 串行处理的话第二条会被第一条那 400KB 的写入卡住，测试就随机超时。
              */
-            let header = if request.contains("range:") {
-              format!(
-                "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nContent-Range: bytes 0-{}/{}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
-                bytes.len().saturating_sub(1),
-                bytes.len(),
-                bytes.len()
-              )
-            } else {
-              format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
-                bytes.len()
-              )
-            };
+            let body = Arc::clone(&bytes);
 
-            let _ = stream.write_all(header.as_bytes());
-            let _ = stream.write_all(&bytes);
-            let _ = stream.flush();
+            thread::spawn(move || {
+              // 把请求头读掉就行，内容不关心
+              let mut buffer = [0u8; 4096];
+              let read = stream.read(&mut buffer).unwrap_or(0);
+              let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
+
+              /*
+               * ffmpeg 一律带 `Range: bytes=0-` 来问，那就规规矩矩回 206。
+               * 只回 200 整份时 mpv 实测会直接放弃这条流（path 读回来是 None）。
+               */
+              let header = if request.contains("range:") {
+                format!(
+                  "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nContent-Range: bytes 0-{}/{}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                  body.len().saturating_sub(1),
+                  body.len(),
+                  body.len()
+                )
+              } else {
+                format!(
+                  "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                  body.len()
+                )
+              };
+
+              let _ = stream.write_all(header.as_bytes());
+              let _ = stream.write_all(&body);
+              let _ = stream.flush();
+            });
           }
           Err(_) => thread::sleep(Duration::from_millis(20)),
         }

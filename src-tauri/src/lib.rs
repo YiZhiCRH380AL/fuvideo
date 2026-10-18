@@ -1,6 +1,7 @@
 mod audio;
 mod bookmarks;
 mod collections;
+mod devices;
 mod library;
 mod mpv;
 mod recent;
@@ -49,6 +50,16 @@ pub fn run() {
         mpv::set_bundled_mpv(bundled);
       }
 
+      // yt-dlp 是可选的：装了就用，没装也不影响本地播放
+      if let Ok(bundled) = app
+        .path()
+        .resolve("binaries/yt-dlp/yt-dlp.exe", tauri::path::BaseDirectory::Resource)
+      {
+        if bundled.is_file() {
+          mpv::set_bundled_ytdlp(bundled);
+        }
+      }
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -89,6 +100,7 @@ pub fn run() {
       mpv::pick_video_file,
       mpv::play_video,
       mpv::stop_video,
+      mpv::play_capture_device,
       mpv::player_state,
       mpv::player_details,
       mpv::audio_devices,
@@ -163,6 +175,7 @@ pub fn run() {
       collections::clear_collection,
       collections::export_collection,
       collections::import_playlist,
+      devices::capture_devices,
       bookmarks::read_bookmarks,
       bookmarks::add_bookmark,
       bookmarks::remove_bookmark,

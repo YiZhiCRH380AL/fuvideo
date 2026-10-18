@@ -37,6 +37,7 @@ import {
   pickDirectory,
   pickVideoFile,
   playLocalVideo,
+  playCaptureDevice,
   playUrl,
   prepareSampleFolder,
   readSettings,
@@ -1143,6 +1144,24 @@ export default function App() {
     [playPath],
   )
 
+  /**
+   * 打开输入设备（摄像头 / 麦克风）。
+   *
+   * 界面上用的是设备友好名字（灵动岛显示它），后端把它拼成 `av://dshow:…`。
+   */
+  const handlePlayCapture = useCallback(
+    (kind: 'video' | 'audio', name: string) => {
+      setOpenPanel(null)
+
+      if (name.trim() === '') {
+        return
+      }
+
+      void playPath(name, undefined, (target) => playCaptureDevice(kind, target))
+    },
+    [playPath],
+  )
+
   /** 定时：换成新的时长，或者用 `null` 关掉。 */
   const handleSleepTimer = useCallback(
     (minutes: number | null) => {
@@ -1741,6 +1760,8 @@ export default function App() {
                     setOpenPanel(null)
                     void playPath(path)
                   }}
+                  onPlayCapture={handlePlayCapture}
+                  ytdlAvailable={status === null ? null : status.ytdlAvailable}
                   onError={reportError}
                 />
               </Popover>

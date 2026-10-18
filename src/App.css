@@ -280,6 +280,23 @@
   outline: none;
 }
 
+.tools__select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.tools__select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
 /* ============ 迷你模式 ============ */
 
 /* 只剩画面和灵动岛：顶栏与方格墙都收起来 */

@@ -7,6 +7,8 @@ export interface BackendStatus {
   mpvAvailable: boolean
   mpvVersion: string | null
   mpvPath: string | null
+  /** 有没有 yt-dlp：B 站 / YouTube 这类网页地址靠它解析。 */
+  ytdlAvailable: boolean
   /** 直接展示给用户的一句话说明 */
   message: string
 }
@@ -15,6 +17,8 @@ interface MpvProbe {
   available: boolean
   version: string | null
   path: string | null
+  ytdlAvailable: boolean
+  ytdlPath: string | null
 }
 
 export interface PlayerSnapshot {
@@ -183,6 +187,12 @@ export interface Bookmarks {
   entries: Bookmark[]
 }
 
+/** 本机可用的输入设备（友好名字，直接拿去拼 dshow 地址）。 */
+export interface CaptureDevices {
+  cameras: string[]
+  microphones: string[]
+}
+
 /** 设置页「画面」那一节要用的选项表。 */
 export interface VideoOptions {
   colorLimit: number
@@ -339,6 +349,7 @@ export function describeProbe(probe: MpvProbe): BackendStatus {
       mpvAvailable: false,
       mpvVersion: null,
       mpvPath: null,
+      ytdlAvailable: probe.ytdlAvailable === true,
       message: '未检测到 mpv，播放内核不可用',
     }
   }
@@ -348,6 +359,7 @@ export function describeProbe(probe: MpvProbe): BackendStatus {
     mpvAvailable: true,
     mpvVersion: probe.version,
     mpvPath: probe.path,
+    ytdlAvailable: probe.ytdlAvailable === true,
     message: probe.version ? `播放内核 mpv ${probe.version}` : '播放内核 mpv 已就绪',
   }
 }
@@ -360,6 +372,7 @@ export async function getBackendStatus(): Promise<BackendStatus> {
       mpvAvailable: false,
       mpvVersion: null,
       mpvPath: null,
+      ytdlAvailable: false,
       message: '当前在浏览器中运行，播放功能需要在桌面应用中打开',
     }
   }
@@ -788,6 +801,16 @@ export function addBookmark(path: string, position: number): Promise<Bookmarks> 
 /** 去掉某个文件在某个时间点的那条书签。 */
 export function removeBookmark(path: string, position: number): Promise<Bookmarks> {
   return playerCommand<Bookmarks>('remove_bookmark', { path, position })
+}
+
+/** 列出摄像头 / 采集卡与麦克风。枚举失败时是空表。 */
+export function getCaptureDevices(): Promise<CaptureDevices> {
+  return playerCommand<CaptureDevices>('capture_devices')
+}
+
+/** 打开一个输入设备：`kind` 是 `video`（摄像头）或 `audio`（麦克风）。 */
+export function playCaptureDevice(kind: 'video' | 'audio', name: string): Promise<void> {
+  return playerCommand<void>('play_capture_device', { kind, name })
 }
 
 /** 设 A 点；传 null 表示清除。 */
