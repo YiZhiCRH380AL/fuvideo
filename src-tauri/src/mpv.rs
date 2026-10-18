@@ -250,6 +250,23 @@ impl PlayerState {
     *self.current_path.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = path;
   }
 
+  /// 把「现在播到哪儿」记进最近播放。
+  ///
+  /// 换片前与退出时各叫一次。失败就算了——这是附带的记录，不该挡住播放。
+  pub fn remember_progress(&self, directory: &Path) {
+    let Some(path) = self.current_path() else {
+      return;
+    };
+
+    let position = self
+      .with_ipc(|client| client.get_number("time-pos"))
+      .ok()
+      .flatten()
+      .unwrap_or(0.0);
+
+    let _ = crate::recent::remember(directory, &path, position);
+  }
+
   /// 播放中记下时长；播完之后靠它告诉界面「停在片尾」。
   fn remember_duration(&self, duration: f64) {
     if duration > 0.0 {
@@ -716,12 +733,16 @@ pub fn play_video(
   // loadfile 会直接把它丢掉，而 mpv 只在自己退出时才自动写。
   if state.current_path().is_some() {
     let _ = state.with_ipc(|client| client.write_watch_later());
+    // 顺手把上一个片子「看到哪儿」记进最近播放
+    state.remember_progress(&config_dir);
   }
 
   // 换片：上一个文件的时长不能再拿来兜底了
   state.forget_duration();
 
   state.with_ipc(|client| client.load_file(&path))?;
+  // 刚打开就算看过一次；确切的进度等换片或退出时再更新
+  let _ = crate::recent::remember(&config_dir, &path, 0.0);
   state.set_current_path(Some(path));
 
   // 音频效果是全局偏好，但 `af` 也在 watch-later 的默认记录里：不重新压一遍的话，

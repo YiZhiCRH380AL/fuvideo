@@ -2,6 +2,7 @@ mod audio;
 mod collections;
 mod library;
 mod mpv;
+mod recent;
 mod sample;
 mod settings;
 mod thumbnail;
@@ -141,6 +142,8 @@ pub fn run() {
       collections::toggle_favorite,
       collections::export_collection,
       collections::import_playlist,
+      recent::read_recent,
+      recent::clear_recent,
       library::pick_directory,
       library::list_directory,
       library::list_drives,
@@ -160,9 +163,12 @@ pub fn run() {
 
   app.run(|app_handle, event| {
     if let tauri::RunEvent::Exit = event {
+      // 先把「看到哪儿」记进最近播放，再让内核自己退
+      let state = app_handle.state::<mpv::PlayerState>();
+      state.remember_progress(&settings::config_dir(app_handle));
       // 先让播放内核自己退出：它要趁这个时候把 watch-later（播放位置、
       // 每片的音轨与字幕选择）落盘。直接 kill 掉就什么都留不下。
-      app_handle.state::<mpv::PlayerState>().shutdown();
+      state.shutdown();
       // 预览用的是独立 mpv 进程，不主动收掉会在应用退出后残留
       app_handle.state::<thumbnail::ThumbnailState>().shutdown();
     }

@@ -126,6 +126,8 @@ const mocks = vi.hoisted(() => {
     // 章节、AB 循环与逐帧：这个测试只关心面板能不能用，链路本身由 Rust 那边验
     getChapters: vi.fn(async () => [] as { index: number; title: string | null; time: number }[]),
     getLoopPoints: vi.fn(async () => ({ a: null as number | null, b: null as number | null })),
+    getRecent: vi.fn(async () => ({ entries: [] as { path: string; playedAt: number; position: number }[] })),
+    clearRecent: vi.fn(async () => ({ entries: [] })),
     selectChapter: vi.fn(async (_index: number) => {}),
     setLoopA: vi.fn(async (_seconds: number | null) => {}),
     setLoopB: vi.fn(async (_seconds: number | null) => {}),
@@ -292,6 +294,8 @@ vi.mock('./lib/backend', () => ({
   getChapters: () => mocks.getChapters(),
   selectChapter: (index: number) => mocks.selectChapter(index),
   getLoopPoints: () => mocks.getLoopPoints(),
+  getRecent: () => mocks.getRecent(),
+  clearRecent: () => mocks.clearRecent(),
   setLoopA: (seconds: number | null) => mocks.setLoopA(seconds),
   setLoopB: (seconds: number | null) => mocks.setLoopB(seconds),
   getPlayOptions: async () => mocks.getPlayOptions(),
@@ -347,6 +351,8 @@ beforeEach(() => {
     mocks.rememberMiniMode,
     mocks.getChapters,
     mocks.getLoopPoints,
+    mocks.getRecent,
+    mocks.clearRecent,
     mocks.selectChapter,
     mocks.setLoopA,
     mocks.setLoopB,
@@ -359,6 +365,8 @@ beforeEach(() => {
 
   mocks.getChapters.mockResolvedValue([])
   mocks.getLoopPoints.mockResolvedValue({ a: null, b: null })
+  mocks.getRecent.mockResolvedValue({ entries: [] })
+  mocks.clearRecent.mockResolvedValue({ entries: [] })
   mocks.exportCollection.mockResolvedValue(String.raw`E:\clips\playlist.m3u8`)
   mocks.importPlaylist.mockResolvedValue(null)
   mocks.togglePause.mockResolvedValue(false)
@@ -1633,5 +1641,45 @@ describe('播放列表导出 / 导入', () => {
     await waitFor(() => expect(mocks.importPlaylist).toHaveBeenCalledTimes(1))
     expect(screen.queryByTestId('playlist-notice')).toBeNull()
     expect(screen.getByTestId('playlist-list')).toHaveTextContent('demo.mp4')
+  })
+})
+
+describe('最近播放', () => {
+  it('列出来，点一条直接播', async () => {
+    mocks.getRecent.mockResolvedValue({
+      entries: [
+        { path: DEMO, playedAt: 200, position: 65 },
+        { path: OTHER, playedAt: 100, position: 0 },
+      ],
+    })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+
+    const list = await screen.findByTestId('tools-recent')
+
+    // 看过的显示停在哪，没看过的显示「从头」
+    expect(within(list).getByRole('button', { name: /demo\.mp4/ })).toHaveTextContent('1:05')
+    expect(within(list).getByRole('button', { name: /other\.mkv/ })).toHaveTextContent('从头')
+
+    await userEvent.click(within(list).getByRole('button', { name: /demo\.mp4/ }))
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledWith(DEMO))
+  })
+
+  it('清空之后回到空状态', async () => {
+    mocks.getRecent.mockResolvedValue({
+      entries: [{ path: DEMO, playedAt: 200, position: 65 }],
+    })
+    mocks.clearRecent.mockResolvedValue({ entries: [] })
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放工具' }))
+    await screen.findByTestId('tools-recent')
+
+    await userEvent.click(screen.getByRole('button', { name: '清空' }))
+
+    await waitFor(() => expect(mocks.clearRecent).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('tools-recent-empty')).toBeInTheDocument()
   })
 })

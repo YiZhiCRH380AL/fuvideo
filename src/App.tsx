@@ -1696,7 +1696,7 @@ export default function App() {
                 aria-label="播放工具"
                 title="播放工具"
               >
-                🧰
+                ⋮
               </button>
 
               <Popover
@@ -1704,7 +1704,7 @@ export default function App() {
                 onClose={() => setOpenPanel(null)}
                 label="播放工具"
                 anchorSelector=".app__tools-menu"
-                className="popover--panel popover--down"
+                className="popover--panel popover--tools popover--down"
                 role="dialog"
               >
                 <PlaybackTools
@@ -1720,6 +1720,10 @@ export default function App() {
                   onToggleMini={handleToggleMini}
                   onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
                   onOpenUrl={handleOpenUrl}
+                  onPlayRecent={(path) => {
+                    setOpenPanel(null)
+                    void playPath(path)
+                  }}
                   onError={reportError}
                 />
               </Popover>

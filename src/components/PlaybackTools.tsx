@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  clearRecent,
   getChapters,
   getLoopPoints,
+  getRecent,
   selectChapter,
   setLoopA,
   setLoopB,
   type ChapterInfo,
   type LoopPoints,
+  type RecentEntry,
 } from '../lib/backend'
+import { fileName } from '../lib/path'
 import { formatDuration } from '../lib/time'
 
 /** 定时到点之后干什么。 */
@@ -31,6 +35,8 @@ export interface PlaybackToolsProps {
   onToggleMini: () => void
   onToggleAlwaysOnTop: () => void
   onOpenUrl: (url: string) => void
+  /** 点一条最近播放：直接放那个文件（续播交给 watch-later）。 */
+  onPlayRecent: (path: string) => void
   onError: (cause: unknown) => void
 }
 
@@ -63,10 +69,12 @@ export default function PlaybackTools({
   onToggleMini,
   onToggleAlwaysOnTop,
   onOpenUrl,
+  onPlayRecent,
   onError,
 }: PlaybackToolsProps) {
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [loop, setLoop] = useState<LoopPoints>({ a: null, b: null })
+  const [recent, setRecent] = useState<RecentEntry[]>([])
   const [url, setUrl] = useState('')
 
   /** 重读章节表与 AB 点。换片、跳章节、设端点之后都要来一次。 */
@@ -94,6 +102,31 @@ export default function PlaybackTools({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  /** 最近播放是全局的，和当前片子无关；打开面板时拉一次就够。 */
+  const loadRecent = useCallback(async () => {
+    try {
+      const next = await getRecent()
+
+      // 假后端（浏览器 / e2e）对不认识的命令返回 null，别把界面弄崩
+      setRecent(Array.isArray(next?.entries) ? next.entries : [])
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    void loadRecent()
+  }, [loadRecent])
+
+  const clear = useCallback(async () => {
+    try {
+      await clearRecent()
+      setRecent([])
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }, [onError])
 
   const jump = useCallback(
     async (index: number) => {
@@ -138,6 +171,42 @@ export default function PlaybackTools({
 
   return (
     <div className="tools" data-testid="playback-tools">
+      <section className="tools__block">
+        <div className="tools__head">
+          <h4 className="tools__title">最近播放</h4>
+
+          {recent.length === 0 ? null : (
+            <button className="tools__link" type="button" onClick={() => void clear()}>
+              清空
+            </button>
+          )}
+        </div>
+
+        {recent.length === 0 ? (
+          <p className="tools__hint" data-testid="tools-recent-empty">
+            还没有记录。放过的片子会出现在这儿。
+          </p>
+        ) : (
+          <ul className="tools__chapters tools__recent" data-testid="tools-recent">
+            {recent.map((entry) => (
+              <li key={entry.path}>
+                <button
+                  className="tools__chapter"
+                  type="button"
+                  title={entry.path}
+                  onClick={() => onPlayRecent(entry.path)}
+                >
+                  <span className="tools__chapter-name">{fileName(entry.path)}</span>
+                  <span className="tools__chapter-time">
+                    {entry.position > 0 ? formatDuration(entry.position) : '从头'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section className="tools__block">
         <h4 className="tools__title">章节</h4>
 

@@ -74,6 +74,28 @@
   letter-spacing: 0.06em;
 }
 
+/* 标题 + 右侧那颗小字按钮 */
+.tools__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tools__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tools__link:hover {
+  color: var(--accent);
+}
+
 .tools__hint {
   margin: 0;
   color: var(--text-muted);
@@ -174,6 +196,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 最近播放：文件名占满左边，进度靠右 */
+.tools__recent .tools__chapter-name {
+  flex: 1;
 }
 
 .tools__toggle {
@@ -1764,6 +1791,14 @@
 /* 带封面的列表要宽一点：缩略图 + 完整文件名两样都得放下 */
 .popover--paths {
   width: 352px;
+}
+
+/*
+ * 播放工具比别的面板长（最近播放 + 章节 + AB + 定时 + 窗口 + 地址）。
+ * 单独放宽上限，但仍然不超出窗口——真放不下时继承 `overflow-y: auto` 自己滚。
+ */
+.popover--tools {
+  max-height: min(680px, calc(100vh - 96px));
 }
 
 .media {

@@ -148,6 +148,19 @@ export interface LoopPoints {
   b: number | null
 }
 
+/** 一条最近播放记录。 */
+export interface RecentEntry {
+  path: string
+  /** 最后播放的时刻（Unix 秒），只用来排序。 */
+  playedAt: number
+  /** 停在哪一秒；续播本身交给 watch-later。 */
+  position: number
+}
+
+export interface Recent {
+  entries: RecentEntry[]
+}
+
 /** 设置页「画面」那一节要用的选项表。 */
 export interface VideoOptions {
   colorLimit: number
@@ -712,6 +725,16 @@ export function selectChapter(index: number): Promise<void> {
 /** 读 AB 循环的两个端点。 */
 export function getLoopPoints(): Promise<LoopPoints> {
   return playerCommand<LoopPoints>('ab_loop')
+}
+
+/** 读最近播放记录。 */
+export function getRecent(): Promise<Recent> {
+  return playerCommand<Recent>('read_recent')
+}
+
+/** 清空最近播放记录。 */
+export function clearRecent(): Promise<Recent> {
+  return playerCommand<Recent>('clear_recent')
 }
 
 /** 设 A 点；传 null 表示清除。 */
