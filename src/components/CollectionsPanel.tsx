@@ -220,20 +220,18 @@ export default function CollectionsPanel({
           </div>
 
           {/*
-            收藏夹里的那行小字：点它不是播放，而是跳回**文件所在的目录**并把这一格高亮出来。
-            文件名点了是播放——两件事分开，用户才找得回原处。
+            每行底下那行小字：点它不是播放，而是跳回**文件所在的目录**并把这一格高亮出来。
+            文件名点了是播放——两件事分开，用户才找得回原处。两种列表都有这一行。
           */}
-          {kind === 'favorites' ? (
-            <button
-              className="paths__where"
-              type="button"
-              title={`跳到 ${parentDirectory(path)}`}
-              aria-label={`跳到 ${parentDirectory(path)}`}
-              onClick={() => onReveal(path)}
-            >
-              {parentDirectory(path) || '（没有目录信息）'}
-            </button>
-          ) : null}
+          <button
+            className="paths__where"
+            type="button"
+            title={`跳到 ${parentDirectory(path)}`}
+            aria-label={`跳到 ${parentDirectory(path)}`}
+            onClick={() => onReveal(path)}
+          >
+            {parentDirectory(path) || '（没有目录信息）'}
+          </button>
         </li>
       ))}
       </ul>

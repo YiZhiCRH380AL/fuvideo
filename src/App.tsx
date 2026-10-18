@@ -1884,6 +1884,12 @@ export default function App() {
                     placeholder="按名字找"
                     aria-label="搜索这个目录"
                     onChange={(event) => setSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      // 键盘用户也有一个「清空」：Chromium 的 type=search 只给了鼠标用的 ×
+                      if (event.key === 'Escape') {
+                        setSearch('')
+                      }
+                    }}
                   />
 
                   <div className="library__sort" role="group" aria-label="排序">

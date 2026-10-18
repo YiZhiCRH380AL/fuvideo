@@ -1255,6 +1255,19 @@ describe('播放列表与收藏夹', () => {
     await waitFor(() => expect(tile).toHaveAttribute('data-highlight', 'true'))
   })
 
+  /** 播放列表和收藏夹用同一套行：那行小字两边都有，点了都是「带我去看它在哪」。 */
+  it('播放列表里也有那行小字，点了同样跳回目录', async () => {
+    mocks.collections = { playlist: [DEMO], favorites: [] }
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: '播放列表' }))
+
+    const list = within(await screen.findByTestId('playlist-list'))
+    await userEvent.click(list.getByRole('button', { name: String.raw`跳到 E:\clips` }))
+
+    await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS))
+  })
+
   /**
    * 收藏夹那行小字是「带我去看这个文件在哪」，不是「播它」。
    * 以前正在播的片子会一直播下去，方格墙还停在放大状态里，高亮根本看不见。
@@ -1599,6 +1612,22 @@ describe('方格墙的搜索与排序', () => {
       expect(
         other.compareDocumentPosition(demo) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy(),
+    )
+  })
+
+  it('搜索框里按 Esc 清空', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    const search = screen.getByRole('searchbox', { name: '搜索这个目录' })
+    await userEvent.type(search, 'demo')
+    await waitFor(() => expect(grid().queryByRole('button', { name: 'other.mkv' })).toBeNull())
+
+    fireEvent.keyDown(search, { key: 'Escape' })
+
+    expect(search).toHaveValue('')
+    await waitFor(() =>
+      expect(grid().getByRole('button', { name: 'other.mkv' })).toBeInTheDocument(),
     )
   })
 })

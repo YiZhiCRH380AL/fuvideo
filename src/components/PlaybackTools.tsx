@@ -13,7 +13,7 @@ import {
   type RecentEntry,
 } from '../lib/backend'
 import { fileName } from '../lib/path'
-import { formatDuration } from '../lib/time'
+import { formatDuration, formatRelativeTime } from '../lib/time'
 
 /** 定时到点之后干什么。 */
 export type SleepAction = 'pause' | 'close'
@@ -207,7 +207,7 @@ export default function PlaybackTools({
                 <button
                   className="tools__chapter"
                   type="button"
-                  title={entry.path}
+                  title={`${entry.path}\n上次播放：${formatRelativeTime(entry.playedAt)}`}
                   onClick={() => onPlayRecent(entry.path)}
                 >
                   <span className="tools__chapter-name">{fileName(entry.path)}</span>
