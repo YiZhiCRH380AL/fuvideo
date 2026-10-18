@@ -1607,6 +1607,25 @@ describe('播放工具面板', () => {
 
     await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledWith('https://a.test/b.mkv'))
   })
+
+  /**
+   * 网址没有对应的方格：放大播放时整块目录区要收掉，
+   * 否则空状态里那句「选一个目录…」会一直挂在画面中间。
+   */
+  it('从空状态打开网址：中间那句引导要收起来', async () => {
+    render(<App />)
+    const panel = await openTools()
+
+    await userEvent.type(
+      within(panel).getByRole('textbox', { name: '视频地址' }),
+      'https://a.test/b.mkv',
+    )
+    await userEvent.click(within(panel).getByRole('button', { name: '打开' }))
+
+    await waitFor(() => expect(mocks.playLocalVideo).toHaveBeenCalledWith('https://a.test/b.mkv'))
+    expect(screen.queryByText(/选一个目录/)).toBeNull()
+    expect(await screen.findByText('b.mkv')).toBeInTheDocument()
+  })
 })
 
 describe('方格墙的搜索与排序', () => {

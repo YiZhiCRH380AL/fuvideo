@@ -328,6 +328,15 @@ export default function App() {
 
   const stripTimes = useMemo(() => stripTimesFor(duration), [duration])
 
+  /**
+   * 正在放的这部片子有没有对应的方格。
+   *
+   * 网址和输入设备都没有格子；这时放大播放要把整块目录区收掉，
+   * 否则「选一个目录，把里面的视频铺成方格」那类引导会一直挂在画面中间。
+   */
+  const playingInGrid =
+    currentFile !== null && videos.some((video) => video.path === currentFile)
+
   /** 真正生效的键位表：出厂键位加上用户改过的那几条。 */
   const shortcutMap = useMemo(() => buildShortcutMap(shortcutOverrides), [shortcutOverrides])
 
@@ -1802,7 +1811,7 @@ export default function App() {
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
-          {atDrives ? (
+          {expanded && !playingInGrid ? null : atDrives ? (
             <div className="drives" data-testid="drives">
               {drives.map((drive, index) => (
                 <button
