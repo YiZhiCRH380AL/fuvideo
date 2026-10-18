@@ -462,6 +462,44 @@ describe('设置页 · 快捷键', () => {
     // 后端返回的那份是「没改过」，界面跟着回到出厂键位
     expect(await screen.findByRole('button', { name: '静音开关 的按键' })).toHaveTextContent('M')
   })
+
+  /**
+   * 回归：以前撞键会**静默**抢走别人的按键（后端清洗时一个键码只留一条），
+   * 用户只会发现「快进 1 分钟」突然不灵了。现在先问一句。
+   */
+  it('撞上别人的键先提示，再点一次才真的换过去', async () => {
+    render(<Harness initial={null} />)
+
+    const key = await screen.findByRole('button', { name: '静音开关 的按键' })
+    await userEvent.click(key)
+
+    // 出厂键位里 KeyL 是「快进 1 分钟」
+    fireEvent.keyDown(window, { code: 'KeyL' })
+
+    expect(await screen.findByTestId('shortcut-conflict')).toHaveTextContent('快进 1 分钟')
+    expect(key).toHaveTextContent('再点一次确认')
+    expect(mocks.setShortcut).not.toHaveBeenCalled()
+
+    await userEvent.click(key)
+
+    await waitFor(() => expect(mocks.setShortcut).toHaveBeenCalledWith('toggle-mute', 'KeyL'))
+    expect(key).toHaveTextContent('L')
+  })
+
+  it('撞车提示挂着时按 Esc 就取消，键位不动', async () => {
+    render(<Harness initial={null} />)
+
+    const key = await screen.findByRole('button', { name: '静音开关 的按键' })
+    await userEvent.click(key)
+    fireEvent.keyDown(window, { code: 'KeyL' })
+    expect(await screen.findByTestId('shortcut-conflict')).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { code: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByTestId('shortcut-conflict')).toBeNull())
+    expect(key).toHaveTextContent('M')
+    expect(mocks.setShortcut).not.toHaveBeenCalled()
+  })
 })
 
 describe('设置页 · 界面', () => {

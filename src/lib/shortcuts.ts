@@ -63,6 +63,11 @@ export function isShortcutAction(value: string): value is ShortcutAction {
   return (ACTIONS as string[]).includes(value)
 }
 
+/** 动作 id 转成人看的名字；认不出来就原样返回。 */
+export function actionLabel(action: string): string {
+  return SHORTCUT_ROWS.find((row) => row.action === action)?.label ?? action
+}
+
 /** 纯修饰键与锁定键：按下它们只是「准备按组合键」，拿来当单键快捷键没有意义。 */
 const MODIFIER_CODES = new Set([
   'ShiftLeft',

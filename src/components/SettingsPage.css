@@ -424,6 +424,22 @@
   color: var(--text);
 }
 
+.keys__conflict {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.keys__key[data-conflict='true'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings__backdrop,
   .settings__panel {
