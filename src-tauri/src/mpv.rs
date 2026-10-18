@@ -66,6 +66,29 @@ const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 等 mpv 自己退出的上限，超过就强杀。收尾不能让应用关不掉。
 const QUIT_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// 载入一个目标之后，等它真的起来的上限。
+///
+/// 本地文件几十毫秒就好；网络流要握手；网页地址还要等 yt-dlp 解析，给得宽一点。
+const LOAD_TIMEOUT: Duration = Duration::from_secs(6);
+const PAGE_LOAD_TIMEOUT: Duration = Duration::from_secs(12);
+
+/// 这些站点的地址必须靠 yt-dlp 解析，mpv 自己打不开网页。
+const KNOWN_SITE_HOSTS: &[&str] = &[
+  "bilibili.com",
+  "b23.tv",
+  "youtube.com",
+  "youtu.be",
+  "vimeo.com",
+  "douyin.com",
+  "tiktok.com",
+];
+
+/// 常见媒体扩展名：地址以这些结尾时，mpv 能直接从 ffmpeg 打开，不需要 yt-dlp。
+const MEDIA_EXTENSIONS: &[&str] = &[
+  ".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".ts", ".m2ts", ".m4v", ".mpg", ".mpeg",
+  ".m3u8", ".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg", ".opus",
+];
+
 /// 随安装包一起分发的 mpv。有它就用它，不必要求用户自己装。
 static BUNDLED_MPV: OnceLock<PathBuf> = OnceLock::new();
 
@@ -837,6 +860,16 @@ fn play_target(
   state: &PlayerState,
   path: String,
 ) -> Result<(), String> {
+  /*
+   * 先拦住「没装 yt-dlp 却丢了个网页地址」这种必然失败的情况：
+   * 让用户等十几秒再报错，不如当场说清楚该装什么。
+   */
+  if is_known_site(&path) && find_ytdlp().is_none() {
+    return Err(
+      "这个网页地址需要 yt-dlp 才能解析。装好 yt-dlp 后重试，或者直接放视频直链。".to_string(),
+    );
+  }
+
   let executable = find_mpv().ok_or_else(|| "未找到 mpv，请先安装 mpv 后重试".to_string())?;
   let window_handle = window.hwnd().map_err(|error| format!("获取窗口句柄失败: {error}"))?.0 as isize;
   let size = window.inner_size().map_err(|error| format!("读取窗口尺寸失败: {error}"))?;
@@ -863,6 +896,13 @@ fn play_target(
   state.forget_duration();
 
   state.with_ipc(|client| client.load_file(&path))?;
+
+  // `loadfile` 是异步的：等它真的把目标拉起来，再认「这一片在播」
+  if !wait_until_loaded(state, load_timeout(&path)) {
+    state.set_current_path(None);
+    return Err(load_failure_message(&path));
+  }
+
   // 刚打开就算看过一次；确切的进度等换片或退出时再更新
   let _ = crate::recent::remember(&config_dir, &path, 0.0);
   state.set_current_path(Some(path));
@@ -878,6 +918,96 @@ fn play_target(
   let _ = state.sync_embedded_window(window_handle, (size.width, size.height));
 
   Ok(())
+}
+
+/// 这个地址是不是「网页」：http(s) 开头且不像直链视频。
+fn is_web_page(url: &str) -> bool {
+  (url.starts_with("http://") || url.starts_with("https://")) && !has_media_extension(url)
+}
+
+/// 地址（去掉查询串与锚点）是不是以常见媒体扩展名结尾。
+fn has_media_extension(url: &str) -> bool {
+  let without_fragment = url.split(['?', '#']).next().unwrap_or(url);
+  let lower = without_fragment.to_ascii_lowercase();
+
+  MEDIA_EXTENSIONS.iter().any(|extension| lower.ends_with(extension))
+}
+
+/// 是不是那类必须靠 yt-dlp 解析的站点。
+fn is_known_site(url: &str) -> bool {
+  let lower = url.to_ascii_lowercase();
+
+  KNOWN_SITE_HOSTS.iter().any(|host| lower.contains(host))
+}
+
+fn load_timeout(path: &str) -> Duration {
+  if is_web_page(path) {
+    PAGE_LOAD_TIMEOUT
+  } else {
+    LOAD_TIMEOUT
+  }
+}
+
+/// 等 mpv 把目标拉起来：不再待机就算成功。
+///
+/// 直播流读不出时长，所以判据主要看 `idle-active`；时长只作为兜底。
+fn wait_until_loaded(state: &PlayerState, timeout: Duration) -> bool {
+  let deadline = Instant::now() + timeout;
+
+  loop {
+    let idle = state
+      .with_ipc(|client| client.get_bool("idle-active"))
+      .ok()
+      .flatten()
+      .unwrap_or(true);
+
+    /*
+     * 不能再待机**而且**真读出了东西才算成功。
+     * 打不开的文件有时会先离开待机一下再退回去，只看 idle 会误判成成功。
+     */
+    if !idle {
+      let duration = state
+        .with_ipc(|client| client.get_number("duration"))
+        .ok()
+        .flatten()
+        .unwrap_or(0.0);
+
+      if duration > 0.0 {
+        return true;
+      }
+
+      let tracks = state
+        .with_ipc(|client| client.get_value("track-list"))
+        .ok()
+        .flatten()
+        .map(|value| parse_tracks(&value))
+        .unwrap_or_default();
+
+      if !tracks.is_empty() {
+        return true;
+      }
+    }
+
+    if Instant::now() >= deadline {
+      return false;
+    }
+
+    std::thread::sleep(Duration::from_millis(100));
+  }
+}
+
+/// 打不开时给一句能照着做的说明。
+fn load_failure_message(path: &str) -> String {
+  if is_web_page(path) {
+    if find_ytdlp().is_none() {
+      return "这个网页地址需要 yt-dlp 才能解析。装好 yt-dlp 后重试，或者直接放视频直链。"
+        .to_string();
+    }
+
+    return "mpv 没能打开这个网页地址（站点可能要求登录，或者地址已经失效）。".to_string();
+  }
+
+  format!("mpv 没能打开这个目标：{path}")
 }
 
 /// 停止当前播放。进程留着，下次换片不用再等启动。
@@ -2520,6 +2650,39 @@ mod tests {
     assert_eq!(find_ytdlp_with(Some(&bundled)), Some(bundled.clone()));
 
     let _ = std::fs::remove_dir_all(&directory);
+  }
+
+  /* ---------------- 打开目标的判定 ---------------- */
+
+  #[test]
+  fn media_extensions_are_recognized_with_or_without_a_query() {
+    assert!(has_media_extension("https://a.test/b.MP4"));
+    assert!(has_media_extension("https://a.test/b.mkv?token=1"));
+    assert!(has_media_extension("https://a.test/live/index.m3u8#t=10"));
+    assert!(!has_media_extension("https://www.bilibili.com/video/BV1xx"));
+  }
+
+  #[test]
+  fn web_pages_are_http_urls_without_a_media_extension() {
+    assert!(is_web_page("https://www.bilibili.com/video/BV1xx"));
+    assert!(!is_web_page("https://cdn.test/a.mp4"));
+    assert!(!is_web_page(r"E:\clips\a.mkv"));
+    assert!(!is_web_page("av://dshow:video=Camera"));
+  }
+
+  #[test]
+  fn known_site_matching_is_case_insensitive() {
+    assert!(is_known_site("https://www.BiliBili.com/video/BV1xx"));
+    assert!(is_known_site("https://youtu.be/abc"));
+    assert!(!is_known_site("https://example.test/a.mkv"));
+  }
+
+  /// 网页地址要等 yt-dlp 解析，给的时间比本地文件长。
+  #[test]
+  fn page_loads_get_a_longer_timeout() {
+    assert_eq!(load_timeout("https://www.youtube.com/watch?v=1"), PAGE_LOAD_TIMEOUT);
+    assert_eq!(load_timeout("https://cdn.test/a.mp4"), LOAD_TIMEOUT);
+    assert_eq!(load_timeout(r"E:\clips\a.mkv"), LOAD_TIMEOUT);
   }
 
   #[test]

@@ -1928,3 +1928,17 @@ describe('在线视频（yt-dlp）', () => {
     expect(screen.queryByTestId('tools-ytdl-missing')).toBeNull()
   })
 })
+
+describe('打开失败', () => {
+  /** 后端拒绝时不能留在「0:00 在播」的假状态上。 */
+  it('报错，并且把展开的画面收回去', async () => {
+    mocks.playLocalVideo.mockRejectedValueOnce(new Error('打不开这个文件'))
+
+    render(<App />)
+    await chooseDirectory()
+    await userEvent.click(grid().getByRole('button', { name: 'demo.mp4' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('打不开这个文件')
+    expect(screen.queryByTestId('expanded-tile')).toBeNull()
+  })
+})

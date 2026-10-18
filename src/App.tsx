@@ -779,6 +779,9 @@ export default function App() {
 
         setExpanded(true)
       } catch (cause: unknown) {
+        // 打开失败：别把界面停在「0:00 在播」的假状态上
+        setCurrentFile(null)
+        setExpanded(false)
         reportError(cause)
       }
     },
