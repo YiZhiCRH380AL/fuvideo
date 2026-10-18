@@ -103,6 +103,11 @@ const ZOOM_RANGE: (f64, f64) = (-20.0, 20.0);
 const VOLUME_RANGE: (f64, f64) = (0.0, 100.0);
 /// 倍速的可调范围：比这更快听不清、更慢没有意义。
 const SPEED_RANGE: (f64, f64) = (0.25, 4.0);
+/// 窗口尺寸的合理区间：比这更小的窗口装不下控制条。
+const WINDOW_WIDTH_RANGE: (u32, u32) = (320, 10_000);
+const WINDOW_HEIGHT_RANGE: (u32, u32) = (180, 10_000);
+/// 坐标的合理区间：多显示器摆得再远也不会超出这个量级。
+const WINDOW_POSITION_LIMIT: i32 = 50_000;
 const TARGET_PEAK_RANGE: (f64, f64) = (10.0, 10_000.0);
 const HDR_RECOVERY_RANGE: (f64, f64) = (0.0, 2.0);
 
@@ -228,6 +233,11 @@ pub struct Settings {
   pub volume: Option<f64>,
   /// 上次的倍速。启动时当 `--speed` 传下去。
   pub speed: Option<f64>,
+  /// 上次的窗口大小与位置（物理像素）。迷你模式不参与。
+  pub window_width: Option<u32>,
+  pub window_height: Option<u32>,
+  pub window_x: Option<i32>,
+  pub window_y: Option<i32>,
 }
 
 impl Default for Settings {
@@ -280,6 +290,10 @@ impl Default for Settings {
       splash_speed: default_splash_speed(),
       volume: None,
       speed: None,
+      window_width: None,
+      window_height: None,
+      window_x: None,
+      window_y: None,
     }
   }
 }
@@ -384,6 +398,19 @@ impl Settings {
 
     self.volume = clamp_option(self.volume, VOLUME_RANGE);
     self.speed = clamp_option(self.speed, SPEED_RANGE);
+
+    self.window_width = self
+      .window_width
+      .map(|width| width.clamp(WINDOW_WIDTH_RANGE.0, WINDOW_WIDTH_RANGE.1));
+    self.window_height = self
+      .window_height
+      .map(|height| height.clamp(WINDOW_HEIGHT_RANGE.0, WINDOW_HEIGHT_RANGE.1));
+    self.window_x = self
+      .window_x
+      .map(|x| x.clamp(-WINDOW_POSITION_LIMIT, WINDOW_POSITION_LIMIT));
+    self.window_y = self
+      .window_y
+      .map(|y| y.clamp(-WINDOW_POSITION_LIMIT, WINDOW_POSITION_LIMIT));
 
     self
   }
@@ -555,6 +582,22 @@ pub fn remember_playback(app: &tauri::AppHandle, volume: f64, speed: f64) -> Res
   })
 }
 
+/// 记住退出时的窗口大小与位置（物理像素）。
+pub fn remember_window(
+  app: &tauri::AppHandle,
+  width: u32,
+  height: u32,
+  x: i32,
+  y: i32,
+) -> Result<Settings, String> {
+  update(app, |settings| {
+    settings.window_width = Some(width);
+    settings.window_height = Some(height);
+    settings.window_x = Some(x);
+    settings.window_y = Some(y);
+  })
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -657,6 +700,10 @@ mod tests {
       splash_speed: "fast".to_string(),
       volume: Some(42.0),
       speed: Some(1.25),
+      window_width: Some(1280),
+      window_height: Some(800),
+      window_x: Some(120),
+      window_y: Some(80),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -795,6 +842,10 @@ mod tests {
       "splashSpeed",
       "volume",
       "speed",
+      "windowWidth",
+      "windowHeight",
+      "windowX",
+      "windowY",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -935,6 +986,27 @@ mod tests {
     .normalized();
 
     assert_eq!(broken.volume, None);
+  }
+
+  /// 窗口尺寸与坐标给一个合理区间：手改出 999999 这种值也不该把窗口放到屏幕外。
+  #[test]
+  fn window_bounds_are_clamped() {
+    assert_eq!(Settings::default().window_width, None);
+    assert_eq!(Settings::default().window_x, None);
+
+    let settings = Settings {
+      window_width: Some(999_999),
+      window_height: Some(1),
+      window_x: Some(-999_999),
+      window_y: Some(999_999),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.window_width, Some(WINDOW_WIDTH_RANGE.1));
+    assert_eq!(settings.window_height, Some(WINDOW_HEIGHT_RANGE.0));
+    assert_eq!(settings.window_x, Some(-WINDOW_POSITION_LIMIT));
+    assert_eq!(settings.window_y, Some(WINDOW_POSITION_LIMIT));
   }
 
   /// 改过键才写进文件；一条都没改时是 `None`，界面直接用默认表。

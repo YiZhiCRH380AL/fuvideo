@@ -20,6 +20,20 @@ fn reveal_window(window: tauri::WebviewWindow) {
   let _ = window.set_focus();
 }
 
+/// 把上次的窗口大小与位置还回去。
+///
+/// 尺寸与坐标都按**物理像素**存：`inner_size` / `outer_position` 拿到的就是物理值，
+/// 按逻辑值还原会在不同缩放的显示器上跑偏。
+fn restore_window(window: &tauri::WebviewWindow, stored: &settings::Settings) {
+  if let (Some(width), Some(height)) = (stored.window_width, stored.window_height) {
+    let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+  }
+
+  if let (Some(x), Some(y)) = (stored.window_x, stored.window_y) {
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
@@ -46,6 +60,11 @@ pub fn run() {
       if let Some(window) = app.get_webview_window("main") {
         let stored = settings::load(&settings::config_dir(app.handle()));
         let _ = window.set_always_on_top(stored.always_on_top);
+
+        // 迷你模式下的尺寸是临时的，不往「常用尺寸」上还原
+        if !stored.mini_mode {
+          restore_window(&window, &stored);
+        }
       }
 
       // 兜底：前端要是没能把窗口叫起来（脚本报错、开发服务器没起来），
@@ -171,6 +190,26 @@ pub fn run() {
       // 音量与倍速也记住：下次启动直接带上，不用每次开机重调
       if let Some((volume, speed)) = state.playback_prefs() {
         let _ = settings::remember_playback(app_handle, volume, speed);
+      }
+      /*
+       * 窗口大小与位置：迷你模式下不存（那是临时尺寸，不是用户挑的）。
+       * 最小化时 `outer_position` 会给出 -32000 这种哨兵值，照存会把下次的窗口
+       * 放到屏幕外，所以最小化时整条跳过。
+       */
+      if let Some(window) = app_handle.get_webview_window("main") {
+        let stored = settings::load(&settings::config_dir(app_handle));
+
+        if !stored.mini_mode && !window.is_minimized().unwrap_or(false) {
+          if let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) {
+            let _ = settings::remember_window(
+              app_handle,
+              size.width,
+              size.height,
+              position.x,
+              position.y,
+            );
+          }
+        }
       }
       // 先让播放内核自己退出：它要趁这个时候把 watch-later（播放位置、
       // 每片的音轨与字幕选择）落盘。直接 kill 掉就什么都留不下。

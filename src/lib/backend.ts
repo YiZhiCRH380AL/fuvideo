@@ -135,6 +135,11 @@ export interface PlayerSettings {
   volume: number | null
   /** 上次的倍速；启动时直接带上。 */
   speed: number | null
+  /** 上次的窗口大小与位置（物理像素）；迷你模式下不存不还原。 */
+  windowWidth: number | null
+  windowHeight: number | null
+  windowX: number | null
+  windowY: number | null
 }
 
 /** 一个章节。 */
@@ -253,6 +258,10 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   splashSpeed: 'normal',
   volume: null,
   speed: null,
+  windowWidth: null,
+  windowHeight: null,
+  windowX: null,
+  windowY: null,
 }
 
 const IDLE_DETAILS: PlayerDetails = {
