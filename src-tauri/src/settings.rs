@@ -70,6 +70,9 @@ pub const COLOR_CHANNELS: &[&str] = &["brightness", "contrast", "saturation", "h
 /// 播放模式：顺序、单曲循环、列表循环、随机。见 [crate::settings::Settings::play_mode]。
 pub const PLAY_MODES: &[&str] = &["sequence", "single", "list", "shuffle"];
 
+/// 开屏停留时长的档位，见 [src/lib/splash.ts](src/lib/splash.ts) 里的同一份表。
+pub const SPLASH_SPEEDS: &[&str] = &["off", "fast", "normal"];
+
 /// 可以改键的动作。和前端 [shortcuts.ts](src/lib/shortcuts.ts) 里的那份一一对应，
 /// 这里留一份是为了能把手改配置里的错别字挡掉。
 pub const SHORTCUT_ACTIONS: &[&str] = &[
@@ -120,6 +123,11 @@ fn default_save_position() -> bool {
 /// 默认走简单模式：刚上手的人不该先看到一排滑块。
 fn default_filter_mode() -> String {
   "simple".to_string()
+}
+
+/// 默认开屏标准档：入场动画本来就要这么久，再短反而像闪了一下。
+fn default_splash_speed() -> String {
+  "normal".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -210,6 +218,8 @@ pub struct Settings {
   /// 自定义快捷键：动作 id → `KeyboardEvent.code`。
   /// `None` 表示一条都没改过，界面直接用默认表。
   pub shortcuts: Option<BTreeMap<String, String>>,
+  /// 开屏停留时长档位：off / fast / normal。
+  pub splash_speed: String,
 }
 
 impl Default for Settings {
@@ -259,6 +269,7 @@ impl Default for Settings {
       always_on_top: false,
       mini_mode: false,
       shortcuts: None,
+      splash_speed: default_splash_speed(),
     }
   }
 }
@@ -356,6 +367,10 @@ impl Settings {
     }
 
     self.shortcuts = self.shortcuts.map(normalize_shortcuts).filter(|map| !map.is_empty());
+
+    if !SPLASH_SPEEDS.contains(&self.splash_speed.as_str()) {
+      self.splash_speed = default_splash_speed();
+    }
 
     self
   }
@@ -513,6 +528,12 @@ pub fn reset_shortcuts(app: tauri::AppHandle) -> Result<Settings, String> {
   update(&app, |settings| settings.shortcuts = None)
 }
 
+/// 开屏停留时长的档位。
+#[tauri::command]
+pub fn set_splash_speed(app: tauri::AppHandle, speed: String) -> Result<Settings, String> {
+  update(&app, |settings| settings.splash_speed = speed)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -612,6 +633,7 @@ mod tests {
       always_on_top: true,
       mini_mode: true,
       shortcuts: Some(BTreeMap::from([("toggle-mute".to_string(), "KeyQ".to_string())])),
+      splash_speed: "fast".to_string(),
     };
 
     let written = save(&directory, settings.clone()).expect("写入设置");
@@ -747,6 +769,7 @@ mod tests {
       "alwaysOnTop",
       "miniMode",
       "shortcuts",
+      "splashSpeed",
     ] {
       assert!(value.get(key).is_some(), "设置里缺少字段 {key}");
     }
@@ -834,6 +857,33 @@ mod tests {
 
     assert_eq!(settings.play_mode, "sequence");
     assert_eq!(Settings::default().play_mode, "sequence", "默认是顺序播放");
+  }
+
+  /// 手改配置里把档位写错成别的词，按标准档处理，不让开屏一闪而过或卡住。
+  #[test]
+  fn unknown_splash_speed_falls_back_to_normal() {
+    assert_eq!(Settings::default().splash_speed, "normal");
+
+    let settings = Settings {
+      splash_speed: "慢动作".to_string(),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.splash_speed, "normal");
+  }
+
+  #[test]
+  fn splash_speed_keeps_known_values() {
+    for speed in SPLASH_SPEEDS {
+      let settings = Settings {
+        splash_speed: speed.to_string(),
+        ..Settings::default()
+      }
+      .normalized();
+
+      assert_eq!(&settings.splash_speed, speed);
+    }
   }
 
   /// 改过键才写进文件；一条都没改时是 `None`，界面直接用默认表。

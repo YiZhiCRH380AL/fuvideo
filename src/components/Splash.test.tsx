@@ -84,4 +84,28 @@ describe('开屏浮层', () => {
 
     expect(splash()).toHaveAttribute('data-leaving', 'true')
   })
+
+  /**
+   * 设置里选了「关闭」：最短停留是 0，探完就进。
+   * 注意收场那一段（460ms）还是要走，不然窗口会硬切。
+   */
+  it('最短停留设成 0 时，环境一探完就收场', async () => {
+    const onLeave = vi.fn()
+    render(<Splash ready onLeave={onLeave} onDone={vi.fn()} minMs={0} maxMs={600} />)
+
+    expect(splash()).toHaveAttribute('data-leaving', 'true')
+    expect(onLeave).toHaveBeenCalledTimes(1)
+  })
+
+  /** 快档：比标准档早收场，但该等的那段还是要等。 */
+  it('快档按传进来的时长收场', async () => {
+    const onLeave = vi.fn()
+    render(<Splash ready onLeave={onLeave} onDone={vi.fn()} minMs={700} maxMs={1600} />)
+
+    await advance(650)
+    expect(onLeave).not.toHaveBeenCalled()
+
+    await advance(50)
+    expect(onLeave).toHaveBeenCalledTimes(1)
+  })
 })

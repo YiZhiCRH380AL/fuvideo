@@ -129,6 +129,8 @@ export interface PlayerSettings {
   miniMode: boolean
   /** 自定义快捷键：动作 id → 键码。`null` 表示全用默认。 */
   shortcuts: Record<string, string> | null
+  /** 开屏停留时长：off / fast / normal。 */
+  splashSpeed: string
 }
 
 /** 一个章节。 */
@@ -231,6 +233,7 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   alwaysOnTop: false,
   miniMode: false,
   shortcuts: null,
+  splashSpeed: 'normal',
 }
 
 const IDLE_DETAILS: PlayerDetails = {
@@ -668,6 +671,11 @@ export function setShortcut(action: string, code: string | null): Promise<Player
 /** 全部快捷键恢复默认。 */
 export function resetShortcuts(): Promise<PlayerSettings> {
   return settingsCommand('reset_shortcuts')
+}
+
+/** 开屏停留时长档位：`off` / `fast` / `normal`。 */
+export function setSplashSpeed(speed: string): Promise<PlayerSettings> {
+  return settingsCommand('set_splash_speed', { speed })
 }
 
 /** 逐帧步进。前后各走一帧，mpv 会顺手停住。 */

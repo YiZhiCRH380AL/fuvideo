@@ -331,6 +331,18 @@ impl PlayerState {
   }
 }
 
+impl Drop for PlayerState {
+  /// 兜底：谁忘了 `shutdown()`，至少别把 mpv 留在后台。
+  ///
+  /// 正常退出走 `shutdown()`——它让 mpv 自己退，趁那个机会把 watch-later 落盘。
+  /// 走到这里说明是异常路径（用例 panic、某处提前 return）：这时强杀比留一个
+  /// `--idle` 的进程强，那种进程会攥着继承过去的 stdout 句柄，
+  /// 让 `cargo test | ...` 这类用法永远等不到 EOF。
+  fn drop(&mut self) {
+    self.clear_process();
+  }
+}
+
 /// 从 `mpv --version` 的输出里取出纯版本号，例如 `0.40.0`。
 pub fn parse_version(stdout: &str) -> Option<String> {
   let first_line = stdout.lines().next()?.trim();

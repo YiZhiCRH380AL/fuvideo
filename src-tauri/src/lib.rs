@@ -133,6 +133,7 @@ pub fn run() {
       settings::remember_mini_mode,
       settings::set_shortcut,
       settings::reset_shortcuts,
+      settings::set_splash_speed,
       sample::prepare_sample_folder,
       collections::read_collections,
       collections::toggle_playlist,

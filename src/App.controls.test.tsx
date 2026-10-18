@@ -114,6 +114,7 @@ const mocks = vi.hoisted(() => {
       alwaysOnTop: false,
       miniMode: false,
       shortcuts: null,
+      splashSpeed: 'normal',
     } as Record<string, unknown>,
     rememberDirectory: vi.fn(),
     rememberAlwaysOnTop: vi.fn(),
@@ -278,6 +279,10 @@ vi.mock('./lib/backend', () => ({
     mocks.settings = { ...mocks.settings, shortcuts: null }
     return mocks.settings
   },
+  setSplashSpeed: async (speed: string) => {
+    mocks.settings = { ...mocks.settings, splashSpeed: speed }
+    return mocks.settings
+  },
   playUrl: (url: string) => mocks.playLocalVideo(url),
   stepFrame: (forward: boolean) => mocks.stepFrame(forward),
   getChapters: () => mocks.getChapters(),
@@ -309,6 +314,7 @@ beforeEach(() => {
     alwaysOnTop: false,
     miniMode: false,
     shortcuts: null,
+    splashSpeed: 'normal',
   }
 
   for (const fn of [

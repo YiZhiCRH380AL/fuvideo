@@ -90,6 +90,7 @@ const mocks = vi.hoisted(() => ({
   takeScreenshot: vi.fn(),
   setShortcut: vi.fn(),
   resetShortcuts: vi.fn(),
+  setSplashSpeed: vi.fn(),
 }))
 
 vi.mock('../lib/backend', () => ({
@@ -112,6 +113,7 @@ vi.mock('../lib/backend', () => ({
   takeScreenshot: () => mocks.takeScreenshot(),
   setShortcut: (action: string, code: string | null) => mocks.setShortcut(action, code),
   resetShortcuts: () => mocks.resetShortcuts(),
+  setSplashSpeed: (speed: string) => mocks.setSplashSpeed(speed),
 }))
 
 import SettingsPage from './SettingsPage'
@@ -188,6 +190,11 @@ function wireSetters(): void {
     mocks.settings = { ...mocks.settings, shortcuts: null }
     return mocks.settings
   })
+
+  mocks.setSplashSpeed.mockImplementation(async (speed: string) => {
+    mocks.settings = { ...mocks.settings, splashSpeed: speed }
+    return mocks.settings
+  })
 }
 
 function renderPage() {
@@ -222,6 +229,7 @@ beforeEach(() => {
     mocks.setAudioSpdif,
     mocks.setShortcut,
     mocks.resetShortcuts,
+    mocks.setSplashSpeed,
   ]) {
     fn.mockClear()
   }
@@ -453,6 +461,37 @@ describe('设置页 · 快捷键', () => {
 
     // 后端返回的那份是「没改过」，界面跟着回到出厂键位
     expect(await screen.findByRole('button', { name: '静音开关 的按键' })).toHaveTextContent('M')
+  })
+})
+
+describe('设置页 · 界面', () => {
+  it('开屏档位有三个选项，点「快」会通知后端并记住选择', async () => {
+    renderPage()
+
+    const group = await screen.findByRole('group', { name: '开屏停留时长' })
+    expect(within(group).getByRole('button', { name: '标准' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await userEvent.click(within(group).getByRole('button', { name: '快' }))
+
+    await waitFor(() => expect(mocks.setSplashSpeed).toHaveBeenCalledWith('fast'))
+    expect(within(group).getByRole('button', { name: '快' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  /** 认不出来的档位落到「标准」上，界面不能一个都不选中。 */
+  it('配置里是认不出的档位时，界面上「标准」是选中的', async () => {
+    mocks.settings = { ...baseSettings(), splashSpeed: '慢动作' } as unknown as Record<string, unknown>
+
+    renderPage()
+
+    const group = await screen.findByRole('group', { name: '开屏停留时长' })
+
+    expect(within(group).getByRole('button', { name: '标准' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 })
 

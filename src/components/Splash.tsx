@@ -14,6 +14,10 @@ export interface SplashProps {
   onLeave: () => void
   /** 收场动画播完，可以整块卸载了。 */
   onDone: () => void
+  /** 最短停留时间；默认就是标准档。设置里选「快 / 关闭」时由外面传进来。 */
+  minMs?: number
+  /** 兜底时长；环境探不完时最多挡这么久。 */
+  maxMs?: number
 }
 
 /**
@@ -23,9 +27,15 @@ export interface SplashProps {
  * 入场是 CSS 动画（第一帧就到位，窗口一显示就是满的），收场靠 data-leaving
  * 切过渡，JS 只负责掐时间，不参与逐帧。
  */
-export default function Splash({ ready, onLeave, onDone }: SplashProps) {
-  const [minElapsed, setMinElapsed] = useState(SPLASH_MIN_MS <= 0)
-  const [overdue, setOverdue] = useState(SPLASH_MAX_MS <= 0)
+export default function Splash({
+  ready,
+  onLeave,
+  onDone,
+  minMs = SPLASH_MIN_MS,
+  maxMs = SPLASH_MAX_MS,
+}: SplashProps) {
+  const [minElapsed, setMinElapsed] = useState(minMs <= 0)
+  const [overdue, setOverdue] = useState(maxMs <= 0)
 
   /*
    * 收场条件是单调的（时长只会往前走，环境只会从「没探完」变成「探完」），
@@ -50,18 +60,18 @@ export default function Splash({ ready, onLeave, onDone }: SplashProps) {
       return
     }
 
-    const timer = window.setTimeout(() => setMinElapsed(true), SPLASH_MIN_MS)
+    const timer = window.setTimeout(() => setMinElapsed(true), minMs)
     return () => window.clearTimeout(timer)
-  }, [minElapsed])
+  }, [minElapsed, minMs])
 
   useEffect(() => {
     if (overdue) {
       return
     }
 
-    const timer = window.setTimeout(() => setOverdue(true), SPLASH_MAX_MS)
+    const timer = window.setTimeout(() => setOverdue(true), maxMs)
     return () => window.clearTimeout(timer)
-  }, [overdue])
+  }, [maxMs, overdue])
 
   useEffect(() => {
     if (!leaving) {

@@ -70,6 +70,7 @@ import {
 } from './lib/playback'
 import { buildShortcutMap, resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
 import { hasFired, remainingSeconds, sleepDeadline } from './lib/sleep'
+import { timingFor } from './lib/splash'
 import { hasSeenTutorial } from './lib/tutorial'
 import { cachedThumbnail, loadThumbnail } from './lib/thumbnail-cache'
 import { useIdleVisibility } from './lib/use-idle-visibility'
@@ -210,6 +211,8 @@ export default function App() {
   /** 方格墙的搜索词与排序。只影响摆出来的顺序，不动目录本身。 */
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<'name' | 'name-desc'>('name')
+  /** 开屏停留时长档位。设置里改完要下次启动才看得到效果。 */
+  const [splashSpeed, setSplashSpeed] = useState('normal')
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 用户点过方格没有。
@@ -324,6 +327,9 @@ export default function App() {
 
   /** 定时还剩多少秒；没开定时就是 `null`。 */
   const sleepRemaining = sleep === null ? null : remainingSeconds(sleep.endsAt, clock)
+
+  /** 开屏的停留时序：设置里选「快 / 关闭」时只改这个，不动动效本身。 */
+  const splashTiming = timingFor(splashSpeed)
 
   // 画面展开播放时，空闲一会儿把顶栏和底栏一起隐去。
   // 暂停、拖动进度、开着倍速菜单时保持显示。
@@ -445,6 +451,8 @@ export default function App() {
         setPlayMode(settings?.playMode ?? 'sequence')
         setShortcutOverrides(settings?.shortcuts ?? null)
         setAlwaysOnTop(settings?.alwaysOnTop === true)
+        // 档位认不出来时 `timingFor` 会当标准档，别让开屏一闪而过
+        setSplashSpeed(settings?.splashSpeed ?? 'normal')
 
         // 上次是迷你模式：窗口跟着缩回去。置顶不用在这儿管，后端启动时已经设过了
         if (settings?.miniMode === true) {
@@ -1915,7 +1923,13 @@ export default function App() {
       {curtain ? <div className="curtain" ref={curtainRef} data-testid="curtain" /> : null}
 
       {splash === 'done' ? null : (
-        <Splash ready={bootReady} onLeave={handleSplashLeave} onDone={handleSplashDone} />
+        <Splash
+          ready={bootReady}
+          onLeave={handleSplashLeave}
+          onDone={handleSplashDone}
+          minMs={splashTiming.minMs}
+          maxMs={splashTiming.maxMs}
+        />
       )}
 
       {/* 开屏没走完之前不弹教程，不然两层浮层会叠在一起 */}

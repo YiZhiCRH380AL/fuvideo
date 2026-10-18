@@ -11,11 +11,13 @@ import {
   setAudioSpdif,
   setEqualizerBand,
   setEqualizerPreset,
+  setSplashSpeed,
   type AudioEffectKind,
   type AudioOptions,
   type PlayerSettings,
   type VideoOptions,
 } from '../lib/backend'
+import { SPLASH_SPEEDS, speedFor } from '../lib/splash'
 import VideoSettings from './VideoSettings'
 import ShortcutSettings from './ShortcutSettings'
 import './SettingsPage.css'
@@ -377,6 +379,36 @@ export default function SettingsPage({
               onChange={onShortcutsChange}
               onError={onError}
             />
+          </section>
+
+          <section className="settings__section">
+            <div className="settings__heading">
+              <h3 className="settings__name">界面</h3>
+              <span className="settings__note">改完下次启动生效</span>
+            </div>
+
+            {settings ? (
+              <div className="settings__block">
+                <span className="settings__label">开屏停留</span>
+                <div className="settings__chips" role="group" aria-label="开屏停留时长">
+                  {SPLASH_SPEEDS.map((item) => (
+                    <button
+                      className="settings__chip"
+                      key={item.id}
+                      type="button"
+                      aria-pressed={speedFor(settings.splashSpeed) === item.id}
+                      disabled={busy}
+                      onClick={() => run(() => setSplashSpeed(item.id))}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="settings__hint">
+                  只改开屏停多久，入场与收场的动效不变；选「关闭」也是探完就进，不会硬切。
+                </p>
+              </div>
+            ) : null}
           </section>
         </div>
 
