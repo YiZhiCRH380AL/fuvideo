@@ -1,4 +1,4 @@
-//! mpv 播放内核的探测与进程管理。
+﻿//! mpv 播放内核的探测与进程管理。
 //!
 //! 结构是「HTML 界面 + mpv 渲染」：mpv 作为子进程启动，通过 `--wid` 嵌入主窗口，
 //! 并把自己创建的窗口压到 z-order 底部，让透明的 WebView 界面浮在画面之上。
@@ -3215,6 +3215,104 @@ mod tests {
   /// 读一次 AB 循环的端点。
   fn loop_point(client: &ipc::MpvIpc, name: &str) -> Option<f64> {
     parse_loop_point(client.get_value(name).ok().flatten())
+  }
+
+  /// 起一个只服务一个文件的本地 HTTP 服务器，返回端口与停止句柄。
+  ///
+  /// 用来验「网络流」这条路：mpv 走的是同一条 `loadfile`，只是地址变成了 `http://`。
+  /// 不碰外网，测试离线可跑。只整份返回，不处理 Range——ffmpeg 收到 200 就够用了。
+  fn serve_file_over_http(path: PathBuf) -> (u16, std::sync::mpsc::Sender<()>) {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc::{channel, TryRecvError};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("绑定本地端口");
+    let port = listener.local_addr().expect("取本地端口").port();
+    let (stop_tx, stop_rx) = channel::<()>();
+
+    thread::spawn(move || {
+      let bytes = std::fs::read(&path).expect("读测试视频");
+      let _ = listener.set_nonblocking(true);
+
+      loop {
+        match stop_rx.try_recv() {
+          Ok(()) | Err(TryRecvError::Disconnected) => return,
+          Err(TryRecvError::Empty) => {}
+        }
+
+        match listener.accept() {
+          Ok((mut stream, _)) => {
+            // 把请求头读掉就行，内容不关心
+            let mut buffer = [0u8; 4096];
+            let read = stream.read(&mut buffer).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
+
+            /*
+             * ffmpeg 一律带 `Range: bytes=0-` 来问，那就规规矩矩回 206。
+             * 只回 200 整份时 mpv 实测会直接放弃这条流（path 读回来是 None）。
+             */
+            let header = if request.contains("range:") {
+              format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nContent-Range: bytes 0-{}/{}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                bytes.len().saturating_sub(1),
+                bytes.len(),
+                bytes.len()
+              )
+            } else {
+              format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                bytes.len()
+              )
+            };
+
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&bytes);
+            let _ = stream.flush();
+          }
+          Err(_) => thread::sleep(Duration::from_millis(20)),
+        }
+      }
+    });
+
+    (port, stop_tx)
+  }
+
+  /// 网络流：`loadfile http://…` 能读出时长、出轨道。
+  ///
+  /// P5 里的「网络流」走的就是这条路（rtsp / rtmp / udp 也一样，mpv 内部都交给 ffmpeg）。
+  /// 这里用本地 HTTP 服务器验，不依赖外网。
+  #[test]
+  fn http_stream_plays_through_loadfile() {
+    if find_mpv().is_none() {
+      eprintln!("本机未安装 mpv，跳过网络流集成测试");
+      return;
+    }
+
+    let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/sample/示例视频.mp4");
+    let (port, stop) = serve_file_over_http(sample);
+
+    let (_guard, client) = spawn_headless("test-http", &[]);
+
+    client
+      .load_file(&format!("http://127.0.0.1:{port}/sample.mp4"))
+      .expect("打开 HTTP 流");
+
+    let duration = wait_for_number(&client, "duration", Duration::from_secs(20)).unwrap_or(0.0);
+
+    assert!(duration > 10.0, "网络流该能读出时长，实际 {duration}");
+
+    let tracks = wait_for_tracks(
+      &client,
+      |tracks| tracks.iter().any(|track| track.kind == "video"),
+      Duration::from_secs(20),
+    );
+
+    assert!(
+      tracks.iter().any(|track| track.kind == "video"),
+      "网络流该出视频轨: {tracks:?}"
+    );
+
+    drop(stop);
   }
 
   /// AB 循环的两个端点：设得上、读得回、清得掉。
