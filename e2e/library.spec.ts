@@ -198,7 +198,7 @@ test('文件夹条里的卡片一张都不能被裁', async ({ page }) => {
   expect(folders!.total).toBe(8)
   expect(folders!.cards.filter((card) => card.clipped)).toEqual([])
   expect(folders!.cards.every((card) => card.height > 100)).toBe(true)
-  expect(folders!.cards.every((card) => card.cover === 92)).toBe(true)
+  expect(folders!.cards.every((card) => card.cover === 100)).toBe(true)
   // 单行横向排：竖向不该有内容溢出，不然就是又被压扁了
   expect(folders!.scrollHeight).toBeLessThanOrEqual(folders!.clientHeight + 1)
   // 底边要留得下入场那 6px 的上浮，否则动画期间卡片会被裁一刀
@@ -223,7 +223,7 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
   expect(drives!.cards.filter((card) => card.clipped)).toEqual([])
   // 同一行里高度必须一样，不然一眼就看得出「高度不完全」
   expect(new Set(drives!.cards.map((card) => card.height)).size).toBe(1)
-  expect(drives!.cards.every((card) => card.cover === 92)).toBe(true)
+  expect(drives!.cards.every((card) => card.cover === 100)).toBe(true)
 
 })
 

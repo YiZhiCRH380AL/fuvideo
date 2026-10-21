@@ -18,6 +18,8 @@ import {
   type VideoOptions,
 } from '../lib/backend'
 import { SPLASH_SPEEDS, speedFor } from '../lib/splash'
+import { normalizeMotion, normalizeTheme, type MotionPreference, type ThemeId } from '../lib/theme'
+import AppearanceSettings from './AppearanceSettings'
 import VideoSettings from './VideoSettings'
 import ShortcutSettings from './ShortcutSettings'
 import './SettingsPage.css'
@@ -30,6 +32,11 @@ export interface SettingsPageProps {
   shortcuts: Record<string, string> | null
   /** 改完之后由外面记下来：快捷键要立刻生效，不能等下次启动。 */
   onShortcutsChange: (shortcuts: Record<string, string> | null) => void
+  /** 当前外观由 App 持有，这里只负责展示与回报选择。 */
+  theme?: ThemeId
+  motion?: MotionPreference
+  onThemeChange?: (theme: ThemeId) => void
+  onMotionChange?: (motion: MotionPreference) => void
 }
 
 const EFFECTS: { kind: AudioEffectKind; title: string; hint: string }[] = [
@@ -76,6 +83,10 @@ export default function SettingsPage({
   onError,
   shortcuts,
   onShortcutsChange,
+  theme,
+  motion,
+  onThemeChange,
+  onMotionChange,
 }: SettingsPageProps) {
   const [settings, setSettings] = useState<PlayerSettings | null>(null)
   const [options, setOptions] = useState<AudioOptions | null>(null)
@@ -148,8 +159,20 @@ export default function SettingsPage({
 
   const advanced = settings?.audioFilterMode === 'advanced'
   const passthrough = settings?.audioSpdif === true
+  const activeTheme = normalizeTheme(theme ?? settings?.theme)
+  const activeMotion = normalizeMotion(motion ?? settings?.motion)
   const gainLimit = options?.gainLimit ?? 12
   const frequencies = options?.frequencies ?? []
+
+  const changeTheme = (next: ThemeId) => {
+    setSettings((current) => (current === null ? current : { ...current, theme: next }))
+    onThemeChange?.(next)
+  }
+
+  const changeMotion = (next: MotionPreference) => {
+    setSettings((current) => (current === null ? current : { ...current, motion: next }))
+    onMotionChange?.(next)
+  }
 
   /** 拖动中的那一段显示拖动值，其余的显示存下来的值。 */
   const bandGain = (index: number): number => {
@@ -182,16 +205,41 @@ export default function SettingsPage({
 
       <div className="settings__panel">
         <header className="settings__head">
-          <h2 className="settings__title" id="settings-title">
-            设置
-          </h2>
+          <div className="settings__head-copy">
+            <span className="settings__head-kicker">FUTUREVIDEO / CONTROL ROOM</span>
+            <h2 className="settings__title" id="settings-title">
+              设置
+            </h2>
+          </div>
           <button className="settings__close" type="button" onClick={onClose} aria-label="关闭设置">
             ✕
           </button>
         </header>
 
         <div className="settings__body">
-          <section className="settings__section">
+          <nav className="settings__rail" aria-label="设置分区">
+            <span className="settings__rail-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className="settings__rail-kicker">FUTURE / CONTROL ROOM</span>
+            <a href="#settings-appearance">外观</a>
+            <a href="#settings-audio">音效</a>
+            <a href="#settings-video">画面</a>
+            <a href="#settings-keys">快捷键</a>
+            <span className="settings__rail-footer">偏好保存在本机</span>
+          </nav>
+
+          <div className="settings__content">
+            <AppearanceSettings
+              theme={activeTheme}
+              motion={activeMotion}
+              onThemeChange={changeTheme}
+              onMotionChange={changeMotion}
+            />
+
+            <section className="settings__section" id="settings-audio">
             <div className="settings__heading">
               <h3 className="settings__name">音效</h3>
               <span className="settings__note">只影响声音，画面和字幕不受影响</span>
@@ -360,20 +408,22 @@ export default function SettingsPage({
                 </p>
               </div>
             )}
-          </section>
+            </section>
 
-          {!settings || !videoOptions ? null : (
-            <VideoSettings
-              settings={settings}
-              options={videoOptions}
-              hwdecCurrent={hwdecCurrent}
-              busy={busy}
-              run={run}
-              onError={onError}
-            />
-          )}
+            <div id="settings-video">
+              {!settings || !videoOptions ? null : (
+                <VideoSettings
+                  settings={settings}
+                  options={videoOptions}
+                  hwdecCurrent={hwdecCurrent}
+                  busy={busy}
+                  run={run}
+                  onError={onError}
+                />
+              )}
+            </div>
 
-          <section className="settings__section">
+          <section className="settings__section" id="settings-keys">
             <ShortcutSettings
               shortcuts={shortcuts}
               onChange={onShortcutsChange}
@@ -381,7 +431,7 @@ export default function SettingsPage({
             />
           </section>
 
-          <section className="settings__section">
+          <section className="settings__section" id="settings-interface">
             <div className="settings__heading">
               <h3 className="settings__name">界面</h3>
               <span className="settings__note">改完下次启动生效</span>
@@ -410,6 +460,7 @@ export default function SettingsPage({
               </div>
             ) : null}
           </section>
+          </div>
         </div>
 
         <p className="settings__foot">设置存在本机，下次打开还是这样。</p>

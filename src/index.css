@@ -1,29 +1,187 @@
 :root {
-  /* 主题 token，M3 会在此基础上扩展成多主题 */
-  --bg: #0b0b0d;
+  /* 默认主题：极夜蓝。其余配色在下方按 data-theme 覆盖。 */
+  --bg: #080b16;
+  --bg-deep: #050711;
   --stage: #000000;
-  --surface: #17171a;
-  --surface-hover: #202024;
-  --text: #f2f2f4;
-  --text-muted: #8b8b94;
-  --border: #2a2a30;
-  --track: #2a2a30;
-  --accent: #6ea8ff;
-  --danger: #ff6b6b;
-  /* 控制层底色：视频由 mpv 单独渲染，这里只能做出半透明质感 */
-  --chrome: rgba(11, 11, 13, 0.68);
-  --radius: 8px;
+  --surface: #11182a;
+  --surface-raised: #18223a;
+  --surface-hover: #202c49;
+  --surface-glass: rgb(17 24 42 / 82%);
+  --surface-soft: rgb(255 255 255 / 5%);
+  --text: #f3f6ff;
+  --text-muted: #9aa5bf;
+  --border: rgb(165 181 224 / 18%);
+  --border-bright: rgb(186 207 255 / 34%);
+  --track: rgb(255 255 255 / 12%);
+  --accent: #7c9cff;
+  --accent-strong: #a7bbff;
+  --accent-alt: #6ce5e8;
+  --accent-contrast: #071020;
+  --danger: #ff7a86;
+  --ambient-1: rgb(89 113 255 / 34%);
+  --ambient-2: rgb(36 214 210 / 20%);
+  --ambient-3: rgb(174 100 255 / 16%);
+  --ambient-grid: rgb(165 184 255 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(124 156 255 / 17%), transparent 52%);
+  --chrome: rgb(8 11 22 / 72%);
+  --shadow: rgb(0 0 0 / 48%);
+  --shadow-soft: rgb(0 0 0 / 24%);
+  --highlight: rgb(255 255 255 / 9%);
+  --radius: 14px;
+  --radius-sm: 9px;
+  --radius-lg: 24px;
   --dur-fast: 140ms;
-  --dur-normal: 220ms;
+  --dur-normal: 240ms;
+  --dur-theme: 560ms;
   /* 开屏收场。JS 那边的 SPLASH_EXIT_MS 要和它对齐 */
   --dur-splash: 460ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
   /* 带一点回弹的曲线，用在「出现」而不是「消失」上 */
   --ease-spring: cubic-bezier(0.34, 1.42, 0.5, 1);
 
   color-scheme: dark;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family:
+    'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, 'Microsoft YaHei',
+    sans-serif;
   font-size: 14px;
+  accent-color: var(--accent);
+}
+
+:root[data-theme='ember'] {
+  --bg: #160c0b;
+  --bg-deep: #0e0706;
+  --surface: #251411;
+  --surface-raised: #321b17;
+  --surface-hover: #41231d;
+  --surface-glass: rgb(37 20 17 / 82%);
+  --text: #fff4ec;
+  --text-muted: #c1a197;
+  --border: rgb(255 190 156 / 18%);
+  --border-bright: rgb(255 204 177 / 34%);
+  --track: rgb(255 238 225 / 12%);
+  --accent: #ff8a5b;
+  --accent-strong: #ffb089;
+  --accent-alt: #ffd166;
+  --accent-contrast: #210b06;
+  --danger: #ff6875;
+  --ambient-1: rgb(255 110 63 / 30%);
+  --ambient-2: rgb(255 209 102 / 17%);
+  --ambient-3: rgb(218 69 111 / 18%);
+  --ambient-grid: rgb(255 195 166 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(255 138 91 / 17%), transparent 52%);
+  --chrome: rgb(22 12 11 / 72%);
+  --highlight: rgb(255 241 227 / 9%);
+}
+
+:root[data-theme='forest'] {
+  --bg: #08120f;
+  --bg-deep: #050b09;
+  --surface: #10211b;
+  --surface-raised: #173029;
+  --surface-hover: #1d3b32;
+  --surface-glass: rgb(16 33 27 / 82%);
+  --text: #f0fff8;
+  --text-muted: #95b3a5;
+  --border: rgb(153 230 192 / 18%);
+  --border-bright: rgb(177 244 211 / 34%);
+  --track: rgb(224 255 240 / 12%);
+  --accent: #63d7a3;
+  --accent-strong: #8be7bd;
+  --accent-alt: #d3f26a;
+  --accent-contrast: #06140d;
+  --danger: #ff8b77;
+  --ambient-1: rgb(61 200 142 / 28%);
+  --ambient-2: rgb(188 232 87 / 16%);
+  --ambient-3: rgb(42 169 183 / 18%);
+  --ambient-grid: rgb(147 232 193 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(99 215 163 / 17%), transparent 52%);
+  --chrome: rgb(8 18 15 / 72%);
+  --highlight: rgb(226 255 240 / 9%);
+}
+
+:root[data-theme='tide'] {
+  --bg: #071319;
+  --bg-deep: #040c11;
+  --surface: #0d222a;
+  --surface-raised: #13313b;
+  --surface-hover: #193e49;
+  --surface-glass: rgb(13 34 42 / 82%);
+  --text: #effcff;
+  --text-muted: #91b4bd;
+  --border: rgb(134 221 230 / 18%);
+  --border-bright: rgb(160 238 245 / 34%);
+  --track: rgb(221 253 255 / 12%);
+  --accent: #41d6d9;
+  --accent-strong: #7ce9ea;
+  --accent-alt: #77a7ff;
+  --accent-contrast: #041418;
+  --danger: #ff7b8e;
+  --ambient-1: rgb(31 205 213 / 28%);
+  --ambient-2: rgb(83 132 255 / 22%);
+  --ambient-3: rgb(74 236 190 / 14%);
+  --ambient-grid: rgb(133 226 235 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(65 214 217 / 17%), transparent 52%);
+  --chrome: rgb(7 19 25 / 72%);
+  --highlight: rgb(227 255 255 / 9%);
+}
+
+:root[data-theme='blossom'] {
+  --bg: #160d14;
+  --bg-deep: #0e070c;
+  --surface: #241322;
+  --surface-raised: #321a30;
+  --surface-hover: #41213e;
+  --surface-glass: rgb(36 19 34 / 82%);
+  --text: #fff2fa;
+  --text-muted: #c5a1b8;
+  --border: rgb(255 179 219 / 18%);
+  --border-bright: rgb(255 199 228 / 34%);
+  --track: rgb(255 234 248 / 12%);
+  --accent: #ff83b7;
+  --accent-strong: #ffadd0;
+  --accent-alt: #b79cff;
+  --accent-contrast: #200914;
+  --danger: #ff6f78;
+  --ambient-1: rgb(255 96 166 / 28%);
+  --ambient-2: rgb(166 126 255 / 20%);
+  --ambient-3: rgb(255 180 104 / 14%);
+  --ambient-grid: rgb(255 180 219 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(255 131 183 / 17%), transparent 52%);
+  --chrome: rgb(22 13 20 / 72%);
+  --highlight: rgb(255 237 248 / 9%);
+}
+
+:root[data-theme='daylight'] {
+  --bg: #f3efe5;
+  --bg-deep: #e5dfd2;
+  --stage: #e7e0d3;
+  --surface: rgb(255 253 247 / 84%);
+  --surface-raised: #fffdf8;
+  --surface-hover: rgb(72 56 42 / 9%);
+  --surface-glass: rgb(255 252 244 / 86%);
+  --surface-soft: rgb(72 56 42 / 5%);
+  --text: #28251f;
+  --text-muted: #746d62;
+  --border: rgb(65 51 40 / 16%);
+  --border-bright: rgb(65 51 40 / 28%);
+  --track: rgb(65 51 40 / 13%);
+  --accent: #b4482e;
+  --accent-strong: #99361f;
+  --accent-alt: #2a7f77;
+  --accent-contrast: #fffaf1;
+  --danger: #b42537;
+  --ambient-1: rgb(227 132 85 / 24%);
+  --ambient-2: rgb(49 151 141 / 17%);
+  --ambient-3: rgb(226 177 71 / 18%);
+  --ambient-grid: rgb(81 59 42 / 7%);
+  --card-gradient: linear-gradient(150deg, rgb(180 72 46 / 11%), transparent 52%);
+  --chrome: rgb(247 242 233 / 82%);
+  --shadow: rgb(61 46 33 / 18%);
+  --shadow-soft: rgb(61 46 33 / 10%);
+  --highlight: rgb(255 255 255 / 58%);
+
+  color-scheme: light;
 }
 
 html,
@@ -44,10 +202,20 @@ html[data-shell='browser'] body {
   background: var(--bg);
 }
 
+:root[data-motion='off'] *,
+:root[data-motion='off'] *::before,
+:root[data-motion='off'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 0ms;
     --dur-normal: 0ms;
+    --dur-theme: 0ms;
     --dur-splash: 0ms;
   }
 }

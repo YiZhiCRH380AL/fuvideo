@@ -102,6 +102,32 @@ test('播放器外壳能加载并显示运行环境', async ({ page }) => {
   await expect(page.getByText('选一个目录，把里面的视频铺成方格')).toBeVisible()
 })
 
+test('颜色主题可以从顶栏即时切换并保存在本地', async ({ page }) => {
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'midnight')
+  await page.getByRole('button', { name: /更换颜色主题/ }).click()
+  await expect(page.getByRole('dialog', { name: '颜色主题' })).toBeVisible()
+
+  await page.getByRole('radio', { name: /余烬橙/ }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'ember')
+  await expect(page.getByRole('button', { name: /更换颜色主题/ })).toHaveAccessibleName(
+    /余烬橙/,
+  )
+  await expect
+    .poll(() => page.evaluate(() => window.localStorage.getItem('fuvideo.theme')))
+    .toBe('ember')
+
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: 'test-results/shots/theme-ember.png', fullPage: true })
+
+  // 刷新后先从本地提示值铺色，不能在等待设置接口时闪回极夜蓝。
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'ember')
+  await waitForBoot(page)
+})
+
 test('浏览器环境下选择目录不可用，避免误导用户', async ({ page }) => {
   await page.goto('/')
   await waitForBoot(page)
@@ -119,7 +145,7 @@ test('未播放视频时窗口有不透明底色，不会透出桌面', async ({
   expect(appBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
 })
 
-test('目录区占满整窗，不再有侧边栏', async ({ page }) => {
+test('目录区占满整窗，首屏引导使用新的左右分栏', async ({ page }) => {
   await page.goto('/')
   await waitForBoot(page)
 
@@ -136,8 +162,15 @@ test('目录区占满整窗，不再有侧边栏', async ({ page }) => {
   // 目录区从窗口最左边铺到最右边，没有侧边栏占位
   expect(library!.x).toBeLessThan(1)
   expect(library!.width).toBeGreaterThan(size!.width - 1)
-  // 引导按钮落在窗口正中间，说明目录区确实占了整块主区域
-  expect(Math.abs(choose!.x + choose!.width / 2 - size!.width / 2)).toBeLessThan(6)
+  const hero = await page.locator('.library__hero').boundingBox()
+  const poster = await page.locator('.library__poster--front').boundingBox()
+
+  expect(hero).not.toBeNull()
+  expect(poster).not.toBeNull()
+  // 主行动按钮在左栏，海报舞台在右栏；两者都留在视口内
+  expect(choose!.x).toBeLessThan(size!.width / 2)
+  expect(poster!.x).toBeGreaterThan(size!.width / 2)
+  expect(hero!.width).toBeLessThanOrEqual(size!.width)
 })
 
 test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {

@@ -20,6 +20,7 @@ import PlaybackTools, { type SleepAction } from './components/PlaybackTools'
 import Popover from './components/Popover'
 import SettingsPage from './components/SettingsPage'
 import Splash from './components/Splash'
+import ThemePicker from './components/ThemePicker'
 import Tutorial from './components/Tutorial'
 import VideoGrid, { type GridFlash } from './components/VideoGrid'
 import {
@@ -45,6 +46,8 @@ import {
   rememberDirectory,
   rememberMiniMode,
   setPlayMode as savePlayMode,
+  setMotion as saveMotion,
+  setTheme as saveTheme,
   seekBy,
   seekTo,
   setSpeed,
@@ -75,6 +78,18 @@ import {
 import { buildShortcutMap, resolveShortcut, shouldIgnoreShortcut } from './lib/shortcuts'
 import { hasFired, remainingSeconds, sleepDeadline } from './lib/sleep'
 import { timingFor } from './lib/splash'
+import {
+  applyMotionPreference,
+  applyTheme,
+  normalizeMotion,
+  normalizeTheme,
+  readMotionHint,
+  readThemeHint,
+  rememberAppearance,
+  themeFor,
+  type MotionPreference,
+  type ThemeId,
+} from './lib/theme'
 import { hasSeenTutorial } from './lib/tutorial'
 import { cachedThumbnail, loadThumbnail } from './lib/thumbnail-cache'
 import { useIdleVisibility } from './lib/use-idle-visibility'
@@ -187,7 +202,7 @@ export default function App() {
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
   const [openPanel, setOpenPanel] = useState<
-    'speed' | 'media' | 'playlist' | 'favorites' | 'tools' | null
+    'speed' | 'media' | 'playlist' | 'favorites' | 'tools' | 'appearance' | null
   >(
     null,
   )
@@ -219,6 +234,13 @@ export default function App() {
   const [sort, setSort] = useState<'name' | 'name-desc'>('name')
   /** 开屏停留时长档位。设置里改完要下次启动才看得到效果。 */
   const [splashSpeed, setSplashSpeed] = useState('normal')
+  /** 界面配色与动效强度。本地先读一个提示值，设置文件到了以后再以文件为准。 */
+  const [appearanceTheme, setAppearanceTheme] = useState<ThemeId>(() => readThemeHint())
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>(() =>
+    readMotionHint(),
+  )
+  /** 每次换主题换一个 key，让色盘扩散动画从头播一次。 */
+  const [themeBurst, setThemeBurst] = useState<number | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * 用户点过方格没有。
@@ -365,6 +387,31 @@ export default function App() {
     setError(cause instanceof Error ? cause.message : String(cause))
   }, [])
 
+  const handleThemeChange = useCallback(
+    (next: ThemeId) => {
+      setAppearanceTheme(next)
+      applyTheme(next)
+      rememberAppearance(next, motionPreference)
+
+      if (motionPreference !== 'off') {
+        setThemeBurst(Date.now())
+      }
+
+      void saveTheme(next).catch(reportError)
+    },
+    [motionPreference, reportError],
+  )
+
+  const handleMotionChange = useCallback(
+    (next: MotionPreference) => {
+      setMotionPreference(next)
+      applyMotionPreference(next)
+      rememberAppearance(appearanceTheme, next)
+      void saveMotion(next).catch(reportError)
+    },
+    [appearanceTheme, reportError],
+  )
+
   /**
    * 迷你模式：窗口缩成一小块，界面只剩灵动岛。
    *
@@ -438,6 +485,14 @@ export default function App() {
   }, [alwaysOnTop, reportError])
 
   useEffect(() => {
+    applyTheme(appearanceTheme)
+  }, [appearanceTheme])
+
+  useEffect(() => {
+    applyMotionPreference(motionPreference)
+  }, [motionPreference])
+
+  useEffect(() => {
     let cancelled = false
 
     getBackendStatus()
@@ -468,6 +523,16 @@ export default function App() {
         setAlwaysOnTop(settings?.alwaysOnTop === true)
         // 档位认不出来时 `timingFor` 会当标准档，别让开屏一闪而过
         setSplashSpeed(settings?.splashSpeed ?? 'normal')
+        // 浏览器预览没有 settings.json，localStorage 就是唯一能跨刷新保存的地方。
+        const storedTheme =
+          next.kind === 'browser' ? readThemeHint() : normalizeTheme(settings?.theme)
+        const storedMotion =
+          next.kind === 'browser' ? readMotionHint() : normalizeMotion(settings?.motion)
+        setAppearanceTheme(storedTheme)
+        setMotionPreference(storedMotion)
+        applyTheme(storedTheme)
+        applyMotionPreference(storedMotion)
+        rememberAppearance(storedTheme, storedMotion)
 
         // 上次是迷你模式：窗口跟着缩回去。置顶不用在这儿管，后端启动时已经设过了
         if (settings?.miniMode === true) {
@@ -1618,12 +1683,26 @@ export default function App() {
       data-chrome={chromeVisible ? 'visible' : 'hidden'}
       data-splash={splash}
       data-mini={miniMode ? 'true' : 'false'}
+      data-appearance={appearanceTheme}
+      data-motion={motionPreference}
     >
+      <div className="app__atmosphere" aria-hidden="true">
+        <span className="app__aurora app__aurora--one" />
+        <span className="app__aurora app__aurora--two" />
+        <span className="app__aurora app__aurora--three" />
+        <span className="app__grain" />
+      </div>
       <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
+            <span className="app__mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
             <span className="app__wordmark">
-              FutureVideo
+              <span className="app__name">FutureVideo</span>
+              <span className="app__tagline">YOUR PRIVATE SCREEN</span>
               <span className="app__version" data-testid="app-version">
                 {__APP_VERSION__}
               </span>
@@ -1779,6 +1858,54 @@ export default function App() {
               </Popover>
             </div>
 
+            <div className="app__appearance">
+              <button
+                className="app__theme-trigger"
+                type="button"
+                onClick={() =>
+                  setOpenPanel((open) => (open === 'appearance' ? null : 'appearance'))
+                }
+                aria-haspopup="dialog"
+                aria-expanded={openPanel === 'appearance'}
+                aria-label={`更换颜色主题，当前为${themeFor(appearanceTheme).label}`}
+                title="更换颜色主题"
+              >
+                <span className="app__theme-orb" aria-hidden="true" />
+                <span className="app__theme-name">{themeFor(appearanceTheme).shortLabel}</span>
+                <span className="app__theme-chevron" aria-hidden="true">
+                  ⌄
+                </span>
+              </button>
+
+              <Popover
+                open={openPanel === 'appearance'}
+                onClose={() => setOpenPanel(null)}
+                label="颜色主题"
+                anchorSelector=".app__appearance"
+                className="popover--panel popover--themes popover--down"
+                role="dialog"
+              >
+                <div className="theme-menu">
+                  <div className="theme-menu__head">
+                    <span className="theme-menu__eyebrow">APPEARANCE</span>
+                    <span className="theme-menu__title">给今晚换一种颜色</span>
+                  </div>
+                  <ThemePicker compact theme={appearanceTheme} onChange={handleThemeChange} />
+                  <button
+                    className="theme-menu__more"
+                    type="button"
+                    onClick={() => {
+                      setOpenPanel(null)
+                      setSettingsOpen(true)
+                    }}
+                  >
+                    调整动效与更多外观
+                    <span aria-hidden="true">↗</span>
+                  </button>
+                </div>
+              </Popover>
+            </div>
+
             <button
               className="app__tool"
               type="button"
@@ -1845,55 +1972,84 @@ export default function App() {
             </div>
           ) : listing === null ? (
             <div className="library__empty">
-              <span className="library__icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48">
-                  <rect x="7" y="13" width="34" height="26" rx="5" />
-                  <path d="M7 21h34" />
-                  <path d="M18 7h12" />
-                </svg>
-              </span>
-              <p className="library__hint">选一个目录，把里面的视频铺成方格</p>
-              <button
-                className="button button--primary"
-                type="button"
-                onClick={() => void handleChooseDirectory()}
-                disabled={!canOpen}
-              >
-                选择目录
-              </button>
-              <span className="library__links">
-                <button
-                  className="library__single library__sample"
-                  type="button"
-                  data-tutorial="sample"
-                  onClick={() => void handleOpenSample()}
-                  disabled={!canOpen}
-                >
-                  看示例视频
-                </button>
-                <span className="library__dot" aria-hidden="true">
-                  ·
-                </span>
-                <button
-                  className="library__single"
-                  type="button"
-                  onClick={() => void openDrives()}
-                  disabled={!canOpen}
-                >
-                  浏览磁盘
-                </button>
-                <span className="library__dot" aria-hidden="true">
-                  ·
-                </span>
-                <button
-                  className="library__single"
-                  type="button"
-                  onClick={() => void handleOpenFile()}
-                  disabled={!canOpen}
-                >
-                  打开单个视频
-                </button>
-              </span>
+              <div className="library__hero">
+                <div className="library__hero-copy">
+                  <span className="library__eyebrow">
+                    <span aria-hidden="true" />
+                    YOUR PRIVATE CINEMA
+                  </span>
+                  <h1 className="library__headline">
+                    <span>让每一帧</span>
+                    <span className="library__headline-accent">都有你的颜色。</span>
+                  </h1>
+                  <p className="library__hint">
+                    <span>选一个目录，把里面的视频铺成方格</span>
+                    <span>没有广告，没有推荐，只留下你真正想看的。</span>
+                  </p>
+
+                  <div className="library__hero-actions">
+                    <button
+                      className="button button--primary"
+                      type="button"
+                      onClick={() => void handleChooseDirectory()}
+                      disabled={!canOpen}
+                    >
+                      <span>选择目录</span>
+                      <span aria-hidden="true">↗</span>
+                    </button>
+                    <button
+                      className="library__single library__sample"
+                      type="button"
+                      data-tutorial="sample"
+                      onClick={() => void handleOpenSample()}
+                      disabled={!canOpen}
+                    >
+                      看示例视频
+                    </button>
+                  </div>
+
+                  <span className="library__links">
+                    <button
+                      className="library__single"
+                      type="button"
+                      onClick={() => void openDrives()}
+                      disabled={!canOpen}
+                    >
+                      浏览磁盘
+                    </button>
+                    <span className="library__dot" aria-hidden="true">
+                      /
+                    </span>
+                    <button
+                      className="library__single"
+                      type="button"
+                      onClick={() => void handleOpenFile()}
+                      disabled={!canOpen}
+                    >
+                      打开单个视频
+                    </button>
+                  </span>
+                </div>
+
+                <div className="library__hero-stage" aria-hidden="true">
+                  <span className="library__orbit library__orbit--one" />
+                  <span className="library__orbit library__orbit--two" />
+                  <div className="library__poster library__poster--back">
+                    <span>LATE NIGHT</span>
+                  </div>
+                  <div className="library__poster library__poster--middle">
+                    <span>LOCAL / 04</span>
+                  </div>
+                  <div className="library__poster library__poster--front">
+                    <span className="library__poster-glow" />
+                    <span className="library__poster-index">FU / 001</span>
+                    <span className="library__poster-play">▶</span>
+                    <span className="library__poster-name">周末放映室</span>
+                    <span className="library__poster-line" />
+                    <span className="library__poster-meta">YOUR COLOR. YOUR FRAME.</span>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -1924,6 +2080,10 @@ export default function App() {
                       }
                     }}
                   />
+
+                  <span className="library__count">
+                    {String(videos.length).padStart(2, '0')} 部影片
+                  </span>
 
                   <div className="library__sort" role="group" aria-label="排序">
                     <button
@@ -2031,6 +2191,10 @@ export default function App() {
         />
       ) : null}
 
+      {themeBurst !== null && motionPreference !== 'off' ? (
+        <span className="theme-burst" key={themeBurst} aria-hidden="true" />
+      ) : null}
+
       {curtain ? <div className="curtain" ref={curtainRef} data-testid="curtain" /> : null}
 
       {splash === 'done' ? null : (
@@ -2054,6 +2218,10 @@ export default function App() {
           onError={reportError}
           shortcuts={shortcutOverrides}
           onShortcutsChange={setShortcutOverrides}
+          theme={appearanceTheme}
+          motion={motionPreference}
+          onThemeChange={handleThemeChange}
+          onMotionChange={handleMotionChange}
         />
       ) : null}
 

@@ -73,6 +73,12 @@ pub const PLAY_MODES: &[&str] = &["sequence", "single", "list", "shuffle"];
 /// 开屏停留时长的档位，见 [src/lib/splash.ts](src/lib/splash.ts) 里的同一份表。
 pub const SPLASH_SPEEDS: &[&str] = &["off", "fast", "normal"];
 
+/// 界面主题白名单。新增主题时同步 [src/lib/theme.ts](src/lib/theme.ts)。
+pub const THEMES: &[&str] = &["midnight", "ember", "forest", "tide", "blossom", "daylight"];
+
+/// 动效强度白名单：完整 / 轻量 / 关闭。
+pub const MOTION_MODES: &[&str] = &["full", "subtle", "off"];
+
 /// 可以改键的动作。和前端 [shortcuts.ts](src/lib/shortcuts.ts) 里的那份一一对应，
 /// 这里留一份是为了能把手改配置里的错别字挡掉。
 pub const SHORTCUT_ACTIONS: &[&str] = &[
@@ -137,6 +143,14 @@ fn default_filter_mode() -> String {
 /// 默认开屏标准档：入场动画本来就要这么久，再短反而像闪了一下。
 fn default_splash_speed() -> String {
   "normal".to_string()
+}
+
+fn default_theme() -> String {
+  "midnight".to_string()
+}
+
+fn default_motion() -> String {
+  "full".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -229,6 +243,10 @@ pub struct Settings {
   pub shortcuts: Option<BTreeMap<String, String>>,
   /// 开屏停留时长档位：off / fast / normal。
   pub splash_speed: String,
+  /// 界面配色主题，见 [THEMES]。
+  pub theme: String,
+  /// 动效强度，见 [MOTION_MODES]。
+  pub motion: String,
   /// 上次的音量（0–100）。启动时当 `--volume` 传下去。
   pub volume: Option<f64>,
   /// 上次的倍速。启动时当 `--speed` 传下去。
@@ -288,6 +306,8 @@ impl Default for Settings {
       mini_mode: false,
       shortcuts: None,
       splash_speed: default_splash_speed(),
+      theme: default_theme(),
+      motion: default_motion(),
       volume: None,
       speed: None,
       window_width: None,
@@ -394,6 +414,14 @@ impl Settings {
 
     if !SPLASH_SPEEDS.contains(&self.splash_speed.as_str()) {
       self.splash_speed = default_splash_speed();
+    }
+
+    if !THEMES.contains(&self.theme.as_str()) {
+      self.theme = default_theme();
+    }
+
+    if !MOTION_MODES.contains(&self.motion.as_str()) {
+      self.motion = default_motion();
     }
 
     self.volume = clamp_option(self.volume, VOLUME_RANGE);
@@ -574,6 +602,18 @@ pub fn set_splash_speed(app: tauri::AppHandle, speed: String) -> Result<Settings
   update(&app, |settings| settings.splash_speed = speed)
 }
 
+/// 界面主题。
+#[tauri::command]
+pub fn set_theme(app: tauri::AppHandle, theme: String) -> Result<Settings, String> {
+  update(&app, |settings| settings.theme = theme)
+}
+
+/// 动效强度。
+#[tauri::command]
+pub fn set_motion(app: tauri::AppHandle, motion: String) -> Result<Settings, String> {
+  update(&app, |settings| settings.motion = motion)
+}
+
 /// 记住退出时的音量与倍速。退出时由 lib.rs 调，不走界面。
 pub fn remember_playback(app: &tauri::AppHandle, volume: f64, speed: f64) -> Result<Settings, String> {
   update(app, |settings| {
@@ -698,6 +738,8 @@ mod tests {
       mini_mode: true,
       shortcuts: Some(BTreeMap::from([("toggle-mute".to_string(), "KeyQ".to_string())])),
       splash_speed: "fast".to_string(),
+      theme: "forest".to_string(),
+      motion: "subtle".to_string(),
       volume: Some(42.0),
       speed: Some(1.25),
       window_width: Some(1280),
@@ -840,6 +882,8 @@ mod tests {
       "miniMode",
       "shortcuts",
       "splashSpeed",
+      "theme",
+      "motion",
       "volume",
       "speed",
       "windowWidth",
@@ -959,6 +1003,46 @@ mod tests {
       .normalized();
 
       assert_eq!(&settings.splash_speed, speed);
+    }
+  }
+
+  #[test]
+  fn appearance_defaults_to_midnight_and_full_motion() {
+    let settings = Settings::default();
+
+    assert_eq!(settings.theme, "midnight");
+    assert_eq!(settings.motion, "full");
+  }
+
+  #[test]
+  fn unknown_appearance_values_fall_back_without_breaking_other_fields() {
+    let settings = Settings {
+      theme: "ultraviolet".to_string(),
+      motion: "cinematic".to_string(),
+      hwdec: "nvdec".to_string(),
+      ..Settings::default()
+    }
+    .normalized();
+
+    assert_eq!(settings.theme, "midnight");
+    assert_eq!(settings.motion, "full");
+    assert_eq!(settings.hwdec, "nvdec");
+  }
+
+  #[test]
+  fn all_known_appearance_values_survive_normalization() {
+    for theme in THEMES {
+      for motion in MOTION_MODES {
+        let settings = Settings {
+          theme: (*theme).to_string(),
+          motion: (*motion).to_string(),
+          ..Settings::default()
+        }
+        .normalized();
+
+        assert_eq!(&settings.theme, theme);
+        assert_eq!(&settings.motion, motion);
+      }
     }
   }
 

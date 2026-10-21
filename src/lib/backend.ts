@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { DEFAULT_MOTION, DEFAULT_THEME, type MotionPreference, type ThemeId } from './theme'
+
 export type BackendKind = 'tauri' | 'browser'
 
 export interface BackendStatus {
@@ -135,6 +137,10 @@ export interface PlayerSettings {
   shortcuts: Record<string, string> | null
   /** 开屏停留时长：off / fast / normal。 */
   splashSpeed: string
+  /** 界面配色主题 id，具体定义见 `lib/theme.ts`。 */
+  theme: ThemeId
+  /** 动效强度：full / subtle / off。 */
+  motion: MotionPreference
   /** 上次的音量（0–100）；启动时直接带上。 */
   volume: number | null
   /** 上次的倍速；启动时直接带上。 */
@@ -279,6 +285,8 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   miniMode: false,
   shortcuts: null,
   splashSpeed: 'normal',
+  theme: DEFAULT_THEME,
+  motion: DEFAULT_MOTION,
   volume: null,
   speed: null,
   windowWidth: null,
@@ -751,6 +759,24 @@ export function resetShortcuts(): Promise<PlayerSettings> {
 /** 开屏停留时长档位：`off` / `fast` / `normal`。 */
 export function setSplashSpeed(speed: string): Promise<PlayerSettings> {
   return settingsCommand('set_splash_speed', { speed })
+}
+
+/** 切换界面主题。 */
+export async function setTheme(theme: ThemeId): Promise<PlayerSettings> {
+  if (!isTauri()) {
+    return { ...DEFAULT_SETTINGS, theme }
+  }
+
+  return invoke<PlayerSettings>('set_theme', { theme })
+}
+
+/** 切换动效强度。 */
+export async function setMotion(motion: MotionPreference): Promise<PlayerSettings> {
+  if (!isTauri()) {
+    return { ...DEFAULT_SETTINGS, motion }
+  }
+
+  return invoke<PlayerSettings>('set_motion', { motion })
 }
 
 /** 逐帧步进。前后各走一帧，mpv 会顺手停住。 */

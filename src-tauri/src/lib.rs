@@ -179,6 +179,8 @@ pub fn run() {
       settings::set_shortcut,
       settings::reset_shortcuts,
       settings::set_splash_speed,
+      settings::set_theme,
+      settings::set_motion,
       sample::prepare_sample_folder,
       collections::read_collections,
       collections::toggle_playlist,

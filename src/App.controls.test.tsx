@@ -118,6 +118,8 @@ const mocks = vi.hoisted(() => {
       miniMode: false,
       shortcuts: null,
       splashSpeed: 'normal',
+      theme: 'midnight',
+      motion: 'full',
       volume: null,
       speed: null,
       windowWidth: null,
@@ -308,6 +310,14 @@ vi.mock('./lib/backend', () => ({
     mocks.settings = { ...mocks.settings, splashSpeed: speed }
     return mocks.settings
   },
+  setTheme: async (theme: string) => {
+    mocks.settings = { ...mocks.settings, theme }
+    return mocks.settings
+  },
+  setMotion: async (motion: string) => {
+    mocks.settings = { ...mocks.settings, motion }
+    return mocks.settings
+  },
   playUrl: (url: string) => mocks.playLocalVideo(url),
   stepFrame: (forward: boolean) => mocks.stepFrame(forward),
   getChapters: () => mocks.getChapters(),
@@ -349,6 +359,8 @@ beforeEach(() => {
     miniMode: false,
     shortcuts: null,
     splashSpeed: 'normal',
+    theme: 'midnight',
+    motion: 'full',
   }
 
   for (const fn of [
@@ -534,6 +546,24 @@ describe('目录页', () => {
     await waitFor(() => {
       expect(screen.getByTestId('video-grid').querySelectorAll('.tile__image').length).toBeGreaterThan(0)
     })
+  })
+})
+
+describe('外观', () => {
+  it('顶栏色盘切换主题后会更新根节点并记住选择', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(
+      await screen.findByRole('button', { name: /更换颜色主题，当前为极夜蓝/ }),
+    )
+    await user.click(await screen.findByRole('radio', { name: /潮汐青/ }))
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('tide'))
+    expect(window.localStorage.getItem('fuvideo.theme')).toBe('tide')
+    expect(
+      screen.getByRole('button', { name: /更换颜色主题，当前为潮汐青/ }),
+    ).toBeInTheDocument()
   })
 })
 

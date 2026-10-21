@@ -117,6 +117,7 @@ const Tile = memo(function Tile({
     <div
       className="tile"
       data-tile={video.path}
+      data-index={String(index + 1).padStart(2, '0')}
       data-tutorial="tile"
       data-highlight={highlighted ? 'true' : undefined}
       style={{ '--i': index } as CSSProperties}
