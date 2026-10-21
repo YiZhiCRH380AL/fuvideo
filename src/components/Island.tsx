@@ -43,6 +43,8 @@ export interface IslandProps {
   mediaOpen: boolean
   onToggleMediaPanel: () => void
   onCloseMediaPanel: () => void
+  libraryOpen: boolean
+  onToggleLibrary: () => void
   /** 音轨与字幕面板的内容。面板自己管数据，这里只给它一个挂载点。 */
   mediaPanel: ReactNode
   onToggleFullscreen: () => void
@@ -57,8 +59,8 @@ export interface Episode {
 /**
  * 常驻底部的控制条。
  *
- * 画面上不再有独立的播放页，所以播放需要的全部控件都收在这里：
- * 播放暂停、进度、音量、倍速、全屏，以及收起画面。
+ * 播放页的画面由下方 mpv 透出，所有控件都收在这条半透明控制条里：
+ * 播放暂停、进度、音量、倍速、播放片库、全屏，以及收起画面。
  */
 export default function Island({
   title,
@@ -90,6 +92,8 @@ export default function Island({
   mediaOpen,
   onToggleMediaPanel,
   onCloseMediaPanel,
+  libraryOpen,
+  onToggleLibrary,
   mediaPanel,
   onToggleFullscreen,
   onCollapse,
@@ -237,6 +241,23 @@ export default function Island({
             {mediaPanel}
           </Popover>
         </div>
+
+        <button
+          className="island__button"
+          type="button"
+          onClick={onToggleLibrary}
+          aria-haspopup="dialog"
+          aria-expanded={libraryOpen}
+          aria-label="打开播放片库"
+          title="打开播放片库"
+        >
+          <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="4" width="6.5" height="7" rx="1.4" />
+            <rect x="14" y="4" width="6.5" height="7" rx="1.4" />
+            <rect x="3.5" y="13" width="6.5" height="7" rx="1.4" />
+            <path d="M15.4 13.2h4.2v3.1h-4.2zM17.5 17.5v2.4M15.2 19.9h4.5" />
+          </svg>
+        </button>
 
         <button
           className="island__button"

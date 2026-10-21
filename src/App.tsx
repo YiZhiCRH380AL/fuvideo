@@ -13,9 +13,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import './App.css'
 import Crumbs from './components/Crumbs'
 import CollectionsPanel from './components/CollectionsPanel'
+import CollectionsPage from './components/CollectionsPage'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
 import MediaPanel from './components/MediaPanel'
+import PlaybackLibraryDrawer from './components/PlaybackLibraryDrawer'
 import PlaybackTools, { type SleepAction } from './components/PlaybackTools'
 import Popover from './components/Popover'
 import SettingsPage from './components/SettingsPage'
@@ -29,6 +31,8 @@ import {
   getPlayOptions,
   getPlayerState,
   clearCollection,
+  createCollection,
+  deleteCollection,
   exportCollection,
   importPlaylist,
   isTauri,
@@ -45,6 +49,7 @@ import {
   rememberAlwaysOnTop,
   rememberDirectory,
   rememberMiniMode,
+  renameCollection,
   setPlayMode as savePlayMode,
   setMotion as saveMotion,
   setTheme as saveTheme,
@@ -56,6 +61,7 @@ import {
   stepFrame,
   thumbnailAt,
   toggleFavorite,
+  toggleNamedCollection,
   toggleFullscreen,
   toggleMute,
   togglePause,
@@ -202,12 +208,18 @@ export default function App() {
    * 空闲隐藏只看「有没有面板开着」，不必每个面板各接一遍。
    */
   const [openPanel, setOpenPanel] = useState<
-    'speed' | 'media' | 'playlist' | 'favorites' | 'tools' | 'appearance' | null
+    'speed' | 'media' | 'playlist' | 'tools' | 'appearance' | null
   >(
     null,
   )
   /** 播放列表与收藏夹。两者都只是一串路径，顺序就是播放顺序。 */
-  const [collections, setCollections] = useState<Collections>({ playlist: [], favorites: [] })
+  const [collections, setCollections] = useState<Collections>({
+    playlist: [],
+    favorites: [],
+    customCollections: [],
+  })
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
+  const [playbackLibraryOpen, setPlaybackLibraryOpen] = useState(false)
   /** 导出/导入之后给用户看的一句话。 */
   const [collectionNotice, setCollectionNotice] = useState<string | null>(null)
   /** 刚从收藏夹跳过来的那一个，会在方格墙上高亮一下。 */
@@ -382,6 +394,8 @@ export default function App() {
       scrub === null &&
       openPanel === null &&
       !settingsOpen &&
+      !collectionsOpen &&
+      !playbackLibraryOpen &&
       !tutorialOpen,
   })
 
@@ -995,11 +1009,15 @@ export default function App() {
   }, [loadDirectory, reportError])
 
   /** 加进 / 移出播放列表：后端返回改完之后的列表，界面直接换掉。 */
+  const togglePlaylistPath = useCallback(async (path: string) => {
+    setCollections(await togglePlaylist(path))
+  }, [])
+
   const handleTogglePlaylist = useCallback(
     (path: string) => {
-      togglePlaylist(path).then(setCollections).catch(reportError)
+      void togglePlaylistPath(path).catch(reportError)
     },
-    [reportError],
+    [reportError, togglePlaylistPath],
   )
 
   const handleShiftPlaylist = useCallback(
@@ -1009,12 +1027,38 @@ export default function App() {
     [reportError],
   )
 
+  const toggleFavoritePath = useCallback(async (path: string) => {
+    setCollections(await toggleFavorite(path))
+  }, [])
+
   const handleToggleFavorite = useCallback(
     (path: string) => {
-      toggleFavorite(path).then(setCollections).catch(reportError)
+      void toggleFavoritePath(path).catch(reportError)
     },
-    [reportError],
+    [reportError, toggleFavoritePath],
   )
+
+  const handleCreateCollection = useCallback(async (name: string) => {
+    const next = await createCollection(name)
+    setCollections(next)
+    return next
+  }, [])
+
+  const handleRenameCollection = useCallback(async (id: string, name: string) => {
+    const next = await renameCollection(id, name)
+    setCollections(next)
+    return next
+  }, [])
+
+  const handleDeleteCollection = useCallback(async (id: string) => {
+    const next = await deleteCollection(id)
+    setCollections(next)
+    return next
+  }, [])
+
+  const handleToggleNamedCollection = useCallback(async (id: string, path: string) => {
+    setCollections(await toggleNamedCollection(id, path))
+  }, [])
 
   /** 切播放模式：先改界面，再落盘（落盘失败就把错误摆出来）。 */
   const handlePickPlayMode = useCallback(
@@ -1034,10 +1078,25 @@ export default function App() {
   const handlePlayFromList = useCallback(
     async (path: string) => {
       setOpenPanel(null)
+      setCollectionsOpen(false)
+      setPlaybackLibraryOpen(false)
       await loadDirectory(parentDirectory(path))
       void playPath(path)
     },
     [loadDirectory, playPath],
+  )
+
+  const handleChoosePlaybackDirectory = useCallback(async () => {
+    const picked = await pickDirectory()
+    return picked === null ? null : listDirectory(picked)
+  }, [])
+
+  const handlePlayFromDrawer = useCallback(
+    (path: string) => {
+      setPlaybackLibraryOpen(false)
+      void playPath(path)
+    },
+    [playPath],
   )
 
   /**
@@ -1097,6 +1156,8 @@ export default function App() {
   const handleRevealFavorite = useCallback(
     async (path: string) => {
       setOpenPanel(null)
+      setCollectionsOpen(false)
+      setPlaybackLibraryOpen(false)
 
       // 收藏夹那一行小字的意思是「带我去看看这个文件在哪」，不是「播它」：
       // 先离开播放画面，方格墙才露得出来，高亮也才有意义
@@ -1795,47 +1856,20 @@ export default function App() {
               </Popover>
             </div>
 
-            <div className="app__collection app__favorites">
-              <button
-                className="app__tool"
-                type="button"
-                onClick={() => {
-                  setCollectionNotice(null)
-                  setOpenPanel((open) => (open === 'favorites' ? null : 'favorites'))
-                }}
-                aria-haspopup="dialog"
-                aria-expanded={openPanel === 'favorites'}
-                aria-label="收藏夹"
-                title="收藏夹"
-              >
-                ★
-              </button>
-
-              <Popover
-                open={openPanel === 'favorites'}
-                onClose={() => setOpenPanel(null)}
-                label="收藏夹"
-                anchorSelector=".app__favorites"
-                className="popover--panel popover--paths popover--down"
-                role="dialog"
-              >
-                <CollectionsPanel
-                  kind="favorites"
-                  paths={collections.favorites}
-                  modes={playModes}
-                  mode={playMode}
-                  onPickMode={handlePickPlayMode}
-                  onPlay={handlePlayFromList}
-                  onRemove={handleToggleFavorite}
-                  onShift={handleShiftPlaylist}
-                  onReveal={handleRevealFavorite}
-                  onExport={(kind) => void handleExportCollection(kind)}
-                  onImport={() => void handleImportPlaylist()}
-                  onClear={(kind) => void handleClearCollection(kind)}
-                  notice={collectionNotice}
-                />
-              </Popover>
-            </div>
+            <button
+              className="app__tool"
+              type="button"
+              onClick={() => {
+                setOpenPanel(null)
+                setCollectionsOpen(true)
+              }}
+              aria-haspopup="dialog"
+              aria-expanded={collectionsOpen}
+              aria-label="收藏夹"
+              title="收藏夹"
+            >
+              ★
+            </button>
 
             <div className="app__collection app__tools-menu">
               <button
@@ -2230,6 +2264,11 @@ export default function App() {
           previewImage={previewImage}
           speedOpen={openPanel === 'speed'}
           mediaOpen={openPanel === 'media'}
+          libraryOpen={playbackLibraryOpen}
+          onToggleLibrary={() => {
+            setOpenPanel(null)
+            setPlaybackLibraryOpen((open) => !open)
+          }}
           mediaPanel={<MediaPanel source={currentFile} onError={reportError} />}
           onTogglePause={() => void handleTogglePause()}
           onScrubChange={handleScrubChange}
@@ -2245,6 +2284,21 @@ export default function App() {
           onSelectSpeed={handleSpeedChange}
           onToggleFullscreen={handleToggleFullscreen}
           onCollapse={() => void collapseVideo()}
+        />
+      ) : null}
+
+      {currentFile ? (
+        <PlaybackLibraryDrawer
+          open={playbackLibraryOpen}
+          source={listing}
+          collections={collections}
+          onClose={() => setPlaybackLibraryOpen(false)}
+          onError={reportError}
+          onChooseDirectory={handleChoosePlaybackDirectory}
+          onPlay={handlePlayFromDrawer}
+          onTogglePlaylist={togglePlaylistPath}
+          onToggleFavorite={toggleFavoritePath}
+          onToggleNamedCollection={handleToggleNamedCollection}
         />
       ) : null}
 
@@ -2279,6 +2333,21 @@ export default function App() {
           motion={motionPreference}
           onThemeChange={handleThemeChange}
           onMotionChange={handleMotionChange}
+        />
+      ) : null}
+
+      {collectionsOpen ? (
+        <CollectionsPage
+          collections={collections}
+          onClose={() => setCollectionsOpen(false)}
+          onError={reportError}
+          onPlay={(path) => void handlePlayFromList(path)}
+          onReveal={(path) => void handleRevealFavorite(path)}
+          onCreate={handleCreateCollection}
+          onRename={handleRenameCollection}
+          onDelete={handleDeleteCollection}
+          onToggleFavorite={toggleFavoritePath}
+          onToggleNamedCollection={handleToggleNamedCollection}
         />
       ) : null}
 

@@ -69,6 +69,10 @@ const mocks = vi.hoisted(() => {
     togglePlaylist: vi.fn(),
     shiftInPlaylist: vi.fn(),
     toggleFavorite: vi.fn(),
+    createCollection: vi.fn(),
+    renameCollection: vi.fn(),
+    deleteCollection: vi.fn(),
+    toggleNamedCollection: vi.fn(),
     clearCollection: vi.fn(async (_kind: string) => ({ playlist: [] as string[], favorites: [] as string[] })),
     exportCollection: vi.fn(),
     importPlaylist: vi.fn(),
@@ -198,6 +202,10 @@ vi.mock('./lib/backend', () => ({
   togglePlaylist: (path: string) => mocks.togglePlaylist(path),
   shiftInPlaylist: (path: string, delta: number) => mocks.shiftInPlaylist(path, delta),
   toggleFavorite: (path: string) => mocks.toggleFavorite(path),
+  createCollection: (name: string) => mocks.createCollection(name),
+  renameCollection: (id: string, name: string) => mocks.renameCollection(id, name),
+  deleteCollection: (id: string) => mocks.deleteCollection(id),
+  toggleNamedCollection: (id: string, path: string) => mocks.toggleNamedCollection(id, path),
   exportCollection: (kind: 'playlist' | 'favorites') => mocks.exportCollection(kind),
   importPlaylist: () => mocks.importPlaylist(),
   listDirectory: (directory: string) => mocks.listDirectory(directory),
@@ -382,6 +390,10 @@ beforeEach(() => {
     mocks.togglePlaylist,
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
+    mocks.createCollection,
+    mocks.renameCollection,
+    mocks.deleteCollection,
+    mocks.toggleNamedCollection,
     mocks.exportCollection,
     mocks.importPlaylist,
     mocks.rememberDirectory,
@@ -845,6 +857,19 @@ describe('底部控制条', () => {
     expect(document.querySelector("[data-tutorial='settings']")).toBe(
       screen.getByRole('button', { name: '设置' }),
     )
+  })
+
+  it('播放页可以打开片库抽屉，并从缩略图加入播放列表', async () => {
+    await openPlayingVideo()
+
+    await userEvent.click(screen.getByRole('button', { name: '打开播放片库' }))
+    const drawer = await screen.findByRole('dialog', { name: '播放片库' })
+    expect(within(drawer).getByText('demo.mp4')).toBeInTheDocument()
+
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: '把 demo.mp4 加入播放列表' }),
+    )
+    await waitFor(() => expect(mocks.togglePlaylist).toHaveBeenCalledWith(DEMO))
   })
 
   it('空状态里点「看示例视频」会打开自带的示例文件夹', async () => {

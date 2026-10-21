@@ -343,6 +343,15 @@ const IDLE_SNAPSHOT: PlayerSnapshot = {
 export interface Collections {
   playlist: string[]
   favorites: string[]
+  /** 旧版 collections.json 没有这个字段时按空列表处理。 */
+  customCollections?: NamedCollection[]
+}
+
+/** 用户自己命名、可以创建多个的长期收藏夹。 */
+export interface NamedCollection {
+  id: string
+  name: string
+  paths: string[]
 }
 
 /** 是否跑在 Tauri 外壳里。浏览器里打开时返回 false。 */
@@ -609,6 +618,26 @@ export function shiftInPlaylist(path: string, delta: number): Promise<Collection
 /** 收藏 / 取消收藏某个视频。 */
 export function toggleFavorite(path: string): Promise<Collections> {
   return playerCommand<Collections>('toggle_favorite', { path })
+}
+
+/** 新建命名收藏夹，返回落盘后的完整收藏数据。 */
+export function createCollection(name: string): Promise<Collections> {
+  return playerCommand<Collections>('create_collection', { name })
+}
+
+/** 重命名一个自定义收藏夹。 */
+export function renameCollection(id: string, name: string): Promise<Collections> {
+  return playerCommand<Collections>('rename_collection', { id, name })
+}
+
+/** 删除一个自定义收藏夹。 */
+export function deleteCollection(id: string): Promise<Collections> {
+  return playerCommand<Collections>('delete_collection', { id })
+}
+
+/** 把视频加入 / 移出自定义收藏夹。 */
+export function toggleNamedCollection(id: string, path: string): Promise<Collections> {
+  return playerCommand<Collections>('toggle_named_collection', { id, path })
 }
 
 /** 一键清空播放列表或收藏夹（另一侧不动）。 */

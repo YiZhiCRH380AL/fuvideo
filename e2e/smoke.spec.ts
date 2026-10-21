@@ -212,8 +212,7 @@ test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
     const result = {
       library: library.getBoundingClientRect().height,
       expanded: expanded.getBoundingClientRect().height,
-      otherTop: other.getBoundingClientRect().top,
-      expandedBottom: expanded.getBoundingClientRect().bottom,
+      otherDisplay: getComputedStyle(other).display,
     }
 
     videos.remove()
@@ -227,6 +226,6 @@ test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
   expect(measured).not.toBeNull()
   expect(measured!.library).toBeGreaterThan(200)
   expect(measured!.expanded).toBeGreaterThan(measured!.library * 0.9)
-  // 其他方格必须排到画面下面去
-  expect(measured!.otherTop).toBeGreaterThanOrEqual(measured!.expandedBottom - 1)
+  // 进入播放态后底层方格必须彻底移除，而不是只挪到屏幕外。
+  expect(measured!.otherDisplay).toBe('none')
 })

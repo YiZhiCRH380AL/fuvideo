@@ -8,11 +8,38 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 /// 列表文件名。
 pub const COLLECTIONS_FILE: &str = "collections.json";
+
+/// 命名收藏夹上限：侧栏太长反而找不到东西。
+pub const MAX_CUSTOM_COLLECTIONS: usize = 32;
+/// 单个收藏夹名称的字符上限。
+pub const MAX_COLLECTION_NAME_CHARS: usize = 40;
+
+static COLLECTION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NamedCollection {
+  pub id: String,
+  pub name: String,
+  pub paths: Vec<String>,
+}
+
+impl Default for NamedCollection {
+  fn default() -> Self {
+    Self {
+      id: String::new(),
+      name: String::new(),
+      paths: Vec::new(),
+    }
+  }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -20,6 +47,8 @@ pub struct Collections {
   /// 播放顺序就是数组顺序，看完一个自动播下一个。
   pub playlist: Vec<String>,
   pub favorites: Vec<String>,
+  /// 用户自己命名、可建多个的长期收藏夹。
+  pub custom_collections: Vec<NamedCollection>,
 }
 
 /// 去掉空路径与重复项，保持原有顺序。
@@ -45,8 +74,145 @@ impl Collections {
   pub fn normalized(mut self) -> Self {
     self.playlist = normalize(self.playlist);
     self.favorites = normalize(self.favorites);
+    self.custom_collections = normalize_collections(self.custom_collections);
     self
   }
+}
+
+fn normalized_name(name: &str) -> String {
+  name.trim().chars().take(MAX_COLLECTION_NAME_CHARS).collect()
+}
+
+fn same_name(left: &str, right: &str) -> bool {
+  left.eq_ignore_ascii_case(right)
+}
+
+fn normalize_collections(collections: Vec<NamedCollection>) -> Vec<NamedCollection> {
+  let mut normalized = Vec::new();
+
+  for collection in collections {
+    let id = collection.id.trim().to_string();
+    let name = normalized_name(&collection.name);
+
+    if id.is_empty()
+      || name.is_empty()
+      || normalized
+        .iter()
+        .any(|item: &NamedCollection| item.id == id || same_name(&item.name, &name))
+    {
+      continue;
+    }
+
+    normalized.push(NamedCollection {
+      id,
+      name,
+      paths: normalize(collection.paths),
+    });
+
+    if normalized.len() >= MAX_CUSTOM_COLLECTIONS {
+      break;
+    }
+  }
+
+  normalized
+}
+
+fn new_collection_id() -> String {
+  let millis = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|duration| duration.as_millis())
+    .unwrap_or_default();
+  let sequence = COLLECTION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+
+  format!("collection-{millis:x}-{sequence:x}")
+}
+
+fn collection_name(name: String) -> Result<String, String> {
+  let name = normalized_name(&name);
+
+  if name.is_empty() {
+    return Err("收藏夹名称不能为空".to_string());
+  }
+
+  Ok(name)
+}
+
+fn create_named_collection(current: &mut Collections, name: String) -> Result<(), String> {
+  let name = collection_name(name)?;
+
+  if current.custom_collections.len() >= MAX_CUSTOM_COLLECTIONS {
+    return Err(format!("最多只能建 {MAX_CUSTOM_COLLECTIONS} 个收藏夹"));
+  }
+
+  if current
+    .custom_collections
+    .iter()
+    .any(|collection| same_name(&collection.name, &name))
+  {
+    return Err("已经有同名收藏夹了".to_string());
+  }
+
+  current.custom_collections.push(NamedCollection {
+    id: new_collection_id(),
+    name,
+    paths: Vec::new(),
+  });
+  Ok(())
+}
+
+fn rename_named_collection(
+  current: &mut Collections,
+  id: &str,
+  name: String,
+) -> Result<(), String> {
+  let name = collection_name(name)?;
+
+  if current
+    .custom_collections
+    .iter()
+    .any(|collection| collection.id != id && same_name(&collection.name, &name))
+  {
+    return Err("已经有同名收藏夹了".to_string());
+  }
+
+  let Some(collection) = current
+    .custom_collections
+    .iter_mut()
+    .find(|collection| collection.id == id)
+  else {
+    return Err("找不到这个收藏夹".to_string());
+  };
+
+  collection.name = name;
+  Ok(())
+}
+
+fn delete_named_collection(current: &mut Collections, id: &str) -> Result<(), String> {
+  let before = current.custom_collections.len();
+  current.custom_collections.retain(|collection| collection.id != id);
+
+  if current.custom_collections.len() == before {
+    return Err("找不到这个收藏夹".to_string());
+  }
+
+  Ok(())
+}
+
+fn toggle_in_named_collection(
+  current: &mut Collections,
+  id: &str,
+  path: &str,
+) -> Result<(), String> {
+  let Some(collection) = current
+    .custom_collections
+    .iter_mut()
+    .find(|collection| collection.id == id)
+  else {
+    return Err("找不到这个收藏夹".to_string());
+  };
+
+  toggle(&mut collection.paths, path);
+  Ok(())
 }
 
 /// 读列表。文件不存在、读不动、内容是坏 JSON——一律当成空列表。
@@ -248,6 +414,50 @@ pub fn toggle_favorite(app: tauri::AppHandle, path: String) -> Result<Collection
   save(&directory, current)
 }
 
+/// 新建一个可命名的收藏夹。
+#[tauri::command]
+pub fn create_collection(app: tauri::AppHandle, name: String) -> Result<Collections, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+  create_named_collection(&mut current, name)?;
+  save(&directory, current)
+}
+
+/// 给收藏夹改名；只影响显示名，ID 和内容保持不变。
+#[tauri::command]
+pub fn rename_collection(
+  app: tauri::AppHandle,
+  id: String,
+  name: String,
+) -> Result<Collections, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+  rename_named_collection(&mut current, &id, name)?;
+  save(&directory, current)
+}
+
+/// 删除一个命名收藏夹。
+#[tauri::command]
+pub fn delete_collection(app: tauri::AppHandle, id: String) -> Result<Collections, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+  delete_named_collection(&mut current, &id)?;
+  save(&directory, current)
+}
+
+/// 加入 / 移出命名收藏夹；返回改完之后的全部收藏数据。
+#[tauri::command]
+pub fn toggle_named_collection(
+  app: tauri::AppHandle,
+  id: String,
+  path: String,
+) -> Result<Collections, String> {
+  let directory = config_dir(&app);
+  let mut current = load(&directory);
+  toggle_in_named_collection(&mut current, &id, &path)?;
+  save(&directory, current)
+}
+
 /// 一键清空播放列表或收藏夹。另一侧不动。
 #[tauri::command]
 pub fn clear_collection(app: tauri::AppHandle, kind: String) -> Result<Collections, String> {
@@ -349,6 +559,7 @@ mod tests {
         r"E:\b.mkv".to_string(),
       ],
       favorites: vec![r"E:\a.mkv".to_string()],
+      custom_collections: Vec::new(),
     }
     .normalized();
 
@@ -397,6 +608,11 @@ mod tests {
     let collections = Collections {
       playlist: vec![r"E:\a.mkv".to_string(), r"E:\b.mkv".to_string()],
       favorites: vec![r"E:\c.mkv".to_string()],
+      custom_collections: vec![NamedCollection {
+        id: "night".to_string(),
+        name: "夜场".to_string(),
+        paths: vec![r"E:\d.mkv".to_string()],
+      }],
     };
 
     let written = save(&directory, collections.clone()).expect("写入列表");
@@ -412,9 +628,98 @@ mod tests {
   fn collections_serialize_camel_case_fields() {
     let value = serde_json::to_value(Collections::default()).expect("序列化列表");
 
-    for key in ["playlist", "favorites"] {
+    for key in ["playlist", "favorites", "customCollections"] {
       assert!(value.get(key).is_some(), "列表里缺少字段 {key}");
     }
+  }
+
+  #[test]
+  fn legacy_file_without_custom_collections_still_loads() {
+    let directory = temp_dir("legacy");
+    fs::create_dir_all(&directory).expect("建目录");
+    fs::write(
+      directory.join(COLLECTIONS_FILE),
+      br#"{ "playlist": ["E:\\a.mkv"], "favorites": ["E:\\b.mkv"] }"#,
+    )
+    .expect("写旧文件");
+
+    let loaded = load(&directory);
+
+    assert_eq!(loaded.playlist, vec![r"E:\a.mkv"]);
+    assert_eq!(loaded.favorites, vec![r"E:\b.mkv"]);
+    assert!(loaded.custom_collections.is_empty());
+  }
+
+  #[test]
+  fn named_collections_are_trimmed_deduped_and_limited() {
+    let collections = Collections {
+      playlist: Vec::new(),
+      favorites: Vec::new(),
+      custom_collections: vec![
+        NamedCollection {
+          id: "one".to_string(),
+          name: "  夜场  ".to_string(),
+          paths: vec![r"E:\a.mkv".to_string(), r"E:\a.mkv".to_string()],
+        },
+        NamedCollection {
+          id: "two".to_string(),
+          name: "夜场".to_string(),
+          paths: Vec::new(),
+        },
+        NamedCollection {
+          id: "three".to_string(),
+          name: " ".to_string(),
+          paths: Vec::new(),
+        },
+      ],
+    }
+    .normalized();
+
+    assert_eq!(collections.custom_collections.len(), 1);
+    assert_eq!(collections.custom_collections[0].name, "夜场");
+    assert_eq!(collections.custom_collections[0].paths, vec![r"E:\a.mkv"]);
+  }
+
+  #[test]
+  fn named_collection_lifecycle_keeps_ids_and_paths() {
+    let mut collections = Collections::default();
+
+    create_named_collection(&mut collections, "  夜场  ".to_string()).expect("建夜场");
+    create_named_collection(&mut collections, "周末".to_string()).expect("建周末");
+    assert_eq!(collections.custom_collections.len(), 2);
+    assert_eq!(collections.custom_collections[0].name, "夜场");
+    assert_ne!(
+      collections.custom_collections[0].id,
+      collections.custom_collections[1].id
+    );
+    assert!(create_named_collection(&mut collections, "夜场".to_string()).is_err());
+
+    let id = collections.custom_collections[0].id.clone();
+    toggle_in_named_collection(&mut collections, &id, r"E:\a.mkv").expect("加入");
+    toggle_in_named_collection(&mut collections, &id, r"E:\a.mkv").expect("移出");
+    assert!(collections.custom_collections[0].paths.is_empty());
+
+    toggle_in_named_collection(&mut collections, &id, r"E:\b.mkv").expect("再加入");
+    rename_named_collection(&mut collections, &id, "深夜".to_string()).expect("改名");
+    assert_eq!(collections.custom_collections[0].name, "深夜");
+    assert_eq!(collections.custom_collections[0].paths, vec![r"E:\b.mkv"]);
+
+    delete_named_collection(&mut collections, &id).expect("删除");
+    assert_eq!(collections.custom_collections.len(), 1);
+    assert_eq!(collections.custom_collections[0].name, "周末");
+  }
+
+  #[test]
+  fn named_collection_names_must_be_non_empty_and_unique() {
+    let mut collections = Collections::default();
+
+    assert!(create_named_collection(&mut collections, "   ".to_string()).is_err());
+    create_named_collection(&mut collections, "Movie Night".to_string()).expect("建收藏夹");
+    assert!(create_named_collection(&mut collections, "movie night".to_string()).is_err());
+
+    let id = collections.custom_collections[0].id.clone();
+    assert!(rename_named_collection(&mut collections, "missing", "X".to_string()).is_err());
+    assert!(rename_named_collection(&mut collections, &id, " ".to_string()).is_err());
   }
 
   /* ---------------- m3u8 导出 / 导入 ---------------- */
@@ -483,6 +788,7 @@ mod tests {
     let mut collections = Collections {
       playlist: vec![r"E:\a.mkv".to_string()],
       favorites: vec![r"E:\b.mp4".to_string()],
+      custom_collections: Vec::new(),
     };
 
     clear_list(&mut collections, "playlist");

@@ -73,10 +73,24 @@ async function installFakeTauri(
     const sample = 'C:\\Users\\tester\\AppData\\Roaming\\com.fuvideo.desktop\\示例视频'
 
     /** 播放列表与收藏夹：假后端也要真的增删改，界面才看得到结果。 */
-    const collections = { playlist: [...seedPlaylist], favorites: [] as string[] }
+    const collections = {
+      playlist: [...seedPlaylist],
+      favorites: [] as string[],
+      customCollections: [
+        {
+          id: 'night',
+          name: '夜场',
+          paths: [] as string[],
+        },
+      ],
+    }
     const copyCollections = () => ({
       playlist: [...collections.playlist],
       favorites: [...collections.favorites],
+      customCollections: collections.customCollections.map((collection) => ({
+        ...collection,
+        paths: [...collection.paths],
+      })),
     })
 
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
@@ -128,6 +142,43 @@ async function installFakeTauri(
               collections.favorites = collections.favorites.includes(path)
                 ? collections.favorites.filter((item) => item !== path)
                 : [...collections.favorites, path]
+              return copyCollections()
+            }
+            case 'create_collection': {
+              const collection = {
+                id: `custom-${collections.customCollections.length + 1}`,
+                name: args.name as string,
+                paths: [] as string[],
+              }
+              collections.customCollections = [...collections.customCollections, collection]
+              return copyCollections()
+            }
+            case 'rename_collection': {
+              collections.customCollections = collections.customCollections.map((collection) =>
+                collection.id === args.id ? { ...collection, name: args.name as string } : collection,
+              )
+              return copyCollections()
+            }
+            case 'delete_collection': {
+              collections.customCollections = collections.customCollections.filter(
+                (collection) => collection.id !== args.id,
+              )
+              return copyCollections()
+            }
+            case 'toggle_named_collection': {
+              collections.customCollections = collections.customCollections.map((collection) => {
+                if (collection.id !== args.id) {
+                  return collection
+                }
+
+                const path = args.path as string
+                return {
+                  ...collection,
+                  paths: collection.paths.includes(path)
+                    ? collection.paths.filter((item) => item !== path)
+                    : [...collection.paths, path],
+                }
+              })
               return copyCollections()
             }
             default:
@@ -277,6 +328,70 @@ test('记住上次目录时也先显示首页封面，品牌字标可以随时�
   await page.getByRole('button', { name: '回到首页' }).click()
   await expect(page.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeVisible()
   await expect(page.getByTestId('video-grid')).toHaveCount(0)
+})
+
+test('播放页片库抽屉可从缩略图加入播放列表和多个收藏夹', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+  await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+  await expect(page.getByTestId('expanded-tile')).toBeVisible()
+
+  // 进入播放页之后，底层方格必须全部隐藏。
+  await expect(page.locator('.tile:not(.tile--expanded)').first()).toHaveCSS('display', 'none')
+
+  await page.getByRole('button', { name: '打开播放片库' }).click()
+  const drawer = page.getByRole('dialog', { name: '播放片库' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByText('demo-1.mp4')).toBeVisible()
+
+  await drawer.getByRole('button', { name: '把 demo-1.mp4 加入播放列表' }).click()
+  await drawer.getByRole('button', { name: '收藏 demo-1.mp4' }).click()
+  await drawer
+    .getByRole('combobox', { name: '把 demo-1.mp4 加入命名收藏夹' })
+    .selectOption('night')
+  await page.screenshot({ path: 'test-results/shots/playback-library-drawer.png' })
+
+  await page.getByRole('button', { name: '关闭片库面板' }).click()
+  await page.getByRole('button', { name: '收藏夹', exact: true }).click()
+  const pageDialog = page.getByRole('dialog', { name: '收藏夹' })
+  await expect(pageDialog.getByTestId('favorites-list')).toContainText('demo-1.mp4')
+  await pageDialog.getByRole('button', { name: /夜场/ }).click()
+  await expect(pageDialog.getByTestId('named-collection-list')).toContainText('demo-1.mp4')
+})
+
+test('收藏夹页可以新建、重命名和删除多个命名收藏夹', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '收藏夹', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '收藏夹' })
+  await expect(dialog).toBeVisible()
+
+  await dialog.getByRole('button', { name: '新建收藏夹' }).click()
+  await dialog.getByRole('textbox', { name: '新收藏夹名称' }).fill('旅行')
+  await dialog.getByRole('button', { name: '建', exact: true }).click()
+  await expect(dialog.getByRole('heading', { name: '旅行' })).toBeVisible()
+
+  await dialog.getByRole('button', { name: '新建收藏夹' }).click()
+  await dialog.getByRole('textbox', { name: '新收藏夹名称' }).fill('纪录片')
+  await dialog.getByRole('button', { name: '建', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: /纪录片/ })).toBeVisible()
+
+  await dialog.getByRole('button', { name: '重命名' }).click()
+  const rename = dialog.getByRole('textbox', { name: '收藏夹新名称' })
+  await rename.fill('纪录片笔记')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect(dialog.getByRole('heading', { name: '纪录片笔记' })).toBeVisible()
+  await page.screenshot({ path: 'test-results/shots/collections-page.png' })
+
+  await dialog.getByRole('button', { name: '删除' }).click()
+  await dialog.getByRole('button', { name: '确认删除？' }).click()
+  await expect(dialog.getByRole('button', { name: /纪录片笔记/ })).toHaveCount(0)
 })
 
 test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async ({ page }) => {
@@ -437,7 +552,7 @@ async function tileSizes(
   )
 }
 
-test('放大播放时，下面那些方格不会被压扁', async ({ page }) => {
+test('进入播放页后底层方格全部隐藏，只留播放画面', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
   await waitForBoot(page)
@@ -453,23 +568,10 @@ test('放大播放时，下面那些方格不会被压扁', async ({ page }) => 
   await page.waitForTimeout(500)
 
   const after = await tileSizes(page)
-  const wall = after.filter((tile) => !tile.expanded)
-
   // 画面那一格占满整屏
   expect(after.filter((tile) => tile.expanded)).toHaveLength(1)
-
-  /*
-   * 下面那些方格要还是「方格」。
-   *
-   * 它们这时被挤到可视区外、由 overflow 裁掉，所以尺寸不必和展开前逐像素相等
-   * （展开时网格去掉了间距，列宽本来就会变），但封面必须是 16:9 的正常形状——
-   * 曾经它们在这儿被压成 2px 高的长条，从收藏夹跳回来滚一下就会露出来。
-   */
-  expect(wall.length).toBeGreaterThan(0)
-  expect(wall.every((tile) => Math.abs(tile.aspect - 16 / 9) < 0.02)).toBe(true)
-  expect(wall.every((tile) => tile.height > 100)).toBe(true)
-  // 而且卡片只比封面高出一个名字的量：被图片原生高度撑成柱子时这里会是几百
-  expect(wall.every((tile) => tile.slack < 80)).toBe(true)
+  await expect(page.locator('.tile:not(.tile--expanded)').first()).toHaveCSS('display', 'none')
+  await expect(page.locator('.tile--expanded')).toHaveCount(1)
 })
 
 /**

@@ -3770,6 +3770,11 @@
   padding: 0;
 }
 
+/* 播放页只留下展开的那一格；底层方格彻底撤掉，避免从透明画面里透出来。 */
+.grid[data-expanded='true'] .tile:not(.tile--expanded) {
+  display: none;
+}
+
 .library__videos .library__none {
   flex: 1;
   min-height: 0;
