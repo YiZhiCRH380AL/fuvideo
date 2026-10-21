@@ -1423,13 +1423,28 @@ describe('播放列表与收藏夹', () => {
 })
 
 describe('记住上次的目录', () => {
-  it('启动时把上次打开的目录直接铺回来', async () => {
+  it('启动时先展示首页封面，点「继续上次片库」再进入目录', async () => {
     mocks.settings = { ...mocks.settings, lastDirectory: CLIPS }
 
     render(<App />)
 
     await waitFor(() => expect(mocks.listDirectory).toHaveBeenCalledWith(CLIPS))
+    expect(screen.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('video-grid')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '继续上次片库' }))
     expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+  })
+
+  it('点品牌字标可以随时回到首页封面', async () => {
+    render(<App />)
+    await chooseDirectory()
+
+    expect(await grid().findByRole('button', { name: 'demo.mp4' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '回到首页' }))
+
+    expect(screen.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('video-grid')).not.toBeInTheDocument()
   })
 
   /**

@@ -259,6 +259,8 @@ export default function App() {
   /** 是否停在「此电脑」这一层：列出所有能进的盘符。 */
   const [atDrives, setAtDrives] = useState(false)
   const [drives, setDrives] = useState<string[]>([])
+  /** 是否停在首页。上次目录会预加载，但启动不再直接跳过首页封面。 */
+  const [atHome, setAtHome] = useState(true)
 
   /** 首次进入的用法教程。看过一次就不再自动弹，还能从标题栏的「?」叫回来。 */
   const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial())
@@ -837,6 +839,7 @@ export default function App() {
       open: (target: string) => Promise<void> = playLocalVideo,
     ) => {
       setError(null)
+      setAtHome(false)
       // 点下去就算「这一步做过了」，后面起内核要多久都不影响教程推进
       setOpenedVideo(true)
 
@@ -878,6 +881,16 @@ export default function App() {
     }
   }, [player?.paused, reportError])
 
+  const handleGoHome = useCallback(() => {
+    setAtHome(true)
+    setOpenPanel(null)
+    setError(null)
+
+    if (expanded) {
+      void collapseVideo()
+    }
+  }, [collapseVideo, expanded])
+
   const loadDirectory = useCallback(
     async (target: string) => {
       setError(null)
@@ -886,6 +899,7 @@ export default function App() {
       try {
         const next = await listDirectory(target)
         setListing(next)
+        setAtHome(false)
         // 从「此电脑」点进来，或者从别处跳过来，都要离开那一层
         setAtDrives(false)
 
@@ -914,6 +928,7 @@ export default function App() {
     try {
       const next = await listDrives()
       setDrives(next)
+      setAtHome(false)
       setAtDrives(true)
       // 同上：切走以后放大格会消失，整窗还透明的话画面就悬空了
       if (expanded && currentFile !== null) {
@@ -1695,24 +1710,33 @@ export default function App() {
       <div className="shell">
         <header className="app__bar">
           <div className="app__brand">
-            <span className="app__mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            <span className="app__wordmark">
-              <span className="app__name">FutureVideo</span>
-              <span className="app__tagline">YOUR PRIVATE SCREEN</span>
-              <span className="app__version" data-testid="app-version">
-                {__APP_VERSION__}
+            <button
+              className="app__home-mark"
+              type="button"
+              onClick={handleGoHome}
+              aria-label="回到首页"
+              title="回到首页"
+              data-testid="home-button"
+            >
+              <span className="app__mark" aria-hidden="true">
+                <span />
+                <span />
+                <span />
               </span>
-            </span>
+              <span className="app__wordmark">
+                <span className="app__name">FutureVideo</span>
+                <span className="app__tagline">YOUR PRIVATE SCREEN</span>
+                <span className="app__version" data-testid="app-version">
+                  {__APP_VERSION__}
+                </span>
+              </span>
+            </button>
 
             {/*
               目录区往上层走的路都在这里，不再单开关一个侧边栏。
               画面展开时连它一起收起：新目录里没有当前视频，放大格会消失。
             */}
-            {expanded || shownPath === null ? null : (
+            {expanded || atHome || shownPath === null ? null : (
               <>
                 <span className="app__divider" aria-hidden="true" />
                 <button
@@ -1938,7 +1962,7 @@ export default function App() {
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
-          {expanded && !playingInGrid ? null : atDrives ? (
+          {expanded && !playingInGrid ? null : atDrives && !atHome ? (
             <div className="drives" data-testid="drives">
               {drives.map((drive, index) => (
                 <button
@@ -1970,7 +1994,7 @@ export default function App() {
                 <p className="library__hint">没有找到可以打开的盘</p>
               ) : null}
             </div>
-          ) : listing === null ? (
+          ) : atHome || listing === null ? (
             <div className="library__empty">
               <div className="library__hero">
                 <div className="library__hero-copy">
@@ -1988,15 +2012,26 @@ export default function App() {
                   </p>
 
                   <div className="library__hero-actions">
-                    <button
-                      className="button button--primary"
-                      type="button"
-                      onClick={() => void handleChooseDirectory()}
-                      disabled={!canOpen}
-                    >
-                      <span>选择目录</span>
-                      <span aria-hidden="true">↗</span>
-                    </button>
+                    {listing === null ? (
+                      <button
+                        className="button button--primary"
+                        type="button"
+                        onClick={() => void handleChooseDirectory()}
+                        disabled={!canOpen}
+                      >
+                        <span>选择目录</span>
+                        <span aria-hidden="true">↗</span>
+                      </button>
+                    ) : (
+                      <button
+                        className="button button--primary"
+                        type="button"
+                        onClick={() => setAtHome(false)}
+                      >
+                        <span>继续上次片库</span>
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    )}
                     <button
                       className="library__single library__sample"
                       type="button"

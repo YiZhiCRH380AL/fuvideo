@@ -9,21 +9,29 @@ import { expect, test, type Page } from '@playwright/test'
  */
 async function installFakeTauri(
   page: Page,
-  options: { tutorialSeen?: boolean; videoCount?: number; playlist?: string[] } = {},
+  options: {
+    tutorialSeen?: boolean
+    videoCount?: number
+    playlist?: string[]
+    lastDirectory?: string | null
+  } = {},
 ): Promise<void> {
   const tutorialSeen = options.tutorialSeen ?? true
   const videoCount = options.videoCount ?? 5
   const seedPlaylist = options.playlist ?? []
+  const lastDirectory = options.lastDirectory ?? null
 
   await page.addInitScript(
     ({
       tutorialSeen,
       videoCount,
       seedPlaylist,
+      lastDirectory,
     }: {
       tutorialSeen: boolean
       videoCount: number
       seedPlaylist: string[]
+      lastDirectory: string | null
     }) => {
     /**
      * 缩略图用一张 1920×1080 的占位图。
@@ -84,6 +92,8 @@ async function installFakeTauri(
                 ytdlAvailable: true,
                 ytdlPath: 'C:\\yt-dlp\\yt-dlp.exe',
               }
+            case 'read_settings':
+              return { lastDirectory }
             case 'pick_directory':
               return clips
             case 'prepare_sample_folder':
@@ -130,7 +140,7 @@ async function installFakeTauri(
       },
     })
     },
-    { tutorialSeen, videoCount, seedPlaylist },
+    { tutorialSeen, videoCount, seedPlaylist, lastDirectory },
   )
 }
 
@@ -250,6 +260,24 @@ test('片库工具条在顶部，文件夹轨道不再露出中间滚动条', as
   expect(folders!.y).toBeLessThan(grid!.y)
   // 横向浏览仍可用滚轮/触控板，但原生滑块不占画面中间。
   expect(scrollbar).toBe('none')
+})
+
+test('记住上次目录时也先显示首页封面，品牌字标可以随时返回', async ({ page }) => {
+  await installFakeTauri(page, { lastDirectory: 'E:\\clips' })
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await expect(page.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeVisible()
+  await expect(page.getByTestId('video-grid')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '继续上次片库' })).toBeVisible()
+  await page.screenshot({ path: 'test-results/shots/home-page.png', fullPage: true })
+
+  await page.getByRole('button', { name: '继续上次片库' }).click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  await page.getByRole('button', { name: '回到首页' }).click()
+  await expect(page.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeVisible()
+  await expect(page.getByTestId('video-grid')).toHaveCount(0)
 })
 
 test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async ({ page }) => {
