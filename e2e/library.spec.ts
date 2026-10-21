@@ -574,6 +574,39 @@ test('进入播放页后底层方格全部隐藏，只留播放画面', async ({
   await expect(page.locator('.tile--expanded')).toHaveCount(1)
 })
 
+test('日光主题播放页不会再用卡片底色遮住视频', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: /更换颜色主题/ }).click()
+  await page.getByRole('radio', { name: /日光纸/ }).click()
+  await page.keyboard.press('Escape')
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+  await expect(page.getByTestId('expanded-tile')).toBeVisible()
+  // 卡片原有 240ms 阴影过渡会在这之后归零，不能把过渡中的一帧误判成残留图层。
+  await page.waitForTimeout(400)
+
+  const style = await page.getByTestId('expanded-tile').evaluate((element) => {
+    const computed = getComputedStyle(element)
+
+    return {
+      backgroundColor: computed.backgroundColor,
+      backgroundImage: computed.backgroundImage,
+      borderTopWidth: computed.borderTopWidth,
+      boxShadow: computed.boxShadow,
+    }
+  })
+
+  expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  expect(style.backgroundImage).toBe('none')
+  expect(style.borderTopWidth).toBe('0px')
+  expect(style.boxShadow, JSON.stringify(style)).toBe('none')
+  await page.screenshot({ path: 'test-results/shots/playback-daylight.png' })
+})
+
 /**
  * 播放工具面板：章节、AB 循环、定时、窗口、打开地址五块都要在，
  * 而且面板本身不能撑出窗口——它是顶栏底下的一层浮层，撑出去就点不到了。

@@ -8,6 +8,9 @@
 
 - **修复播放后方格未隐藏**：`grid[data-expanded=true]` 下除展开格外全部
   `display: none`。现在点击目录方格会直接进入纯播放页，底层不再残留影片卡。
+- **修复浅色主题播放画面被白卡覆盖**：后加的视频卡主题背景覆盖了早期
+  `.tile--expanded { background: transparent }`，日光主题下尤其明显。现在用
+  `.tile.tile--expanded` 双类名强制透明背景、无边框、无阴影、无 backdrop。
 - 播放页灵动岛新增 **播放片库** 按钮。右侧抽屉会遮住画面，可重新选择目录，
   用首帧缩略图浏览视频，并直接加入播放列表、快速收藏或任意命名收藏夹。
 - 收藏夹从单列表扩展为 **快速收藏 + 多个命名收藏夹**。新增独立收藏夹页：
@@ -27,9 +30,10 @@
 
 ### 验证
 
-- 前端单测 **272** 条、Playwright e2e **24** 条、Rust **151** 条全部通过。
+- 前端单测 **272** 条、Playwright e2e **25** 条、Rust **151** 条全部通过。
 - 新增 e2e 覆盖：目录点播后底层方格全部 `display:none`、播放页抽屉选目录、
-  缩略图加入三种列表、多个收藏夹新建/重命名/删除。
+  缩略图加入三种列表、多个收藏夹新建/重命名/删除，以及日光主题播放格
+  背景必须为透明、`background-image` 为 `none`、边框和阴影为零。
 - 截图：`test-results/shots/playback-library-drawer.png`、
   `test-results/shots/collections-page.png`。
 
