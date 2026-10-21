@@ -197,8 +197,8 @@ test('文件夹条里的卡片一张都不能被裁', async ({ page }) => {
   // 8 个卡片：7 个子目录 + 一个「上一级」
   expect(folders!.total).toBe(8)
   expect(folders!.cards.filter((card) => card.clipped)).toEqual([])
-  expect(folders!.cards.every((card) => card.height > 100)).toBe(true)
-  expect(folders!.cards.every((card) => card.cover === 100)).toBe(true)
+  expect(folders!.cards.every((card) => card.height > 50)).toBe(true)
+  expect(folders!.cards.every((card) => card.cover === 50)).toBe(true)
   // 单行横向排：竖向不该有内容溢出，不然就是又被压扁了
   expect(folders!.scrollHeight).toBeLessThanOrEqual(folders!.clientHeight + 1)
   // 底边要留得下入场那 6px 的上浮，否则动画期间卡片会被裁一刀
@@ -225,6 +225,31 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
   expect(new Set(drives!.cards.map((card) => card.height)).size).toBe(1)
   expect(drives!.cards.every((card) => card.cover === 100)).toBe(true)
 
+})
+
+test('片库工具条在顶部，文件夹轨道不再露出中间滚动条', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await expect(page.getByTestId('video-grid')).toBeVisible()
+
+  const search = await page.getByRole('searchbox', { name: '搜索这个目录' }).boundingBox()
+  const folders = await page.getByTestId('folder-strip').boundingBox()
+  const grid = await page.getByTestId('video-grid').boundingBox()
+  const scrollbar = await page
+    .getByTestId('folder-strip')
+    .evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').display)
+
+  expect(search).not.toBeNull()
+  expect(folders).not.toBeNull()
+  expect(grid).not.toBeNull()
+  // 层级必须是：工具条 → 文件夹轨道 → 影片画廊。
+  expect(search!.y).toBeLessThan(folders!.y)
+  expect(folders!.y).toBeLessThan(grid!.y)
+  // 横向浏览仍可用滚轮/触控板，但原生滑块不占画面中间。
+  expect(scrollbar).toBe('none')
 })
 
 test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async ({ page }) => {
@@ -333,7 +358,7 @@ test('视频多到要滚动时，每一格还是原来的高度', async ({ page 
   expect(new Set(sizes.map((tile) => tile.height)).size).toBe(1)
   expect(sizes.every((tile) => tile.height > 150)).toBe(true)
   // 卡片高度要和封面 + 名字对得上，不能被图片原生高度撑成柱子
-  expect(sizes.every((tile) => tile.slack < 60)).toBe(true)
+  expect(sizes.every((tile) => tile.slack < 80), JSON.stringify(sizes)).toBe(true)
 })
 
 test('从收藏夹跳回来之后，方格还是方格，并且那一格被高亮', async ({ page }) => {
@@ -417,7 +442,7 @@ test('放大播放时，下面那些方格不会被压扁', async ({ page }) => 
   expect(wall.every((tile) => Math.abs(tile.aspect - 16 / 9) < 0.02)).toBe(true)
   expect(wall.every((tile) => tile.height > 100)).toBe(true)
   // 而且卡片只比封面高出一个名字的量：被图片原生高度撑成柱子时这里会是几百
-  expect(wall.every((tile) => tile.slack < 60)).toBe(true)
+  expect(wall.every((tile) => tile.slack < 80)).toBe(true)
 })
 
 /**

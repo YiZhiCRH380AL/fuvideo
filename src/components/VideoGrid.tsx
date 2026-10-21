@@ -54,6 +54,13 @@ interface TileProps {
   onSeekBy: (offset: number) => void
 }
 
+function formatFor(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const extension = dot >= 0 ? name.slice(dot + 1).trim() : ''
+
+  return extension === '' ? 'VIDEO' : extension.toUpperCase()
+}
+
 const Tile = memo(function Tile({
   video,
   thumbnail,
@@ -129,6 +136,7 @@ const Tile = memo(function Tile({
       <button
         className="tile__open"
         type="button"
+        aria-label={video.name}
         title={video.name}
         onClick={(event) => onOpen(video.path, event.currentTarget.getBoundingClientRect())}
       >
@@ -144,7 +152,10 @@ const Tile = memo(function Tile({
           </span>
         </span>
 
-        <span className="tile__name">{video.name}</span>
+        <span className="tile__info">
+          <span className="tile__name">{video.name}</span>
+          <span className="tile__format">{formatFor(video.name)}</span>
+        </span>
       </button>
 
       {/* 鼠标移到方格上（或者键盘焦点进来）才浮出来的两个动作 */}

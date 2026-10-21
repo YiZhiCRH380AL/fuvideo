@@ -2053,19 +2053,13 @@ export default function App() {
             </div>
           ) : (
             <>
-              {/* 看画面时把目录条收掉：整块留给视频 */}
-              {expanded ? null : (
-                <FolderStrip
-                  folders={folders}
-                  parent={parentEntry}
-                  busy={directoryBusy}
-                  onOpen={(path) => void loadDirectory(path)}
-                />
-              )}
-
               {/* 搜索与排序只改「怎么摆」，不动目录本身 */}
               {expanded || listing.entries.length === 0 ? null : (
                 <div className="library__tools">
+                  <span className="library__toolbar-title">
+                    <span>LIBRARY</span>
+                    本地片库
+                  </span>
                   <input
                     className="library__search"
                     type="search"
@@ -2106,49 +2100,73 @@ export default function App() {
                 </div>
               )}
 
-              {videos.length === 0 ? (
-                <div className="library__none">
-                  <p className="library__hint">
-                    {search.trim() !== ''
-                      ? `没有名字里有「${search.trim()}」的条目`
-                      : listing.entries.length === 0
-                        ? '这个目录里没有子目录或视频文件'
-                        : '这个目录里没有视频'}
-                  </p>
-                  <button
-                    className="library__single"
-                    type="button"
-                    onClick={() => void handleOpenFile()}
-                    disabled={!canOpen}
-                  >
-                    或打开单个视频
-                  </button>
-                </div>
-              ) : (
-                <VideoGrid
-                  videos={videos}
-                  thumbnails={thumbnails}
-                  expandedPath={expanded ? currentFile : null}
-                  flash={flash}
-                  buffering={buffering}
-                  playlist={collections.playlist}
-                  favorites={collections.favorites}
-                  highlightPath={highlightPath}
-                  onOpen={handleOpenFromTile}
-                  onTogglePlaylist={handleTogglePlaylist}
-                  onToggleFavorite={handleToggleFavorite}
-                  onTogglePlay={() => void handleTogglePause()}
-                  onSeekBy={(offset) => {
-                    handleSeekBy(offset)
-                    setFlash({
-                      id: Date.now(),
-                      x: offset > 0 ? 78 : 22,
-                      y: 50,
-                      offset,
-                    })
-                  }}
+              {/* 看画面时把目录条收掉：整块留给视频 */}
+              {expanded ? null : (
+                <FolderStrip
+                  folders={folders}
+                  parent={parentEntry}
+                  busy={directoryBusy}
+                  onOpen={(path) => void loadDirectory(path)}
                 />
               )}
+
+              <section className="library__videos" aria-label={search.trim() ? '搜索结果' : '全部影片'}>
+                {expanded ? null : (
+                  <div className="library__videos-head">
+                    <div className="library__videos-title">
+                      <span>VIDEO COLLECTION</span>
+                      <h2>{search.trim() ? '搜索结果' : '全部影片'}</h2>
+                    </div>
+                    <span className="library__videos-count">
+                      {String(videos.length).padStart(2, '0')} / {String(listing.entries.length).padStart(2, '0')}
+                    </span>
+                  </div>
+                )}
+
+                {videos.length === 0 ? (
+                  <div className="library__none">
+                    <p className="library__hint">
+                      {search.trim() !== ''
+                        ? `没有名字里有「${search.trim()}」的条目`
+                        : listing.entries.length === 0
+                          ? '这个目录里没有子目录或视频文件'
+                          : '这个目录里没有视频'}
+                    </p>
+                    <button
+                      className="library__single"
+                      type="button"
+                      onClick={() => void handleOpenFile()}
+                      disabled={!canOpen}
+                    >
+                      或打开单个视频
+                    </button>
+                  </div>
+                ) : (
+                  <VideoGrid
+                    videos={videos}
+                    thumbnails={thumbnails}
+                    expandedPath={expanded ? currentFile : null}
+                    flash={flash}
+                    buffering={buffering}
+                    playlist={collections.playlist}
+                    favorites={collections.favorites}
+                    highlightPath={highlightPath}
+                    onOpen={handleOpenFromTile}
+                    onTogglePlaylist={handleTogglePlaylist}
+                    onToggleFavorite={handleToggleFavorite}
+                    onTogglePlay={() => void handleTogglePause()}
+                    onSeekBy={(offset) => {
+                      handleSeekBy(offset)
+                      setFlash({
+                        id: Date.now(),
+                        x: offset > 0 ? 78 : 22,
+                        y: 50,
+                        offset,
+                      })
+                    }}
+                  />
+                )}
+              </section>
             </>
           )}
         </main>

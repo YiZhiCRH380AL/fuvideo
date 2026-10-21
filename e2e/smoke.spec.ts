@@ -186,9 +186,19 @@ test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
       return null
     }
 
+    const empty = library.querySelector('.library__empty') as HTMLElement | null
+    const previousDisplay = empty?.style.display
+    if (empty !== null) {
+      empty.style.display = 'none'
+    }
+
     const grid = document.createElement('div')
     grid.className = 'grid'
     grid.dataset.expanded = 'true'
+
+    const videos = document.createElement('section')
+    videos.className = 'library__videos'
+    videos.append(grid)
 
     const expanded = document.createElement('div')
     expanded.className = 'tile tile--expanded'
@@ -197,7 +207,7 @@ test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
     other.className = 'tile'
 
     grid.append(expanded, other)
-    library.append(grid)
+    library.append(videos)
 
     const result = {
       library: library.getBoundingClientRect().height,
@@ -206,7 +216,10 @@ test('放大格铺满可视区，而不是塌成 0 高', async ({ page }) => {
       expandedBottom: expanded.getBoundingClientRect().bottom,
     }
 
-    grid.remove()
+    videos.remove()
+    if (empty !== null) {
+      empty.style.display = previousDisplay ?? ''
+    }
 
     return result
   })
