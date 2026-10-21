@@ -2088,6 +2088,18 @@ export default function App() {
             </div>
           ) : (
             <>
+              <div className="library__workspace">
+                {/* 看画面时把目录条收掉：整块留给视频 */}
+                {expanded ? null : (
+                  <FolderStrip
+                    folders={folders}
+                    parent={parentEntry}
+                    busy={directoryBusy}
+                    onOpen={(path) => void loadDirectory(path)}
+                  />
+                )}
+
+                <div className="library__main">
               {/* 搜索与排序只改「怎么摆」，不动目录本身 */}
               {expanded || listing.entries.length === 0 ? null : (
                 <div className="library__tools">
@@ -2133,16 +2145,6 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-              )}
-
-              {/* 看画面时把目录条收掉：整块留给视频 */}
-              {expanded ? null : (
-                <FolderStrip
-                  folders={folders}
-                  parent={parentEntry}
-                  busy={directoryBusy}
-                  onOpen={(path) => void loadDirectory(path)}
-                />
               )}
 
               <section className="library__videos" aria-label={search.trim() ? '搜索结果' : '全部影片'}>
@@ -2202,6 +2204,8 @@ export default function App() {
                   />
                 )}
               </section>
+                </div>
+              </div>
             </>
           )}
         </main>

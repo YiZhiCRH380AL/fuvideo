@@ -207,8 +207,8 @@ test('文件夹条里的卡片一张都不能被裁', async ({ page }) => {
   // 8 个卡片：7 个子目录 + 一个「上一级」
   expect(folders!.total).toBe(8)
   expect(folders!.cards.filter((card) => card.clipped)).toEqual([])
-  expect(folders!.cards.every((card) => card.height > 50)).toBe(true)
-  expect(folders!.cards.every((card) => card.cover === 50)).toBe(true)
+  expect(folders!.cards.every((card) => card.height >= 54)).toBe(true)
+  expect(folders!.cards.every((card) => card.cover === 40)).toBe(true)
   // 单行横向排：竖向不该有内容溢出，不然就是又被压扁了
   expect(folders!.scrollHeight).toBeLessThanOrEqual(folders!.clientHeight + 1)
   // 底边要留得下入场那 6px 的上浮，否则动画期间卡片会被裁一刀
@@ -237,7 +237,7 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
 
 })
 
-test('片库工具条在顶部，文件夹轨道不再露出中间滚动条', async ({ page }) => {
+test('片库使用左侧文件夹导航，影片画廊留在右侧', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
   await waitForBoot(page)
@@ -248,18 +248,17 @@ test('片库工具条在顶部，文件夹轨道不再露出中间滚动条', as
   const search = await page.getByRole('searchbox', { name: '搜索这个目录' }).boundingBox()
   const folders = await page.getByTestId('folder-strip').boundingBox()
   const grid = await page.getByTestId('video-grid').boundingBox()
-  const scrollbar = await page
-    .getByTestId('folder-strip')
-    .evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').display)
+  const sidebar = await page.getByRole('complementary', { name: '文件夹导航' }).boundingBox()
 
   expect(search).not.toBeNull()
   expect(folders).not.toBeNull()
   expect(grid).not.toBeNull()
-  // 层级必须是：工具条 → 文件夹轨道 → 影片画廊。
+  expect(sidebar).not.toBeNull()
+  // 搜索条属于右侧主区，文件夹是左侧窄导航。
   expect(search!.y).toBeLessThan(folders!.y)
-  expect(folders!.y).toBeLessThan(grid!.y)
-  // 横向浏览仍可用滚轮/触控板，但原生滑块不占画面中间。
-  expect(scrollbar).toBe('none')
+  expect(sidebar!.x).toBeLessThan(search!.x)
+  expect(sidebar!.width).toBeLessThan(260)
+  expect(folders!.x).toBeLessThan(grid!.x)
 })
 
 test('记住上次目录时也先显示首页封面，品牌字标可以随时返回', async ({ page }) => {

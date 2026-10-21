@@ -2855,6 +2855,7 @@
 .library__hero-stage {
   position: relative;
   min-height: 390px;
+  margin-top: clamp(18px, 4vh, 38px);
   perspective: 1000px;
 }
 
@@ -3404,6 +3405,7 @@
 
   .library__hero-stage {
     min-height: 300px;
+    margin-top: 0;
     transform: scale(0.86);
   }
 
@@ -3475,7 +3477,7 @@
 }
 
 /* ========================================================================== */
-/* 片库页：工具条、紧凑文件夹轨道与影片画廊                                   */
+/* 片库页：左侧文件夹导航、工具条与影片画廊                                   */
 /* ========================================================================== */
 
 .library {
@@ -3489,9 +3491,22 @@
   padding-bottom: 104px;
 }
 
+.library__workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.library__main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .library__tools {
   flex: none;
-  order: -3;
   gap: 10px;
   padding: 18px 20px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
@@ -3537,95 +3552,124 @@
   white-space: nowrap;
 }
 
-.folders-section {
+.folder-sidebar {
+  display: flex;
   flex: none;
-  order: -2;
+  width: 216px;
   min-width: 0;
-  padding: 10px 20px 6px;
+  min-height: 0;
+  flex-direction: column;
+  padding: 18px 12px 14px;
+  border-right: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, var(--surface-soft), transparent 46%),
+    color-mix(in srgb, var(--bg-deep) 16%, transparent);
 }
 
-.folders-section__head {
+.folder-sidebar__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-bottom: 7px;
-  padding: 0 2px;
+  margin-bottom: 12px;
+  padding: 0 6px;
 }
 
-.folders-section__title {
-  color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 680;
-  letter-spacing: 0.1em;
+.folder-sidebar__head > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
 }
 
-.folders-section__count {
+.folder-sidebar__head small {
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 720;
+  letter-spacing: 0.18em;
+}
+
+.folder-sidebar__count {
   display: inline-grid;
-  min-width: 17px;
-  height: 17px;
+  min-width: 22px;
+  height: 20px;
   padding: 0 5px;
   place-items: center;
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
 
 .folders {
   display: flex;
-  gap: 10px;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
   box-sizing: border-box;
-  padding: 1px 2px 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  padding: 1px 3px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: color-mix(in srgb, var(--accent) 34%, transparent) transparent;
+  scrollbar-width: thin;
 }
 
 .folders::-webkit-scrollbar {
-  display: none;
+  width: 5px;
+}
+
+.folders::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.folders::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .folders .folder {
   position: relative;
   display: flex;
   flex: none;
-  width: 176px;
-  height: 68px;
+  width: 100%;
+  height: 54px;
   align-items: center;
   flex-direction: row;
-  gap: 9px;
-  padding: 8px;
-  border-radius: 14px;
+  gap: 8px;
+  padding: 6px 7px;
+  border-radius: 11px;
   box-shadow:
     inset 0 1px 0 var(--highlight),
-    0 7px 16px var(--shadow-soft);
+    0 5px 12px var(--shadow-soft);
 }
 
 .folders .folder::before {
-  inset: auto 12px 0;
-  width: auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  inset: 7px auto 7px 0;
+  width: 2px;
+  height: auto;
+  background: linear-gradient(transparent, var(--accent), transparent);
 }
 
 .folders .folder:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translateX(2px);
 }
 
 .folders .folder__frame {
   flex: none;
-  width: 48px;
-  height: 48px;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 .folders .folder__glyph {
-  width: 29px;
-  height: 29px;
+  width: 24px;
+  height: 24px;
 }
 
 .folders .folder__name {
@@ -3652,17 +3696,25 @@
 .folders .folder:hover .folder__arrow {
   color: var(--accent);
   opacity: 1;
-  transform: translate(1px, -1px);
+  transform: translateX(2px);
 }
 
 .folders .folder--parent .folder__arrow {
   color: var(--text-muted);
 }
 
+.folder-sidebar__hint {
+  flex: none;
+  padding: 10px 6px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
 .library__videos {
   display: flex;
   flex: 1;
-  order: -1;
   min-height: 0;
   flex-direction: column;
   padding: 6px 20px 0;
@@ -3854,6 +3906,40 @@
 }
 
 @media (max-width: 760px) {
+  .library__workspace {
+    flex-direction: column;
+  }
+
+  .folder-sidebar {
+    width: auto;
+    min-height: auto;
+    padding: 10px 14px 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .folder-sidebar__head {
+    margin-bottom: 6px;
+  }
+
+  .folder-sidebar__hint {
+    display: none;
+  }
+
+  .folders {
+    flex: none;
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+  }
+
+  .folders::-webkit-scrollbar {
+    display: none;
+  }
+
   .library__tools {
     flex-wrap: wrap;
     padding: 12px 14px 9px;
@@ -3873,12 +3959,9 @@
     display: none;
   }
 
-  .folders-section {
-    padding-inline: 14px;
-  }
-
   .folders .folder {
     width: 154px;
+    height: 56px;
   }
 
   .library__videos {

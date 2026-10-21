@@ -29,18 +29,28 @@ export interface FolderParent {
  */
 export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStripProps) {
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+    const element = event.currentTarget
+
+    if (
+      element.scrollWidth <= element.clientWidth + 1 ||
+      Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+    ) {
       return
     }
 
-    event.currentTarget.scrollLeft += event.deltaY
+    element.scrollLeft += event.deltaY
   }
 
   return (
-    <section className="folders-section" aria-label="文件夹">
-      <div className="folders-section__head">
-        <span className="folders-section__title">文件夹</span>
-        <span className="folders-section__count">{folders.length + (parent === null ? 0 : 1)}</span>
+    <aside className="folder-sidebar" aria-label="文件夹导航">
+      <div className="folder-sidebar__head">
+        <span>
+          <small>BROWSE</small>
+          文件夹
+        </span>
+        <span className="folder-sidebar__count">
+          {folders.length + (parent === null ? 0 : 1)}
+        </span>
       </div>
 
       <div className="folders" data-testid="folder-strip" onWheel={handleWheel}>
@@ -104,6 +114,7 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
 
         {busy ? <span className="folders__busy">读取中…</span> : null}
       </div>
-    </section>
+      <span className="folder-sidebar__hint">当前位置的子目录</span>
+    </aside>
   )
 }
