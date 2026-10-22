@@ -2,6 +2,87 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
+## 交接中：悬停伸缩侧栏（尚未实施）
+
+> 这一节是用户要求停止后留下的实施说明。本轮试做的代码改动已全部撤销，
+> 工作区回到当前 `main` 的已提交状态；下面内容**尚未落地**。
+
+### 目标
+
+1. 文件夹导航和原先标题栏右侧的按钮全部移入左侧栏。
+2. 左侧栏收起时只占约 18px；鼠标靠近时拉出约 248px，移开后自动收起。
+3. 播放页仍保留可伸缩的“片库”侧按钮，点击后打开现有播放片库抽屉。
+4. 播放页左侧栏也应可展开，避免播放时找不到播放列表、收藏夹、播放工具、主题和设置。
+
+### 建议实现
+
+- 把 [FolderStrip.tsx](src/components/FolderStrip.tsx) 改成完整的 `app-sidebar`：
+  - 外层宽度 18px，内容面板宽度 248px。
+  - 内容包含“回到首页”、文件夹列表、控制台按钮、后端状态。
+  - 顶部按钮组通过 `actions: ReactNode` 从 [App.tsx](src/App.tsx) 传入。
+  - 文件夹列表继续保留 `data-testid="folder-strip"`，避免大量测试重写。
+  - 收起轨道增加 `data-tutorial="sidebar"`，供教程打光。
+- 在 [App.tsx](src/App.tsx)：
+  - 移除标题栏右侧的播放列表、收藏夹、播放工具、主题、设置、帮助按钮。
+  - 把同一组 JSX 原样组成 `sidebarActions`，交给 `FolderStrip`。
+  - 侧栏在首页、目录页、播放页都渲染；仅迷你模式隐藏。
+  - 播放页右边缘新增 `playback-side-tab`，点击设置 `playbackLibraryOpen=true`。
+  - 从 [Island.tsx](src/components/Island.tsx) 移除此前临时加上的片库按钮。
+- CSS 要点：
+  - **不要用 `transform` 平移侧栏内容**。否则 `position: fixed` 的弹层会以侧栏为包含块，
+    在 640×400 下会从视口底部溢出。用 `left: -230px` / `left: 0` 做过渡。
+  - 展开条件用 `:hover`、`[data-open=true]` 和 `:has(:focus-visible)`。
+    不要用 `:focus-within`：鼠标点过按钮后焦点仍留在栏内，会导致鼠标移开也不收起。
+  - 侧栏内 Popover 在宽屏放在面板右侧：
+    `left: calc(100% + 8px); right: auto`。
+  - 760px 以下把 Popover 改为 `position: fixed; top: 72px; left/right: 12px`，
+    并限制 `max-height: calc(100vh - 88px)`。
+  - 播放页伸缩按钮建议宽 31px，悬停展开到 64px；右侧圆角贴边，
+    点击打开现有 [PlaybackLibraryDrawer.tsx](src/components/PlaybackLibraryDrawer.tsx)。
+
+### 测试改动
+
+- E2E 增加 `expandAppSidebar(page)`：鼠标移到窗口左侧 `(5, height/2)`，
+  等 `.app-sidebar__content` 的 `opacity` 变为 `1`。
+- 添加/调整：
+  - 顶栏 `.app__bar .app__tool` 数量为 0，按钮都在 `.app-sidebar__actions`。
+  - 悬停后侧栏宽面板出现，鼠标移到主区域后 `opacity` 回到 0。
+  - 播放页右侧片库按钮宽度从 31px 伸到 64px。
+  - 教程“设置”步骤改为打光 `[data-tutorial='sidebar']`，不要强开侧栏去盖住方格。
+  - 560×315 / 640×400 下侧栏弹层必须完整留在视口内。
+- 单测：
+  - 更新“展开时隐藏换目录入口”的旧断言：现在播放页仍保留侧栏和播放片库入口。
+  - 教程标题改为“左侧栏是设置”。
+
+### 已知坑
+
+- 教程若强制展开侧栏，会盖住第一个视频方格，导致“点一格播放”步骤超时。
+- `.app-sidebar__content` 若使用 `transform`，窄窗口固定定位会算错高度。
+- `:focus-within` 会让鼠标点击后的侧栏无法自动收起。
+- 首页同时存在品牌“回到首页”和侧栏“回到首页”时，测试必须用
+  `[data-testid="home-button"]` 或精确可访问名称，避免 strict-mode 冲突。
+
+### 验证命令
+
+```powershell
+npm run typecheck
+npm run lint
+npm run test:run
+npm run test:e2e
+npm run build
+cd src-tauri
+cargo test --lib
+```
+
+当前基线参考：前端单测 272、e2e 25、Rust 151。实施后应保持全绿。
+
+### 交付前真机验证
+
+- 鼠标从左边缘靠近时侧栏是否顺滑拉出，移开是否收回。
+- 点击过侧栏按钮后移开鼠标，侧栏是否仍能收起。
+- 播放页右边缘片库按钮的伸缩手感，以及打开抽屉后视频是否继续播放。
+- 125% / 150% 系统缩放和 640×400 窗口下，是否出现遮挡或弹层越界。
+
 ## 当前阶段：播放页片库抽屉与多收藏夹（已完成，待真机确认）
 
 ### 已完成
