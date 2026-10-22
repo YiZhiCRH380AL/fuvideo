@@ -64,7 +64,15 @@ const mocks = vi.hoisted(() => {
     sampleFolder: String.raw`C:\Users\zhan2\AppData\Roaming\com.fuvideo.desktop\示例视频`,
     prepareSampleFolder: vi.fn(),
     /** 播放列表与收藏夹：mock 里也要真的改，界面才拿得到「改完之后」的列表。 */
-    collections: { playlist: [] as string[], favorites: [] as string[] },
+    collections: {
+      playlist: [] as string[],
+      favorites: [] as string[],
+      customCollections: undefined as { id: string; name: string; paths: string[] }[] | undefined,
+    } as {
+      playlist: string[]
+      favorites: string[]
+      customCollections?: { id: string; name: string; paths: string[] }[]
+    },
     getCollections: vi.fn(),
     togglePlaylist: vi.fn(),
     shiftInPlaylist: vi.fn(),
@@ -459,7 +467,7 @@ beforeEach(() => {
   ])
 
   // 列表的 mock 要真的增删改，界面拿返回值更新自己
-  mocks.collections = { playlist: [], favorites: [] }
+  mocks.collections = { playlist: [], favorites: [], customCollections: [] }
   mocks.getCollections.mockImplementation(async () => mocks.collections)
   mocks.togglePlaylist.mockImplementation(async (path: string) => {
     const contains = mocks.collections.playlist.includes(path)
@@ -491,6 +499,22 @@ beforeEach(() => {
       : [...mocks.collections.favorites, path]
 
     mocks.collections = { ...mocks.collections, favorites }
+    return mocks.collections
+  })
+  mocks.toggleNamedCollection.mockImplementation(async (id: string, path: string) => {
+    mocks.collections = {
+      ...mocks.collections,
+      customCollections: (mocks.collections.customCollections ?? []).map((collection) => {
+        if (collection.id !== id) {
+          return collection
+        }
+
+        const paths = collection.paths.includes(path)
+          ? collection.paths.filter((item) => item !== path)
+          : [...collection.paths, path]
+        return { ...collection, paths }
+      }),
+    }
     return mocks.collections
   })
 })
@@ -1268,15 +1292,53 @@ describe('播放列表与收藏夹', () => {
     )
   })
 
-  it('收藏之后按钮变成已收藏', async () => {
+  it('点方格上的收藏按钮先给出收藏夹选项，不会直接改动收藏', async () => {
+    mocks.collections = {
+      playlist: [],
+      favorites: [],
+      customCollections: [{ id: 'night', name: '夜场', paths: [] }],
+    }
+
     render(<App />)
     await chooseDirectory()
 
     await userEvent.click(screen.getByRole('button', { name: '收藏 demo.mp4' }))
 
+    const picker = await screen.findByRole('dialog', { name: 'demo.mp4' })
+    expect(within(picker).getByRole('button', { name: /快速收藏/ })).toBeInTheDocument()
+    expect(within(picker).getByRole('button', { name: /夜场/ })).toBeInTheDocument()
+    expect(mocks.toggleFavorite).not.toHaveBeenCalled()
+    expect(mocks.toggleNamedCollection).not.toHaveBeenCalled()
+  })
+
+  it('可以在收藏面板里连续加入快速收藏和命名收藏夹', async () => {
+    mocks.collections = {
+      playlist: [],
+      favorites: [],
+      customCollections: [{ id: 'night', name: '夜场', paths: [] }],
+    }
+
+    render(<App />)
+    await chooseDirectory()
+    await userEvent.click(screen.getByRole('button', { name: '收藏 demo.mp4' }))
+
+    const picker = await screen.findByRole('dialog', { name: 'demo.mp4' })
+    await userEvent.click(within(picker).getByRole('button', { name: /快速收藏/ }))
+
     await waitFor(() => expect(mocks.toggleFavorite).toHaveBeenCalledWith(DEMO))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: '取消收藏 demo.mp4' })).toHaveAttribute(
+      expect(within(picker).getByRole('button', { name: /快速收藏/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+
+    await userEvent.click(within(picker).getByRole('button', { name: /夜场/ }))
+    await waitFor(() =>
+      expect(mocks.toggleNamedCollection).toHaveBeenCalledWith('night', DEMO),
+    )
+    await waitFor(() =>
+      expect(within(picker).getByRole('button', { name: /夜场/ })).toHaveAttribute(
         'aria-pressed',
         'true',
       ),

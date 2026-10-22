@@ -4541,3 +4541,214 @@
     transition-duration: 1ms;
   }
 }
+
+/* ========================================================================== */
+/* 方格「收藏到」面板                                                         */
+/* ========================================================================== */
+
+/*
+ * 它挂在 App 根节点上并使用 fixed 定位，避开方格的 overflow: hidden 和
+ * FLIP 悬停位移；位置由 FavoritePicker 根据收藏按钮的矩形计算。
+ */
+.favorite-picker {
+  position: fixed;
+  z-index: 38;
+  display: flex;
+  width: 264px;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--border-bright);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 70% at 78% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 56%),
+    linear-gradient(145deg, var(--highlight), transparent 36%),
+    var(--surface-glass);
+  box-shadow:
+    0 24px 64px var(--shadow),
+    inset 0 1px 0 var(--highlight);
+  backdrop-filter: blur(28px) saturate(150%);
+  animation: favorite-picker-in 180ms var(--ease-spring);
+}
+
+@keyframes favorite-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.favorite-picker__head {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 13px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.favorite-picker__head > span {
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 740;
+  letter-spacing: 0.18em;
+}
+
+.favorite-picker__head > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-picker__head > small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.favorite-picker__options {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px;
+  overflow-y: auto;
+  scrollbar-color: color-mix(in srgb, var(--accent) 38%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.favorite-picker__option {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.favorite-picker__option:hover:not(:disabled),
+.favorite-picker__option:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
+  outline: none;
+}
+
+.favorite-picker__option[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.favorite-picker__option:disabled {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.favorite-picker__option > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.favorite-picker__option strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-picker__option small {
+  color: var(--text-muted);
+  font-size: 8px;
+}
+
+.favorite-picker__mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.favorite-picker__check {
+  color: var(--accent);
+  font-size: 11px;
+  text-align: center;
+}
+
+.favorite-picker__empty {
+  margin: 2px 5px 7px;
+  padding: 9px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.favorite-picker__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+}
+
+.favorite-picker__foot button {
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.favorite-picker__foot button:hover,
+.favorite-picker__foot button:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--text);
+  outline: none;
+}
+
+.favorite-picker__foot .favorite-picker__done {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .favorite-picker {
+    animation: none;
+  }
+}

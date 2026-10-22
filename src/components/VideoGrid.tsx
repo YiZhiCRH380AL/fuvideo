@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
-import type { BrowseEntry } from '../lib/backend'
+import type { BrowseEntry, NamedCollection } from '../lib/backend'
 
 export interface GridFlash {
   id: number
@@ -27,11 +27,13 @@ export interface VideoGridProps {
   playlist: string[]
   /** 收藏夹里的路径。 */
   favorites: string[]
+  /** 用户命名收藏夹，用来判断方格是否已在任一收藏夹里。 */
+  customCollections: NamedCollection[]
   /** 刚从收藏夹跳过来要高亮的那一格；没有则为 null。 */
   highlightPath: string | null
   onOpen: (path: string, from: DOMRect) => void
   onTogglePlaylist: (path: string) => void
-  onToggleFavorite: (path: string) => void
+  onOpenFavoritePicker: (path: string, name: string, trigger: HTMLElement) => void
   onTogglePlay: () => void
   onSeekBy: (offset: number) => void
 }
@@ -49,7 +51,7 @@ interface TileProps {
   highlighted: boolean
   onOpen: (path: string, from: DOMRect) => void
   onTogglePlaylist: (path: string) => void
-  onToggleFavorite: (path: string) => void
+  onOpenFavoritePicker: (path: string, name: string, trigger: HTMLElement) => void
   onTogglePlay: () => void
   onSeekBy: (offset: number) => void
 }
@@ -73,7 +75,7 @@ const Tile = memo(function Tile({
   highlighted,
   onOpen,
   onTogglePlaylist,
-  onToggleFavorite,
+  onOpenFavoritePicker,
   onTogglePlay,
   onSeekBy,
 }: TileProps) {
@@ -172,12 +174,15 @@ const Tile = memo(function Tile({
         </button>
 
         <button
-          className="tile__action"
+          className="tile__action tile__action--favorite"
           type="button"
           aria-pressed={favorite}
-          aria-label={favorite ? `取消收藏 ${video.name}` : `收藏 ${video.name}`}
-          title={favorite ? '已收藏，点击取消' : '加入收藏夹'}
-          onClick={() => onToggleFavorite(video.path)}
+          aria-haspopup="dialog"
+          aria-label={favorite ? `管理 ${video.name} 的收藏` : `收藏 ${video.name}`}
+          title="选择收藏夹"
+          onClick={(event) =>
+            onOpenFavoritePicker(video.path, video.name, event.currentTarget)
+          }
         >
           {favorite ? '★' : '☆'}
         </button>
@@ -203,10 +208,11 @@ export default function VideoGrid({
   buffering,
   playlist,
   favorites,
+  customCollections,
   highlightPath,
   onOpen,
   onTogglePlaylist,
-  onToggleFavorite,
+  onOpenFavoritePicker,
   onTogglePlay,
   onSeekBy,
 }: VideoGridProps) {
@@ -326,11 +332,14 @@ export default function VideoGrid({
           flash={video.path === expandedPath ? flash : null}
           buffering={video.path === expandedPath && buffering}
           inPlaylist={playlist.includes(video.path)}
-          favorite={favorites.includes(video.path)}
+          favorite={
+            favorites.includes(video.path) ||
+            customCollections.some((collection) => collection.paths.includes(video.path))
+          }
           highlighted={video.path === highlightPath}
           onOpen={onOpen}
           onTogglePlaylist={onTogglePlaylist}
-          onToggleFavorite={onToggleFavorite}
+          onOpenFavoritePicker={onOpenFavoritePicker}
           onTogglePlay={onTogglePlay}
           onSeekBy={onSeekBy}
         />

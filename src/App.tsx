@@ -14,6 +14,7 @@ import './App.css'
 import Crumbs from './components/Crumbs'
 import CollectionsPanel from './components/CollectionsPanel'
 import CollectionsPage from './components/CollectionsPage'
+import FavoritePicker from './components/FavoritePicker'
 import FolderStrip, { type FolderParent } from './components/FolderStrip'
 import Island, { type Episode } from './components/Island'
 import MediaPanel from './components/MediaPanel'
@@ -154,6 +155,13 @@ const HIGHLIGHT_MS = 2600
 /** 「此电脑」这一层的显示名。盘符根目录再往上就是它。 */
 const DRIVES_ROOT = '此电脑'
 
+interface FavoritePickerState {
+  path: string
+  name: string
+  anchor: DOMRect
+  trigger: HTMLElement
+}
+
 function nearestIndex(times: number[], seconds: number): number {
   let best = 0
 
@@ -219,6 +227,7 @@ export default function App() {
     customCollections: [],
   })
   const [collectionsOpen, setCollectionsOpen] = useState(false)
+  const [favoritePicker, setFavoritePicker] = useState<FavoritePickerState | null>(null)
   const [playbackLibraryOpen, setPlaybackLibraryOpen] = useState(false)
   /** 导出/导入之后给用户看的一句话。 */
   const [collectionNotice, setCollectionNotice] = useState<string | null>(null)
@@ -1031,11 +1040,21 @@ export default function App() {
     setCollections(await toggleFavorite(path))
   }, [])
 
-  const handleToggleFavorite = useCallback(
-    (path: string) => {
-      void toggleFavoritePath(path).catch(reportError)
+  const handleOpenFavoritePicker = useCallback(
+    (path: string, name: string, trigger: HTMLElement) => {
+      setOpenPanel(null)
+      setFavoritePicker((current) =>
+        current?.path === path
+          ? null
+          : {
+              path,
+              name,
+              anchor: trigger.getBoundingClientRect(),
+              trigger,
+            },
+      )
     },
-    [reportError, toggleFavoritePath],
+    [],
   )
 
   const handleCreateCollection = useCallback(async (name: string) => {
@@ -2212,10 +2231,11 @@ export default function App() {
                     buffering={buffering}
                     playlist={collections.playlist}
                     favorites={collections.favorites}
+                    customCollections={collections.customCollections ?? []}
                     highlightPath={highlightPath}
                     onOpen={handleOpenFromTile}
                     onTogglePlaylist={handleTogglePlaylist}
-                    onToggleFavorite={handleToggleFavorite}
+                    onOpenFavoritePicker={handleOpenFavoritePicker}
                     onTogglePlay={() => void handleTogglePause()}
                     onSeekBy={(offset) => {
                       handleSeekBy(offset)
@@ -2321,6 +2341,26 @@ export default function App() {
           onToggleNamedCollection={handleToggleNamedCollection}
         />
       ) : null}
+
+      {favoritePicker === null ? null : (
+        <FavoritePicker
+          key={favoritePicker.path}
+          path={favoritePicker.path}
+          name={favoritePicker.name}
+          anchor={favoritePicker.anchor}
+          trigger={favoritePicker.trigger}
+          quickFavorite={collections.favorites.includes(favoritePicker.path)}
+          customCollections={collections.customCollections ?? []}
+          onToggleQuick={() => toggleFavoritePath(favoritePicker.path)}
+          onToggleNamed={(id) => handleToggleNamedCollection(id, favoritePicker.path)}
+          onManage={() => {
+            setFavoritePicker(null)
+            setCollectionsOpen(true)
+          }}
+          onError={reportError}
+          onClose={() => setFavoritePicker(null)}
+        />
+      )}
 
       {themeBurst !== null && motionPreference !== 'off' ? (
         <span className="theme-burst" key={themeBurst} aria-hidden="true" />

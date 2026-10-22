@@ -208,7 +208,10 @@ async function expandAppSidebar(page: Page): Promise<void> {
     await page.mouse.move(5, Math.round(viewport.height / 2))
   }
 
-  await expect(page.locator('.app-sidebar__content')).toHaveCSS('opacity', '1')
+  const content = page.locator('.app-sidebar__content')
+  await expect(content).toHaveCSS('opacity', '1')
+  // 透明度先到、left 过渡后到；位置也等归零，避免量到拉出途中的一帧。
+  await expect(content).toHaveCSS('left', '0px')
 }
 
 /** 量一个滚动容器里的卡片：高度、有没有被容器裁掉。 */
@@ -463,6 +466,57 @@ test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async
   await page.screenshot({ path: 'test-results/shots/playlist.png' })
 })
 
+test('目录页收藏时可以选择快速收藏或命名收藏夹', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  const tile = page.locator('.tile').first()
+  await tile.hover()
+  await tile.getByRole('button', { name: /^收藏 / }).click()
+
+  const picker = page.getByTestId('favorite-picker')
+  await expect(picker).toBeVisible()
+  await expect(picker.getByRole('button', { name: /快速收藏/ })).toBeVisible()
+  await expect(picker.getByRole('button', { name: /夜场/ })).toBeVisible()
+
+  await picker.getByRole('button', { name: /夜场/ }).click()
+  await expect(picker.getByRole('button', { name: /夜场/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  await page.waitForTimeout(220)
+  await page.screenshot({ path: 'test-results/shots/favorite-picker.png' })
+})
+
+for (const viewport of [
+  { width: 560, height: 315 },
+  { width: 640, height: 400 },
+]) {
+  test(`窄窗口 ${viewport.width}×${viewport.height}：收藏面板不出界`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await installFakeTauri(page)
+    await page.goto('/')
+    await waitForBoot(page)
+
+    await page.getByRole('button', { name: '选择目录' }).first().click()
+    const tile = page.locator('.tile').first()
+    await tile.hover()
+    await tile.getByRole('button', { name: /^收藏 / }).click()
+
+    const picker = page.getByTestId('favorite-picker')
+    const box = await picker.boundingBox()
+
+    expect(box).not.toBeNull()
+    expect(box!.x).toBeGreaterThanOrEqual(-0.5)
+    expect(box!.y).toBeGreaterThanOrEqual(-0.5)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 0.5)
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 0.5)
+  })
+}
+
 test('空状态下从播放列表点名字：引导语让位给方格墙，然后开始播放', async ({ page }) => {
   // 预置一条播放列表，这样「还没选过目录」和「列表里有东西」能同时成立
   await installFakeTauri(page, { playlist: ['E:\\clips\\demo-1.mp4'] })
@@ -548,6 +602,9 @@ test('从收藏夹跳回来之后，方格还是方格，并且那一格被高�
   const tile = page.locator('.tile').first()
   await tile.hover()
   await tile.getByRole('button', { name: /收藏/ }).first().click()
+  const picker = page.getByTestId('favorite-picker')
+  await picker.getByRole('button', { name: /快速收藏/ }).click()
+  await picker.getByRole('button', { name: '完成' }).click()
 
   await expandAppSidebar(page)
   await page.getByRole('button', { name: '收藏夹', exact: true }).click()

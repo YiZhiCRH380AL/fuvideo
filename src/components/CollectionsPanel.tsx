@@ -37,7 +37,7 @@ const TITLES: Record<CollectionKind, string> = {
 
 const EMPTY: Record<CollectionKind, string> = {
   playlist: '列表是空的。鼠标移到方格上，点右上角那颗 ≡ 加进来，看完一个会自动播下一个。',
-  favorites: '还没有收藏。鼠标移到方格上，点右上角那颗 ☆ 收进来。',
+  favorites: '还没有收藏。鼠标移到方格上，点右上角那颗 ☆ 选择快速收藏或命名收藏夹。',
 }
 
 /**
