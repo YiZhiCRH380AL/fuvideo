@@ -4024,3 +4024,520 @@
     font-size: 16px;
   }
 }
+
+/* ========================================================================== */
+/* 悬停伸缩侧栏                                                               */
+/* ========================================================================== */
+
+/*
+ * 收起时只留一条 18px 的轨道，真正的内容面板用 left 过渡拉出。
+ * 这里刻意不用 transform：侧栏里的固定定位浮层要靠视口定位，祖先一旦有
+ * transform 就会变成新的包含块，窄窗口下弹层会越界。
+ */
+.app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 26;
+  width: 18px;
+  pointer-events: auto;
+}
+
+.app-sidebar__handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  display: flex;
+  width: 18px;
+  height: 142px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background:
+    linear-gradient(180deg, var(--highlight), transparent 38%),
+    color-mix(in srgb, var(--surface-glass) 88%, transparent);
+  box-shadow: 8px 12px 34px var(--shadow-soft);
+  transform: translateY(-50%);
+  backdrop-filter: blur(22px) saturate(145%);
+  transition:
+    border-color var(--dur-normal) var(--ease),
+    background var(--dur-normal) var(--ease);
+}
+
+.app-sidebar:hover .app-sidebar__handle,
+.app-sidebar[data-open='true'] .app-sidebar__handle,
+.app-sidebar:has(:focus-visible) .app-sidebar__handle {
+  border-color: var(--border-bright);
+  background:
+    linear-gradient(180deg, var(--highlight), transparent 38%),
+    color-mix(in srgb, var(--accent) 14%, var(--surface-glass));
+}
+
+.app-sidebar__handle i {
+  display: block;
+  width: 9px;
+  height: 1px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.app-sidebar__handle i::after {
+  display: block;
+  width: 4px;
+  height: 1px;
+  margin-top: 3px;
+  border-radius: inherit;
+  background: var(--accent);
+  content: '';
+}
+
+.app-sidebar__handle b {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 7px;
+  font-weight: 720;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  writing-mode: vertical-rl;
+}
+
+.app-sidebar__content {
+  position: fixed;
+  inset: 0 auto 0 -230px;
+  z-index: 27;
+  display: flex;
+  width: 248px;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 14px 12px 16px;
+  border-right: 1px solid var(--border-bright);
+  background:
+    radial-gradient(120% 50% at 20% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
+    linear-gradient(155deg, var(--highlight), transparent 34%),
+    var(--surface-glass);
+  box-shadow: 26px 0 70px var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  backdrop-filter: blur(28px) saturate(150%);
+  transition:
+    left 260ms var(--ease-spring),
+    opacity 160ms var(--ease);
+}
+
+.app-sidebar:hover .app-sidebar__content,
+.app-sidebar[data-open='true'] .app-sidebar__content,
+.app-sidebar:has(:focus-visible) .app-sidebar__content {
+  left: 0;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-sidebar__home {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-normal) var(--ease-spring);
+}
+
+.app-sidebar__home:hover,
+.app-sidebar__home[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  transform: translateX(2px);
+}
+
+.app-sidebar__home:focus-visible,
+.app-sidebar__actions button:focus-visible,
+.folders .folder:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-sidebar__home-mark {
+  display: flex;
+  flex: none;
+  width: 31px;
+  height: 31px;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  background: linear-gradient(145deg, var(--accent), var(--surface-raised));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%);
+}
+
+.app-sidebar__home-mark i {
+  width: 3px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--accent-contrast);
+}
+
+.app-sidebar__home-mark i:nth-child(1) {
+  height: 6px;
+}
+
+.app-sidebar__home-mark i:nth-child(2) {
+  height: 13px;
+}
+
+.app-sidebar__home-mark i:nth-child(3) {
+  height: 9px;
+}
+
+.app-sidebar__home > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-sidebar__home small {
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 720;
+  letter-spacing: 0.16em;
+}
+
+.app-sidebar__home strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__folders {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-sidebar__section-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.app-sidebar__section-head small {
+  color: var(--text-muted);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.app-sidebar__folders .folders {
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 1px 3px 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.app-sidebar__folders .folders .folder {
+  width: 100%;
+  height: 54px;
+  min-height: 54px;
+}
+
+.app-sidebar__actions {
+  display: flex;
+  flex: none;
+  min-height: 0;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.app__tools--sidebar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.app__tools--sidebar .app__collection,
+.app__tools--sidebar .app__appearance {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.app__tools--sidebar .app__appearance {
+  grid-column: 1 / -1;
+}
+
+.app__tools--sidebar .app__tool,
+.app__tools--sidebar .app__help {
+  display: inline-flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 10px;
+  border-color: var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.app__tools--sidebar .app__tool::after,
+.app__tools--sidebar .app__help::after {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  content: attr(data-sidebar-label);
+}
+
+.app__tools--sidebar .app__tool:hover,
+.app__tools--sidebar .app__help:hover,
+.app__tools--sidebar .app__tool[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.app__tools--sidebar .app__tool:hover::after,
+.app__tools--sidebar .app__help:hover::after,
+.app__tools--sidebar .app__tool[aria-expanded='true']::after {
+  color: var(--text);
+}
+
+.app__tools--sidebar .app__theme-trigger {
+  width: 100%;
+  min-height: 34px;
+  justify-content: flex-start;
+  padding: 5px 10px;
+  border-radius: 10px;
+}
+
+.app__tools--sidebar .app__theme-orb {
+  width: 18px;
+  height: 18px;
+}
+
+.app__tools--sidebar .app__theme-name {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__tools--sidebar .app__theme-chevron {
+  flex: none;
+}
+
+.app-sidebar__status {
+  flex: none;
+  max-width: none;
+  padding: 7px 3px 0;
+  border-top: 1px solid var(--border);
+  font-size: 9px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+/*
+ * 侧栏中的浮层固定到视口，避免面板的滚动态影响定位。
+ * 宽屏放在侧栏右侧，窄屏改成横向铺满，保证底部按钮仍然可点。
+ */
+.app-sidebar .popover--down {
+  position: fixed;
+  top: 16px;
+  right: auto;
+  bottom: auto;
+  left: 262px;
+  z-index: 32;
+  box-sizing: border-box;
+  max-height: calc(100vh - 32px);
+  transform-origin: top left;
+}
+
+.app-sidebar .popover--tools {
+  max-height: calc(100vh - 32px);
+}
+
+/* 播放页右边缘的片库入口：静止时只露一道窄签，悬停再展开文字。 */
+.playback-side-tab {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 24;
+  display: flex;
+  width: 31px;
+  height: 104px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  padding: 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-bright);
+  border-right: 0;
+  border-radius: 13px 0 0 13px;
+  background:
+    linear-gradient(145deg, var(--highlight), transparent 36%),
+    var(--surface-glass);
+  box-shadow: -12px 14px 40px var(--shadow);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transform: translateY(-50%);
+  backdrop-filter: blur(24px) saturate(148%);
+  transition:
+    width 220ms var(--ease-spring),
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.playback-side-tab:hover,
+.playback-side-tab:focus-visible {
+  width: 64px;
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background:
+    linear-gradient(145deg, var(--highlight), transparent 36%),
+    color-mix(in srgb, var(--accent) 12%, var(--surface-glass));
+}
+
+.playback-side-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.playback-side-tab__icon {
+  flex: none;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.playback-side-tab__label {
+  overflow: hidden;
+  width: 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  white-space: nowrap;
+  transition:
+    width 160ms var(--ease),
+    opacity 120ms var(--ease);
+}
+
+.playback-side-tab:hover .playback-side-tab__label,
+.playback-side-tab:focus-visible .playback-side-tab__label {
+  width: 22px;
+  opacity: 1;
+}
+
+@media (max-width: 760px) {
+  /*
+   * 窄窗口仍保留左侧伸缩面板。旧版顶部横向文件夹轨道在侧栏里不再适用，
+   * 这里显式恢复为纵向滚动，保证列表在面板内部消化。
+   */
+  .app-sidebar__folders .folders {
+    flex-direction: column;
+    gap: 6px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    mask-image: none;
+  }
+
+  .app-sidebar__folders .folders .folder {
+    width: 100%;
+    min-width: 0;
+    height: 54px;
+  }
+
+  .app-sidebar .popover--down {
+    top: 72px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 84px);
+    transform-origin: top center;
+  }
+
+  .app-sidebar .popover--paths,
+  .app-sidebar .popover--themes {
+    width: auto;
+  }
+}
+
+@media (max-height: 520px) {
+  .app-sidebar__content {
+    gap: 8px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  .app-sidebar__home {
+    padding: 5px 7px;
+  }
+
+  .app-sidebar__home-mark {
+    width: 27px;
+    height: 27px;
+    padding: 6px;
+  }
+
+  .app-sidebar__actions {
+    gap: 5px;
+    padding-top: 7px;
+  }
+
+  .app__tools--sidebar .app__tool,
+  .app__tools--sidebar .app__help,
+  .app__tools--sidebar .app__theme-trigger {
+    height: 29px;
+    min-height: 29px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar__content,
+  .app-sidebar__handle,
+  .playback-side-tab,
+  .playback-side-tab__label {
+    transition-duration: 1ms;
+  }
+}

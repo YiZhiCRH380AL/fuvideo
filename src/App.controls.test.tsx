@@ -621,12 +621,12 @@ describe('方格放大播放', () => {
     expect(document.querySelector('.app')).toHaveAttribute('data-video', 'true')
   })
 
-  it('展开时不显示换目录的入口，收起后恢复', async () => {
+  it('展开后顶部换目录按钮收起，但保留可伸缩侧栏和播放片库入口', async () => {
     await openPlayingVideo()
 
-    // 换目录会让放大格消失，所以看画面时先把入口藏掉
     expect(screen.queryByRole('button', { name: '选择目录' })).not.toBeInTheDocument()
-    expect(screen.queryByTestId('folder-strip')).not.toBeInTheDocument()
+    expect(screen.getByTestId('folder-strip')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开播放片库' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '收起画面' }))
 

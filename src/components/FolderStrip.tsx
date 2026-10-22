@@ -1,4 +1,5 @@
-import type { CSSProperties, WheelEvent } from 'react'
+import type { CSSProperties, ReactNode, WheelEvent } from 'react'
+
 import type { BrowseEntry } from '../lib/backend'
 
 export interface FolderStripProps {
@@ -7,6 +8,12 @@ export interface FolderStripProps {
   parent: FolderParent | null
   busy: boolean
   onOpen: (path: string) => void
+  onHome: () => void
+  atHome: boolean
+  forceOpen: boolean
+  actions: ReactNode
+  status: string | null
+  statusWarning: boolean
 }
 
 /**
@@ -22,12 +29,23 @@ export interface FolderParent {
 }
 
 /**
- * 目录区顶上的文件夹条。
+ * 可悬停展开的应用侧栏。
  *
- * 原来侧边栏里那份子目录列表挪到了这里：和方格墙同一套视觉，直接摆在
- * 中心区域的上方，扫一眼就能进去。
+ * 收起时只留左边一条窄轨；鼠标靠近、键盘聚焦或教程需要时展开。
+ * 文件夹和原先标题栏上的全局按钮都在这里，避免操作分散在上下两处。
  */
-export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStripProps) {
+export default function FolderStrip({
+  folders,
+  parent,
+  busy,
+  onOpen,
+  onHome,
+  atHome,
+  forceOpen,
+  actions,
+  status,
+  statusWarning,
+}: FolderStripProps) {
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
     const element = event.currentTarget
 
@@ -42,79 +60,125 @@ export default function FolderStrip({ folders, parent, busy, onOpen }: FolderStr
   }
 
   return (
-    <aside className="folder-sidebar" aria-label="文件夹导航">
-      <div className="folder-sidebar__head">
-        <span>
-          <small>BROWSE</small>
-          文件夹
-        </span>
-        <span className="folder-sidebar__count">
-          {folders.length + (parent === null ? 0 : 1)}
-        </span>
-      </div>
+    <aside
+      className="app-sidebar"
+      aria-label="文件夹导航"
+      data-open={forceOpen ? 'true' : 'false'}
+    >
+      <span className="app-sidebar__handle" aria-hidden="true" data-tutorial="sidebar">
+        <i />
+        <i />
+        <i />
+        <b>MENU</b>
+      </span>
 
-      <div className="folders" data-testid="folder-strip" onWheel={handleWheel}>
-        {parent === null ? null : (
-          <button
-            className="folder folder--parent"
-            type="button"
-            onClick={parent.onOpen}
-            aria-label={parent.label}
-            title={parent.label}
-          >
-            <span className="folder__frame">
-              <span className="folder__glyph" aria-hidden="true">
-                {parent.icon === 'up' ? (
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path className="glyph__stroke" d="M12 19V6" />
-                    <path className="glyph__stroke" d="M6 12l6-6 6 6" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect className="glyph__stroke" x="3" y="6" width="18" height="12" rx="2.4" />
-                    <path className="glyph__stroke" d="M7 14.5h4" />
-                    <path className="glyph__stroke" d="M16.5 9.5h.01" />
-                  </svg>
-                )}
-              </span>
-            </span>
-            <span className="folder__name">{parent.label}</span>
-            <span className="folder__arrow" aria-hidden="true">
-              ↖
-            </span>
-          </button>
+      <div className="app-sidebar__content">
+        <button
+          className="app-sidebar__home"
+          type="button"
+          aria-pressed={atHome}
+          onClick={onHome}
+        >
+          <span className="app-sidebar__home-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>
+            <small>FUTUREVIDEO</small>
+            <strong>{atHome ? '正在首页' : '回到首页'}</strong>
+          </span>
+        </button>
+
+        {atHome || (parent === null && folders.length === 0 && !busy) ? null : (
+          <section className="app-sidebar__folders" aria-label="文件夹">
+            <div className="app-sidebar__section-head">
+              <span>文件夹</span>
+              <small>{folders.length + (parent === null ? 0 : 1)}</small>
+            </div>
+
+            <div className="folders" data-testid="folder-strip" onWheel={handleWheel}>
+              {parent === null ? null : (
+                <button
+                  className="folder folder--parent"
+                  type="button"
+                  onClick={parent.onOpen}
+                  aria-label={parent.label}
+                  title={parent.label}
+                >
+                  <span className="folder__frame">
+                    <span className="folder__glyph" aria-hidden="true">
+                      {parent.icon === 'up' ? (
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path className="glyph__stroke" d="M12 19V6" />
+                          <path className="glyph__stroke" d="M6 12l6-6 6 6" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <rect className="glyph__stroke" x="3" y="6" width="18" height="12" rx="2.4" />
+                          <path className="glyph__stroke" d="M7 14.5h4" />
+                          <path className="glyph__stroke" d="M16.5 9.5h.01" />
+                        </svg>
+                      )}
+                    </span>
+                  </span>
+                  <span className="folder__name">{parent.label}</span>
+                  <span className="folder__arrow" aria-hidden="true">
+                    ↖
+                  </span>
+                </button>
+              )}
+
+              {folders.map((folder, index) => (
+                <button
+                  className="folder"
+                  type="button"
+                  key={folder.path}
+                  title={folder.name}
+                  style={{ '--i': index + 1 } as CSSProperties}
+                  onClick={() => onOpen(folder.path)}
+                >
+                  <span className="folder__frame">
+                    <span className="folder__glyph" aria-hidden="true">
+                      <svg viewBox="0 0 48 48" aria-hidden="true">
+                        <path
+                          className="glyph__back"
+                          d="M7 14.5A3.5 3.5 0 0 1 10.5 11h8.6a3 3 0 0 1 2.4 1.2l2.3 2.9h13.7A3.5 3.5 0 0 1 41 18.6V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z"
+                        />
+                        <path className="glyph__front" d="M7 19.4h34V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z" />
+                      </svg>
+                    </span>
+                  </span>
+                  <span className="folder__name">{folder.name}</span>
+                  <span className="folder__arrow" aria-hidden="true">
+                    ↗
+                  </span>
+                </button>
+              ))}
+
+              {busy ? <span className="folders__busy">读取中…</span> : null}
+            </div>
+          </section>
         )}
 
-        {folders.map((folder, index) => (
-          <button
-            className="folder"
-            type="button"
-            key={folder.path}
-            title={folder.name}
-            style={{ '--i': index + 1 } as CSSProperties}
-            onClick={() => onOpen(folder.path)}
-          >
-            <span className="folder__frame">
-              <span className="folder__glyph" aria-hidden="true">
-                <svg viewBox="0 0 48 48" aria-hidden="true">
-                  <path
-                    className="glyph__back"
-                    d="M7 14.5A3.5 3.5 0 0 1 10.5 11h8.6a3 3 0 0 1 2.4 1.2l2.3 2.9h13.7A3.5 3.5 0 0 1 41 18.6V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z"
-                  />
-                  <path className="glyph__front" d="M7 19.4h34V38a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3z" />
-                </svg>
-              </span>
-            </span>
-            <span className="folder__name">{folder.name}</span>
-            <span className="folder__arrow" aria-hidden="true">
-              ↗
-            </span>
-          </button>
-        ))}
+        <div className="app-sidebar__actions">
+          <span className="app-sidebar__section-head">
+            <span>控制台</span>
+            <small>ACTIONS</small>
+          </span>
+          {actions}
+        </div>
 
-        {busy ? <span className="folders__busy">读取中…</span> : null}
+        {status === null ? null : (
+          <span
+            className="app-sidebar__status app__backend"
+            data-testid="backend-status"
+            data-warning={statusWarning ? 'true' : undefined}
+          >
+            {status}
+          </span>
+        )}
       </div>
-      <span className="folder-sidebar__hint">当前位置的子目录</span>
     </aside>
   )
 }

@@ -201,7 +201,7 @@ describe('交互教程', () => {
 
     // 最后一步是快捷键，往前退两步分别是设置页和音轨字幕
     await userEvent.click(screen.getByRole('button', { name: '上一步' }))
-    expect(screen.getByText('右上角是设置')).toBeInTheDocument()
+    expect(screen.getByText('左侧栏是设置')).toBeInTheDocument()
     // 正文里也提到了「均衡器」，这里断言只属于功能点那一行的文字
     expect(screen.getByText(/10 段均衡器/)).toBeInTheDocument()
 

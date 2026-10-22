@@ -1752,6 +1752,187 @@ export default function App() {
   /** 标题栏面包屑要显示的路径：停在「此电脑」时显示它自己。 */
   const shownPath = atDrives ? DRIVES_ROOT : (listing?.directory ?? null)
 
+  const sidebarActions = (
+    <div className="app__tools app__tools--sidebar">
+      <div className="app__collection app__playlist">
+        <button
+          className="app__tool"
+          type="button"
+          data-sidebar-label="播放列表"
+          onClick={() => {
+            setCollectionNotice(null)
+            setOpenPanel((open) => (open === 'playlist' ? null : 'playlist'))
+          }}
+          aria-haspopup="dialog"
+          aria-expanded={openPanel === 'playlist'}
+          aria-label="播放列表"
+          title="播放列表"
+        >
+          ≡
+        </button>
+
+        <Popover
+          open={openPanel === 'playlist'}
+          onClose={() => setOpenPanel(null)}
+          label="播放列表"
+          anchorSelector=".app__playlist"
+          className="popover--panel popover--paths popover--down"
+          role="dialog"
+        >
+          <CollectionsPanel
+            kind="playlist"
+            paths={collections.playlist}
+            modes={playModes}
+            mode={playMode}
+            onPickMode={handlePickPlayMode}
+            onPlay={handlePlayFromList}
+            onRemove={handleTogglePlaylist}
+            onShift={handleShiftPlaylist}
+            onReveal={handleRevealFavorite}
+            onExport={(kind) => void handleExportCollection(kind)}
+            onImport={() => void handleImportPlaylist()}
+            onClear={(kind) => void handleClearCollection(kind)}
+            notice={collectionNotice}
+          />
+        </Popover>
+      </div>
+
+      <button
+        className="app__tool"
+        type="button"
+        data-sidebar-label="收藏夹"
+        onClick={() => {
+          setOpenPanel(null)
+          setCollectionsOpen(true)
+        }}
+        aria-haspopup="dialog"
+        aria-expanded={collectionsOpen}
+        aria-label="收藏夹"
+        title="收藏夹"
+      >
+        ★
+      </button>
+
+      <div className="app__collection app__tools-menu">
+        <button
+          className="app__tool"
+          type="button"
+          data-sidebar-label="播放工具"
+          onClick={() => setOpenPanel((open) => (open === 'tools' ? null : 'tools'))}
+          aria-haspopup="dialog"
+          aria-expanded={openPanel === 'tools'}
+          aria-label="播放工具"
+          title="播放工具"
+        >
+          ⋮
+        </button>
+
+        <Popover
+          open={openPanel === 'tools'}
+          onClose={() => setOpenPanel(null)}
+          label="播放工具"
+          anchorSelector=".app__tools-menu"
+          className="popover--panel popover--tools popover--down"
+          role="dialog"
+        >
+          <PlaybackTools
+            source={currentFile}
+            position={shownPosition}
+            sleepRemaining={sleepRemaining}
+            sleepMinutes={sleep?.minutes ?? null}
+            sleepAction={sleepAction}
+            onSleepTimer={handleSleepTimer}
+            onSleepAction={handleSleepAction}
+            miniMode={miniMode}
+            alwaysOnTop={alwaysOnTop}
+            onToggleMini={handleToggleMini}
+            onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+            onOpenUrl={handleOpenUrl}
+            onPlayRecent={(path) => {
+              setOpenPanel(null)
+              void playPath(path)
+            }}
+            onPlayCapture={handlePlayCapture}
+            ytdlAvailable={status === null ? null : status.ytdlAvailable}
+            onError={reportError}
+          />
+        </Popover>
+      </div>
+
+      <div className="app__appearance">
+        <button
+          className="app__theme-trigger"
+          type="button"
+          data-sidebar-label="外观主题"
+          onClick={() =>
+            setOpenPanel((open) => (open === 'appearance' ? null : 'appearance'))
+          }
+          aria-haspopup="dialog"
+          aria-expanded={openPanel === 'appearance'}
+          aria-label={`更换颜色主题，当前为${themeFor(appearanceTheme).label}`}
+          title="更换颜色主题"
+        >
+          <span className="app__theme-orb" aria-hidden="true" />
+          <span className="app__theme-name">{themeFor(appearanceTheme).shortLabel}</span>
+          <span className="app__theme-chevron" aria-hidden="true">
+            ⌄
+          </span>
+        </button>
+
+        <Popover
+          open={openPanel === 'appearance'}
+          onClose={() => setOpenPanel(null)}
+          label="颜色主题"
+          anchorSelector=".app__appearance"
+          className="popover--panel popover--themes popover--down"
+          role="dialog"
+        >
+          <div className="theme-menu">
+            <div className="theme-menu__head">
+              <span className="theme-menu__eyebrow">APPEARANCE</span>
+              <span className="theme-menu__title">给今晚换一种颜色</span>
+            </div>
+            <ThemePicker compact theme={appearanceTheme} onChange={handleThemeChange} />
+            <button
+              className="theme-menu__more"
+              type="button"
+              onClick={() => {
+                setOpenPanel(null)
+                setSettingsOpen(true)
+              }}
+            >
+              调整动效与更多外观
+              <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        </Popover>
+      </div>
+
+      <button
+        className="app__tool"
+        type="button"
+        data-sidebar-label="设置"
+        data-tutorial="settings"
+        onClick={() => setSettingsOpen(true)}
+        aria-label="设置"
+        title="设置"
+      >
+        ⚙
+      </button>
+
+      <button
+        className="app__help"
+        type="button"
+        data-sidebar-label="使用帮助"
+        onClick={() => setTutorialOpen(true)}
+        aria-label="使用帮助"
+        title="使用帮助"
+      >
+        ?
+      </button>
+    </div>
+  )
+
   return (
     <div
       className="app"
@@ -1813,186 +1994,6 @@ export default function App() {
             )}
           </div>
 
-          <div className="app__tools">
-            <div className="app__collection app__playlist">
-              <button
-                className="app__tool"
-                type="button"
-                onClick={() => {
-                  setCollectionNotice(null)
-                  setOpenPanel((open) => (open === 'playlist' ? null : 'playlist'))
-                }}
-                aria-haspopup="dialog"
-                aria-expanded={openPanel === 'playlist'}
-                aria-label="播放列表"
-                title="播放列表"
-              >
-                ≡
-              </button>
-
-              <Popover
-                open={openPanel === 'playlist'}
-                onClose={() => setOpenPanel(null)}
-                label="播放列表"
-                anchorSelector=".app__playlist"
-                className="popover--panel popover--paths popover--down"
-                role="dialog"
-              >
-                <CollectionsPanel
-                  kind="playlist"
-                  paths={collections.playlist}
-                  modes={playModes}
-                  mode={playMode}
-                  onPickMode={handlePickPlayMode}
-                  onPlay={handlePlayFromList}
-                  onRemove={handleTogglePlaylist}
-                  onShift={handleShiftPlaylist}
-                  onReveal={handleRevealFavorite}
-                  onExport={(kind) => void handleExportCollection(kind)}
-                  onImport={() => void handleImportPlaylist()}
-                  onClear={(kind) => void handleClearCollection(kind)}
-                  notice={collectionNotice}
-                />
-              </Popover>
-            </div>
-
-            <button
-              className="app__tool"
-              type="button"
-              onClick={() => {
-                setOpenPanel(null)
-                setCollectionsOpen(true)
-              }}
-              aria-haspopup="dialog"
-              aria-expanded={collectionsOpen}
-              aria-label="收藏夹"
-              title="收藏夹"
-            >
-              ★
-            </button>
-
-            <div className="app__collection app__tools-menu">
-              <button
-                className="app__tool"
-                type="button"
-                onClick={() => setOpenPanel((open) => (open === 'tools' ? null : 'tools'))}
-                aria-haspopup="dialog"
-                aria-expanded={openPanel === 'tools'}
-                aria-label="播放工具"
-                title="播放工具"
-              >
-                ⋮
-              </button>
-
-              <Popover
-                open={openPanel === 'tools'}
-                onClose={() => setOpenPanel(null)}
-                label="播放工具"
-                anchorSelector=".app__tools-menu"
-                className="popover--panel popover--tools popover--down"
-                role="dialog"
-              >
-                <PlaybackTools
-                  source={currentFile}
-                  position={shownPosition}
-                  sleepRemaining={sleepRemaining}
-                  sleepMinutes={sleep?.minutes ?? null}
-                  sleepAction={sleepAction}
-                  onSleepTimer={handleSleepTimer}
-                  onSleepAction={handleSleepAction}
-                  miniMode={miniMode}
-                  alwaysOnTop={alwaysOnTop}
-                  onToggleMini={handleToggleMini}
-                  onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-                  onOpenUrl={handleOpenUrl}
-                  onPlayRecent={(path) => {
-                    setOpenPanel(null)
-                    void playPath(path)
-                  }}
-                  onPlayCapture={handlePlayCapture}
-                  ytdlAvailable={status === null ? null : status.ytdlAvailable}
-                  onError={reportError}
-                />
-              </Popover>
-            </div>
-
-            <div className="app__appearance">
-              <button
-                className="app__theme-trigger"
-                type="button"
-                onClick={() =>
-                  setOpenPanel((open) => (open === 'appearance' ? null : 'appearance'))
-                }
-                aria-haspopup="dialog"
-                aria-expanded={openPanel === 'appearance'}
-                aria-label={`更换颜色主题，当前为${themeFor(appearanceTheme).label}`}
-                title="更换颜色主题"
-              >
-                <span className="app__theme-orb" aria-hidden="true" />
-                <span className="app__theme-name">{themeFor(appearanceTheme).shortLabel}</span>
-                <span className="app__theme-chevron" aria-hidden="true">
-                  ⌄
-                </span>
-              </button>
-
-              <Popover
-                open={openPanel === 'appearance'}
-                onClose={() => setOpenPanel(null)}
-                label="颜色主题"
-                anchorSelector=".app__appearance"
-                className="popover--panel popover--themes popover--down"
-                role="dialog"
-              >
-                <div className="theme-menu">
-                  <div className="theme-menu__head">
-                    <span className="theme-menu__eyebrow">APPEARANCE</span>
-                    <span className="theme-menu__title">给今晚换一种颜色</span>
-                  </div>
-                  <ThemePicker compact theme={appearanceTheme} onChange={handleThemeChange} />
-                  <button
-                    className="theme-menu__more"
-                    type="button"
-                    onClick={() => {
-                      setOpenPanel(null)
-                      setSettingsOpen(true)
-                    }}
-                  >
-                    调整动效与更多外观
-                    <span aria-hidden="true">↗</span>
-                  </button>
-                </div>
-              </Popover>
-            </div>
-
-            <button
-              className="app__tool"
-              type="button"
-              data-tutorial="settings"
-              onClick={() => setSettingsOpen(true)}
-              aria-label="设置"
-              title="设置"
-            >
-              ⚙
-            </button>
-
-            <button
-              className="app__help"
-              type="button"
-              onClick={() => setTutorialOpen(true)}
-              aria-label="使用帮助"
-              title="使用帮助"
-            >
-              ?
-            </button>
-
-            <span
-              className="app__backend"
-              data-testid="backend-status"
-              data-warning={kernelWarning ? 'true' : undefined}
-            >
-              {statusNotice}
-            </span>
-          </div>
         </header>
 
         <main className="library" data-island={hasMedia ? 'true' : 'false'}>
@@ -2123,16 +2124,6 @@ export default function App() {
           ) : (
             <>
               <div className="library__workspace">
-                {/* 看画面时把目录条收掉：整块留给视频 */}
-                {expanded ? null : (
-                  <FolderStrip
-                    folders={folders}
-                    parent={parentEntry}
-                    busy={directoryBusy}
-                    onOpen={(path) => void loadDirectory(path)}
-                  />
-                )}
-
                 <div className="library__main">
               {/* 搜索与排序只改「怎么摆」，不动目录本身 */}
               {expanded || listing.entries.length === 0 ? null : (
@@ -2245,6 +2236,21 @@ export default function App() {
         </main>
       </div>
 
+      {!miniMode ? (
+        <FolderStrip
+          folders={atHome ? [] : folders}
+          parent={atHome ? null : parentEntry}
+          busy={directoryBusy}
+          onOpen={(path) => void loadDirectory(path)}
+          onHome={handleGoHome}
+          atHome={atHome}
+          forceOpen={openPanel !== null}
+          actions={sidebarActions}
+          status={statusNotice}
+          statusWarning={kernelWarning !== null}
+        />
+      ) : null}
+
       {currentFile ? (
         <Island
           title={fileName(currentFile)}
@@ -2264,11 +2270,6 @@ export default function App() {
           previewImage={previewImage}
           speedOpen={openPanel === 'speed'}
           mediaOpen={openPanel === 'media'}
-          libraryOpen={playbackLibraryOpen}
-          onToggleLibrary={() => {
-            setOpenPanel(null)
-            setPlaybackLibraryOpen((open) => !open)
-          }}
           mediaPanel={<MediaPanel source={currentFile} onError={reportError} />}
           onTogglePause={() => void handleTogglePause()}
           onScrubChange={handleScrubChange}
@@ -2285,6 +2286,25 @@ export default function App() {
           onToggleFullscreen={handleToggleFullscreen}
           onCollapse={() => void collapseVideo()}
         />
+      ) : null}
+
+      {expanded && !playbackLibraryOpen ? (
+        <button
+          className="playback-side-tab"
+          type="button"
+          onClick={() => {
+            setOpenPanel(null)
+            setPlaybackLibraryOpen(true)
+          }}
+          aria-haspopup="dialog"
+          aria-label="打开播放片库"
+          title="打开播放片库"
+        >
+          <span className="playback-side-tab__icon" aria-hidden="true">
+            ▦
+          </span>
+          <span className="playback-side-tab__label">片库</span>
+        </button>
       ) : null}
 
       {currentFile ? (

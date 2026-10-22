@@ -200,6 +200,17 @@ async function waitForBoot(page: Page): Promise<void> {
   await expect(page.getByTestId('splash')).toHaveCount(0)
 }
 
+/** 左侧导航默认只留一条窄轨，鼠标靠近后才展开。 */
+async function expandAppSidebar(page: Page): Promise<void> {
+  const viewport = page.viewportSize()
+
+  if (viewport !== null) {
+    await page.mouse.move(5, Math.round(viewport.height / 2))
+  }
+
+  await expect(page.locator('.app-sidebar__content')).toHaveCSS('opacity', '1')
+}
+
 /** 量一个滚动容器里的卡片：高度、有没有被容器裁掉。 */
 async function measureCards(page: Page, selector: string) {
   return page.evaluate((target) => {
@@ -239,13 +250,14 @@ async function measureCards(page: Page, selector: string) {
   }, selector)
 }
 
-test('文件夹条里的卡片一张都不能被裁', async ({ page }) => {
+test('文件夹侧栏卡片尺寸一致，目录多了只在栏内滚动', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
   await waitForBoot(page)
 
   await page.getByRole('button', { name: '选择目录' }).first().click()
   await expect(page.getByTestId('folder-strip')).toBeVisible()
+  await expandAppSidebar(page)
   // 卡片是错峰淡入的，等动画走完再量、再截图，否则拍到的是半透明的一帧
   await page.waitForTimeout(700)
 
@@ -257,14 +269,16 @@ test('文件夹条里的卡片一张都不能被裁', async ({ page }) => {
   expect(folders).not.toBeNull()
   // 8 个卡片：7 个子目录 + 一个「上一级」
   expect(folders!.total).toBe(8)
-  expect(folders!.cards.filter((card) => card.clipped)).toEqual([])
   expect(folders!.cards.every((card) => card.height >= 54)).toBe(true)
   expect(folders!.cards.every((card) => card.cover === 40)).toBe(true)
-  // 单行横向排：竖向不该有内容溢出，不然就是又被压扁了
-  expect(folders!.scrollHeight).toBeLessThanOrEqual(folders!.clientHeight + 1)
-  // 底边要留得下入场那 6px 的上浮，否则动画期间卡片会被裁一刀
-  const slack = folders!.container.bottom - Math.max(...folders!.cards.map((card) => card.bottom))
-  expect(slack).toBeGreaterThanOrEqual(6)
+  // 目录多了在侧栏内部纵向滚动，最后一项滚到底后必须完整可见。
+  expect(folders!.scrollHeight).toBeGreaterThan(folders!.clientHeight + 1)
+  await page.getByTestId('folder-strip').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await page.waitForTimeout(120)
+  const scrolled = await measureCards(page, '[data-testid="folder-strip"]')
+  expect(scrolled!.cards.at(-1)?.clipped).toBe(false)
 })
 
 test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => {
@@ -288,7 +302,7 @@ test('此电脑里的磁盘卡片高度一致、不被裁', async ({ page }) => 
 
 })
 
-test('片库使用左侧文件夹导航，影片画廊留在右侧', async ({ page }) => {
+test('左侧轨道鼠标靠近时展开文件夹，移开后收起', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
   await waitForBoot(page)
@@ -296,20 +310,32 @@ test('片库使用左侧文件夹导航，影片画廊留在右侧', async ({ pa
   await page.getByRole('button', { name: '选择目录' }).first().click()
   await expect(page.getByTestId('video-grid')).toBeVisible()
 
+  // 顶部栏只保留品牌和路径，操作按钮已经全部收进左侧轨道。
+  await expect(page.locator('.app__bar .app__tool')).toHaveCount(0)
+  await expect(page.locator('.app-sidebar__actions .app__tool').first()).toBeAttached()
+
+  const rail = await page.getByRole('complementary', { name: '文件夹导航' }).boundingBox()
+  expect(rail).not.toBeNull()
+  expect(rail!.width).toBeLessThan(30)
+
+  await expandAppSidebar(page)
   const search = await page.getByRole('searchbox', { name: '搜索这个目录' }).boundingBox()
   const folders = await page.getByTestId('folder-strip').boundingBox()
   const grid = await page.getByTestId('video-grid').boundingBox()
-  const sidebar = await page.getByRole('complementary', { name: '文件夹导航' }).boundingBox()
+  const content = await page.locator('.app-sidebar__content').boundingBox()
 
   expect(search).not.toBeNull()
   expect(folders).not.toBeNull()
   expect(grid).not.toBeNull()
-  expect(sidebar).not.toBeNull()
-  // 搜索条属于右侧主区，文件夹是左侧窄导航。
-  expect(search!.y).toBeLessThan(folders!.y)
-  expect(sidebar!.x).toBeLessThan(search!.x)
-  expect(sidebar!.width).toBeLessThan(260)
-  expect(folders!.x).toBeLessThan(grid!.x)
+  expect(content).not.toBeNull()
+  expect(content!.width).toBeGreaterThan(200)
+  expect(content!.x).toBeLessThan(2)
+  expect(folders!.x).toBeGreaterThanOrEqual(content!.x)
+  expect(folders!.x + folders!.width).toBeLessThanOrEqual(content!.x + content!.width)
+  expect(search!.y).toBeLessThan(grid!.y)
+
+  await page.mouse.move(900, 360)
+  await expect(page.locator('.app-sidebar__content')).toHaveCSS('opacity', '0')
 })
 
 test('记住上次目录时也先显示首页封面，品牌字标可以随时返回', async ({ page }) => {
@@ -325,7 +351,7 @@ test('记住上次目录时也先显示首页封面，品牌字标可以随时�
   await page.getByRole('button', { name: '继续上次片库' }).click()
   await expect(page.getByTestId('video-grid')).toBeVisible()
 
-  await page.getByRole('button', { name: '回到首页' }).click()
+  await page.getByTestId('home-button').click()
   await expect(page.getByRole('heading', { name: /让每一帧.*都有你的颜色/ })).toBeVisible()
   await expect(page.getByTestId('video-grid')).toHaveCount(0)
 })
@@ -343,7 +369,11 @@ test('播放页片库抽屉可从缩略图加入播放列表和多个收藏夹',
   // 进入播放页之后，底层方格必须全部隐藏。
   await expect(page.locator('.tile:not(.tile--expanded)').first()).toHaveCSS('display', 'none')
 
-  await page.getByRole('button', { name: '打开播放片库' }).click()
+  const libraryTab = page.getByRole('button', { name: '打开播放片库' })
+  await expect(libraryTab).toHaveCSS('width', '31px')
+  await libraryTab.hover()
+  await expect(libraryTab).toHaveCSS('width', '64px')
+  await libraryTab.click()
   const drawer = page.getByRole('dialog', { name: '播放片库' })
   await expect(drawer).toBeVisible()
   await expect(drawer.getByText('demo-1.mp4')).toBeVisible()
@@ -356,6 +386,7 @@ test('播放页片库抽屉可从缩略图加入播放列表和多个收藏夹',
   await page.screenshot({ path: 'test-results/shots/playback-library-drawer.png' })
 
   await page.getByRole('button', { name: '关闭片库面板' }).click()
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '收藏夹', exact: true }).click()
   const pageDialog = page.getByRole('dialog', { name: '收藏夹' })
   await expect(pageDialog.getByTestId('favorites-list')).toContainText('demo-1.mp4')
@@ -368,6 +399,7 @@ test('收藏夹页可以新建、重命名和删除多个命名收藏夹', async
   await page.goto('/')
   await waitForBoot(page)
 
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '收藏夹', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '收藏夹' })
   await expect(dialog).toBeVisible()
@@ -414,6 +446,7 @@ test('鼠标移到方格上才浮出「加列表 / 收藏」两颗按钮', async
   // 加进播放列表，再从右上角打开面板看它
   await tile.getByRole('button', { name: /加入播放列表/ }).click()
   // 名字要精确匹配：方格上那几颗「加入播放列表」也含这几个字
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '播放列表', exact: true }).click()
 
   const list = page.getByTestId('playlist-list')
@@ -439,6 +472,7 @@ test('空状态下从播放列表点名字：引导语让位给方格墙，然�
   const hint = page.getByText('选一个目录，把里面的视频铺成方格')
   await expect(hint).toBeVisible()
 
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '播放列表', exact: true }).click()
   const list = page.getByTestId('playlist-list')
   await expect(list).toBeVisible()
@@ -515,6 +549,7 @@ test('从收藏夹跳回来之后，方格还是方格，并且那一格被高�
   await tile.hover()
   await tile.getByRole('button', { name: /收藏/ }).first().click()
 
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '收藏夹', exact: true }).click()
   const list = page.getByTestId('favorites-list')
   await expect(list).toBeVisible()
@@ -579,6 +614,7 @@ test('日光主题播放页不会再用卡片底色遮住视频', async ({ page 
   await page.goto('/')
   await waitForBoot(page)
 
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: /更换颜色主题/ }).click()
   await page.getByRole('radio', { name: /日光纸/ }).click()
   await page.keyboard.press('Escape')
@@ -624,6 +660,7 @@ test('播放工具面板：五块内容都在，且不撑出窗口', async ({ pa
   await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
   await expect(page.getByTestId('expanded-tile')).toBeVisible()
 
+  await expandAppSidebar(page)
   await page.getByRole('button', { name: '播放工具' }).click()
   const panel = page.getByTestId('playback-tools')
   await expect(panel).toBeVisible()
@@ -725,15 +762,33 @@ for (const viewport of [
 
     expect(islandOverflow).toBeLessThanOrEqual(1)
 
+    await expandAppSidebar(page)
     await page.getByRole('button', { name: '播放工具' }).click()
 
     const panel = page.locator('.app__tools-menu .popover')
+    // 菜单有 190ms 的位移缩放动画；等停稳再量，否则量到的是入场中的一帧。
+    await page.waitForTimeout(240)
     const panelBox = await panel.boundingBox()
+    const panelStyle = await panel.evaluate((node) => {
+      const style = getComputedStyle(node)
+
+      return {
+        position: style.position,
+        top: style.top,
+        transform: style.transform,
+        opacity: style.opacity,
+        maxHeight: style.maxHeight,
+        height: style.height,
+        parentTransform: getComputedStyle(node.parentElement?.parentElement ?? node).transform,
+      }
+    })
 
     expect(panelBox).not.toBeNull()
     expect(panelBox!.x).toBeGreaterThanOrEqual(-0.5)
     expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(viewport.width + 0.5)
-    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(viewport.height + 0.5)
+    expect(panelBox!.y + panelBox!.height, JSON.stringify(panelStyle)).toBeLessThanOrEqual(
+      viewport.height + 0.5,
+    )
 
     // 放不下的时候得能滚，而不是把底下的内容裁掉
     const panelScroll = await panel.evaluate((node) => ({
