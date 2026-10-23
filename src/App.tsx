@@ -1862,7 +1862,7 @@ export default function App() {
       </div>
 
       <button
-        className="app__tool"
+        className="app__tool app__tool--favorites"
         type="button"
         data-sidebar-label="收藏夹"
         onClick={() => {

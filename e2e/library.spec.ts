@@ -320,7 +320,7 @@ test('文件夹侧栏卡片尺寸一致，目录多了只在栏内滚动', async
   expect(folders).not.toBeNull()
   // 8 个卡片：7 个子目录 + 一个「上一级」
   expect(folders!.total).toBe(8)
-  expect(folders!.cards.every((card) => card.height >= 54)).toBe(true)
+  expect(folders!.cards.every((card) => card.height >= 52)).toBe(true)
   expect(folders!.cards.every((card) => card.cover === 40)).toBe(true)
   // 目录多了在侧栏内部纵向滚动，最后一项滚到底后必须完整可见。
   expect(folders!.scrollHeight).toBeGreaterThan(folders!.clientHeight + 1)
@@ -383,7 +383,20 @@ test('左侧轨道鼠标靠近时展开文件夹，移开后收起', async ({ pa
   expect(content!.x).toBeLessThan(2)
   expect(folders!.x).toBeGreaterThanOrEqual(content!.x)
   expect(folders!.x + folders!.width).toBeLessThanOrEqual(content!.x + content!.width)
+  expect(content!.width).toBeGreaterThan(255)
+  expect(content!.width).toBeLessThan(275)
   expect(search!.y).toBeLessThan(grid!.y)
+
+  const sidebarLayout = await page.evaluate(() => {
+    const favorite = document.querySelector('.app__tool--favorites')?.getBoundingClientRect()
+    const tools = document.querySelector('.app__tools-menu')?.getBoundingClientRect()
+
+    return {
+      favoriteWidth: favorite?.width ?? 0,
+      toolsWidth: tools?.width ?? 0,
+    }
+  })
+  expect(sidebarLayout.toolsWidth).toBeGreaterThan(sidebarLayout.favoriteWidth * 1.7)
 
   await page.mouse.move(900, 360)
   await expect(page.locator('.app-sidebar__content')).toHaveCSS('opacity', '0')
@@ -431,6 +444,7 @@ for (const viewport of [
       const orbit = document.querySelector('.library__orbit') as HTMLElement
       const headline = document.querySelector('.library__headline') as HTMLElement
       const bar = document.querySelector('.app__bar') as HTMLElement
+      const empty = document.querySelector('.library__empty') as HTMLElement
       const stageRect = stageNode.getBoundingClientRect()
       const frontRect = frontNode.getBoundingClientRect()
 
@@ -448,6 +462,12 @@ for (const viewport of [
           (line) => line.getBoundingClientRect().top,
         ),
         barBottom: bar.getBoundingClientRect().bottom,
+        pageOverflow: getComputedStyle(document.body).overflow,
+        pageScrollHeight: document.scrollingElement?.scrollHeight ?? 0,
+        pageClientHeight: document.scrollingElement?.clientHeight ?? 0,
+        emptyOverflowX: getComputedStyle(empty).overflowX,
+        emptyScrollbarWidth: getComputedStyle(empty).scrollbarWidth,
+        emptyOverflowWidth: empty.scrollWidth - empty.clientWidth,
       }
     })
 
@@ -462,6 +482,10 @@ for (const viewport of [
     expect(geometry.orbitWidth).toBeLessThanOrEqual(geometry.stage.right - geometry.stage.left)
     expect(geometry.headlineTop).toBeGreaterThanOrEqual(-0.5)
     expect(Math.min(...geometry.lineTops)).toBeGreaterThanOrEqual(geometry.barBottom - 0.5)
+    expect(geometry.pageOverflow).toBe('hidden')
+    expect(geometry.pageScrollHeight).toBeLessThanOrEqual(geometry.pageClientHeight)
+    expect(geometry.emptyOverflowX).toBe('hidden')
+    expect(geometry.emptyScrollbarWidth).toBe('none')
 
     await page.screenshot({ path: `test-results/shots/home-${viewport.width}.png` })
   })

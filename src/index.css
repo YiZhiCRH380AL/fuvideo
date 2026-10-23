@@ -188,10 +188,12 @@ html,
 body,
 #root {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
+  overscroll-behavior: none;
   /* 桌面端窗口是透明的，视频画面从下面透出来 */
   background: transparent;
   color: var(--text);

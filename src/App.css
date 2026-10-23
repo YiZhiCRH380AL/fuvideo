@@ -2730,7 +2730,14 @@
   display: grid;
   place-items: center;
   padding: clamp(24px, 4.4vw, 64px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.library__empty::-webkit-scrollbar {
+  display: none;
 }
 
 .library__empty::before {
@@ -4101,15 +4108,15 @@
 
 .app-sidebar__content {
   position: fixed;
-  inset: 0 auto 0 -230px;
+  inset: 0 auto 0 -246px;
   z-index: 27;
   display: flex;
-  width: 248px;
+  width: 264px;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   box-sizing: border-box;
-  padding: 14px 12px 16px;
+  padding: 16px 14px 18px;
   border-right: 1px solid var(--border-bright);
   background:
     radial-gradient(120% 50% at 20% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
@@ -4227,7 +4234,7 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .app-sidebar__section-head {
@@ -4254,16 +4261,16 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
-  padding: 1px 3px 5px;
+  gap: 7px;
+  padding: 2px 4px 7px;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
 .app-sidebar__folders .folders .folder {
   width: 100%;
-  height: 54px;
-  min-height: 54px;
+  height: 52px;
+  min-height: 52px;
 }
 
 .app-sidebar__actions {
@@ -4271,15 +4278,15 @@
   flex: none;
   min-height: 0;
   flex-direction: column;
-  gap: 7px;
-  padding-top: 10px;
+  gap: 9px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
 .app__tools--sidebar {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 7px;
   width: 100%;
 }
 
@@ -4291,6 +4298,10 @@
 }
 
 .app__tools--sidebar .app__appearance {
+  grid-column: 1 / -1;
+}
+
+.app__tools--sidebar .app__tools-menu {
   grid-column: 1 / -1;
 }
 
@@ -4380,7 +4391,7 @@
   top: 16px;
   right: auto;
   bottom: auto;
-  left: 262px;
+  left: 282px;
   z-index: 32;
   box-sizing: border-box;
   max-height: calc(100vh - 32px);
