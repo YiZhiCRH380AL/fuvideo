@@ -300,6 +300,52 @@ fn encode_data_url(path: &Path) -> Result<String, String> {
 mod tests {
   use super::*;
 
+  fn decode_jpeg(data_url: &str) -> Vec<u8> {
+    let encoded = data_url
+      .strip_prefix("data:image/jpeg;base64,")
+      .expect("data URL 前缀");
+    base64::engine::general_purpose::STANDARD
+      .decode(encoded)
+      .expect("解码 JPEG")
+  }
+
+  fn capture_with_fresh_mpv(source: &str, seconds: f64) -> Vec<u8> {
+    let executable = mpv::find_mpv().expect("找到 mpv");
+    let directory = std::env::temp_dir().join(format!(
+      "fuvideo-reference-{}-{}",
+      std::process::id(),
+      seconds
+    ));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("建立参照目录");
+
+    let status = Command::new(executable)
+      .args([
+        "--no-config".to_string(),
+        "--no-terminal".to_string(),
+        "--vo=image".to_string(),
+        "--vo-image-format=jpg".to_string(),
+        "--vo-image-jpeg-quality=80".to_string(),
+        format!("--vo-image-outdir={}", directory.display()),
+        "--no-audio".to_string(),
+        "--hr-seek=yes".to_string(),
+        format!("--start={seconds}"),
+        "--frames=1".to_string(),
+        source.to_string(),
+      ])
+      .stdin(Stdio::null())
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .status()
+      .expect("启动参照 mpv");
+    assert!(status.success(), "参照 mpv 退出码非零");
+
+    let path = newest_frame(&directory).expect("参照帧文件");
+    let bytes = std::fs::read(path).expect("读取参照帧");
+    let _ = std::fs::remove_dir_all(directory);
+    bytes
+  }
+
   fn has_mpv() -> bool {
     mpv::find_mpv().is_some()
   }
@@ -394,6 +440,13 @@ mod tests {
     assert!(frames[0] != frames[1], "30 秒抓帧重复了 1 秒画面");
     assert!(frames[1] != frames[2], "60 秒抓帧重复了 30 秒画面");
     assert!(frames[0] != frames[2], "60 秒抓帧重复了 1 秒画面");
+
+    let reference = capture_with_fresh_mpv(&source, 30.0);
+    assert_eq!(
+      decode_jpeg(&frames[1]),
+      reference,
+      "常驻抓帧结果与全新 mpv 的 30 秒参照不一致"
+    );
     state.shutdown();
   }
 }
