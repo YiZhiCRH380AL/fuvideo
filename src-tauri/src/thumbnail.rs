@@ -45,10 +45,10 @@ impl Worker {
     command.args([
       format!("--input-ipc-server={pipe}"),
       "--no-config".to_string(),
-      "--vo=image".to_string(),
-      "--vo-image-format=jpg".to_string(),
-      "--vo-image-jpeg-quality=80".to_string(),
-      format!("--vo-image-outdir={}", directory.display()),
+      "--vo=null".to_string(),
+      "--screenshot-format=jpg".to_string(),
+      "--screenshot-jpeg-quality=80".to_string(),
+      "--screenshot-sw=yes".to_string(),
       "--no-audio".to_string(),
       "--pause=yes".to_string(),
       "--hr-seek=yes".to_string(),
@@ -119,6 +119,8 @@ impl Worker {
 
     while Instant::now() < deadline {
       let _ = std::fs::remove_file(&self.output);
+      let previous_position = self.client.get_number("time-pos").ok().flatten();
+      let previous_frame = self.client.get_number("estimated-frame-number").ok().flatten();
 
       if let Err(error) = self.client.seek_exact(seconds) {
         last_error = error.to_string();
@@ -129,6 +131,30 @@ impl Worker {
       if !wait_until_position(&self.client, seconds) {
         last_error = format!("跳转没有落到 {seconds:.3} 秒");
         continue;
+      }
+
+      // time-pos 只能证明播放时间轴到了目标，不能证明视频输出已经画出新帧。
+      // 目标发生变化时，短暂恢复播放直到解码帧号变化，再截图。
+      let target_changed = previous_position
+        .map(|position| (position - seconds).abs() >= 0.15)
+        .unwrap_or(true);
+
+      if target_changed {
+        if let Some(frame) = previous_frame {
+          // 暂停状态下显式走一帧，避免为了刷新画面而让播放位置继续向前跑。
+          if let Err(error) = self.client.step_frame(true) {
+            last_error = error.to_string();
+            continue;
+          }
+
+          let frame_changed =
+            wait_until_frame_changes(&self.client, frame, Duration::from_millis(1200));
+
+          if !frame_changed {
+            last_error = format!("跳转到 {seconds:.3} 秒后没有拿到新视频帧");
+            continue;
+          }
+        }
       }
 
       std::thread::sleep(SETTLE_DELAY);
@@ -245,6 +271,22 @@ fn wait_until_position(client: &ipc::MpvIpc, seconds: f64) -> bool {
   false
 }
 
+fn wait_until_frame_changes(client: &ipc::MpvIpc, previous: f64, timeout: Duration) -> bool {
+  let deadline = Instant::now() + timeout;
+
+  while Instant::now() < deadline {
+    if let Ok(Some(frame)) = client.get_number("estimated-frame-number") {
+      if (frame - previous).abs() >= 0.5 {
+        return true;
+      }
+    }
+
+    std::thread::sleep(Duration::from_millis(16));
+  }
+
+  false
+}
+
 fn wait_for_file(path: &Path, timeout: Duration) -> Result<(), String> {
   let deadline = Instant::now() + timeout;
 
@@ -297,21 +339,38 @@ mod tests {
     }
 
     let state = ThumbnailState::default();
-    let first = "av://lavfi:testsrc=duration=4:size=320x240:rate=30";
+    let first = "av://lavfi:testsrc=duration=8:size=320x240:rate=30";
     let second = "av://lavfi:smptebars=duration=4:size=320x240:rate=30";
 
     let first_frame = state.capture(first, 0.0).expect("抓第一个视频的首帧");
     assert!(first_frame.starts_with("data:image/jpeg;base64,"));
     assert!(first_frame.len() > 1000, "首帧内容过小: {} 字节", first_frame.len());
 
-    // 同一来源跳到另一个时间点必须拿到不同的画面，不能把跳转前的旧帧重复返回。
-    let later_frame = state.capture(first, 3.0).expect("抓 3 秒处的画面");
-    assert_ne!(first_frame, later_frame, "不同时间点不应该返回同一张画面");
+    // 连续向前抓帧：任何两个时间点都不该拿到同一张画面。
+    // 如果截图落后一拍，1 秒位置会重复 0 秒帧，这个断言会立刻失败。
+    let mut frames = vec![first_frame];
+
+    for seconds in [2.0, 4.0, 6.0] {
+      frames.push(
+        state
+          .capture(first, seconds)
+          .unwrap_or_else(|error| panic!("抓 {seconds} 秒处的画面失败: {error}")),
+      );
+    }
+
+    for left in 0..frames.len() {
+      for right in left + 1..frames.len() {
+        assert_ne!(
+          frames[left], frames[right],
+          "抓帧落后：第 {left} 张和第 {right} 张完全相同"
+        );
+      }
+    }
 
     // 换一个来源：验证 loadfile 切换之后抓到的确实是新文件
     let second_frame = state.capture(second, 0.0).expect("抓第二个视频的首帧");
     assert!(second_frame.starts_with("data:image/jpeg;base64,"));
-    assert_ne!(first_frame, second_frame, "两个视频的首帧不该完全相同");
+    assert_ne!(frames[0], second_frame, "两个视频的首帧不该完全相同");
 
     state.shutdown();
   }
