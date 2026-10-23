@@ -119,41 +119,38 @@ impl Worker {
 
     while Instant::now() < deadline {
       let _ = std::fs::remove_file(&self.output);
-      let previous_position = self.client.get_number("time-pos").ok().flatten();
       let previous_frame = self.client.get_number("estimated-frame-number").ok().flatten();
+      let duration = self.client.get_number("duration").ok().flatten();
+      // 片尾直接 seek 到 duration 容易落进 EOF；留 0.1 秒保证还能刷新出一帧。
+      let target = duration
+        .map(|duration| seconds.min((duration - 0.1).max(0.0)))
+        .unwrap_or(seconds);
 
-      if let Err(error) = self.client.seek_exact(seconds) {
+      if let Err(error) = self.client.seek_exact(target) {
         last_error = error.to_string();
         std::thread::sleep(SETTLE_DELAY);
         continue;
       }
 
-      if !wait_until_position(&self.client, seconds) {
-        last_error = format!("跳转没有落到 {seconds:.3} 秒");
+      if !wait_until_position(&self.client, target) {
+        last_error = format!("跳转没有落到 {target:.3} 秒");
         continue;
       }
 
-      // time-pos 只能证明播放时间轴到了目标，不能证明视频输出已经画出新帧。
-      // 目标发生变化时，短暂恢复播放直到解码帧号变化，再截图。
-      let target_changed = previous_position
-        .map(|position| (position - seconds).abs() >= 0.15)
-        .unwrap_or(true);
+      // 无论是不是同一条时间轴，都显式推进一帧。换片后 time-pos 可能仍是 0，
+      // 但不能因此复用上一支视频或上一个位置留在输出缓冲里的旧帧。
+      if let Err(error) = self.client.step_frame(true) {
+        last_error = error.to_string();
+        continue;
+      }
 
-      if target_changed {
-        if let Some(frame) = previous_frame {
-          // 暂停状态下显式走一帧，避免为了刷新画面而让播放位置继续向前跑。
-          if let Err(error) = self.client.step_frame(true) {
-            last_error = error.to_string();
-            continue;
-          }
+      if let Some(frame) = previous_frame {
+        let frame_changed =
+          wait_until_frame_changes(&self.client, frame, Duration::from_millis(1200));
 
-          let frame_changed =
-            wait_until_frame_changes(&self.client, frame, Duration::from_millis(1200));
-
-          if !frame_changed {
-            last_error = format!("跳转到 {seconds:.3} 秒后没有拿到新视频帧");
-            continue;
-          }
+        if !frame_changed {
+          last_error = format!("跳转到 {target:.3} 秒后没有拿到新视频帧");
+          continue;
         }
       }
 
