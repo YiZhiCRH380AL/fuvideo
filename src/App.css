@@ -4752,3 +4752,116 @@
     animation: none;
   }
 }
+
+/* ========================================================================== */
+/* 进度条悬停画面                                                             */
+/* ========================================================================== */
+
+/*
+ * 预览是灵动岛上方的独立浮层，必须允许它越过本体边界。
+ * 之前的 overflow: hidden 会把预览的上半截直接裁掉。
+ */
+.island {
+  overflow: visible;
+}
+
+.preview {
+  position: absolute;
+  /* 进度条上方还有一整排控制按钮；预览要越过这排按钮，停在灵动岛顶边之外。 */
+  bottom: calc(100% + 56px);
+  left: clamp(104px, var(--preview-left, 50%), calc(100% - 104px));
+  z-index: 4;
+  display: flex;
+  width: max-content;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--border-bright);
+  border-radius: 13px;
+  background:
+    linear-gradient(145deg, var(--highlight), transparent 38%),
+    color-mix(in srgb, var(--surface-glass) 92%, transparent);
+  box-shadow:
+    0 18px 48px var(--shadow),
+    inset 0 1px 0 var(--highlight);
+  pointer-events: none;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  backdrop-filter: blur(22px) saturate(145%);
+  animation: preview-in 160ms var(--ease-spring);
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+.preview__image,
+.preview__placeholder {
+  display: block;
+  width: 192px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  border-radius: 8px;
+  background: #000;
+  object-fit: contain;
+}
+
+.preview__placeholder {
+  background:
+    linear-gradient(105deg, transparent 34%, rgb(255 255 255 / 7%) 48%, transparent 62%),
+    radial-gradient(circle at 72% 22%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 32%),
+    var(--bg-deep);
+  background-size:
+    220% 100%,
+    auto,
+    auto;
+  animation: preview-placeholder 1.6s linear infinite;
+}
+
+@keyframes preview-placeholder {
+  from {
+    background-position:
+      140% 0,
+      0 0,
+      0 0;
+  }
+
+  to {
+    background-position:
+      -40% 0,
+      0 0,
+      0 0;
+  }
+}
+
+.preview__time {
+  min-width: 56px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview,
+  .preview__placeholder {
+    animation: none;
+  }
+}

@@ -92,6 +92,7 @@ async function installFakeTauri(
         paths: [...collection.paths],
       })),
     })
+    let playingPath: string | null = null
 
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
@@ -120,6 +121,23 @@ async function installFakeTauri(
                 : { directory: args.directory, parent: null, entries: [] }
             case 'thumbnail_at':
               return pixel
+            case 'play_video':
+              playingPath = args.path as string
+              return null
+            case 'player_state':
+              return {
+                hasMedia: playingPath !== null,
+                ipcReady: playingPath !== null,
+                path: playingPath,
+                position: 0,
+                duration: 100,
+                paused: false,
+                volume: 100,
+                muted: false,
+                speed: 1,
+                buffering: false,
+                idleActive: playingPath === null,
+              }
             case 'read_collections':
               return copyCollections()
             // 播放工具面板：章节表与 AB 点。面板那边对拿不到的情况有兜底
@@ -666,6 +684,72 @@ test('进入播放页后底层方格全部隐藏，只留播放画面', async ({
   await expect(page.locator('.tile--expanded')).toHaveCount(1)
 })
 
+test('进度条悬停缩略图完整浮在灵动岛上方', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await page.getByRole('button', { name: '选择目录' }).first().click()
+  await page.getByRole('button', { name: 'demo-1.mp4', exact: true }).click()
+  await expect(page.getByTestId('expanded-tile')).toBeVisible()
+  await expect(page.getByTestId('curtain')).toHaveCount(0, { timeout: 2000 })
+
+  const slider = page.getByRole('slider', { name: '播放进度' })
+  const sliderBox = await slider.boundingBox()
+  expect(sliderBox).not.toBeNull()
+  await page.mouse.move(
+    sliderBox!.x + sliderBox!.width * 0.58,
+    sliderBox!.y + sliderBox!.height / 2,
+  )
+
+  const preview = page.getByTestId('hover-preview')
+  const image = page.getByTestId('hover-preview-image')
+  await expect(preview).toBeVisible()
+  await expect(image).toBeVisible()
+
+  const geometry = await page.evaluate(() => {
+    const preview = document.querySelector('[data-testid="hover-preview"]') as HTMLElement
+    const image = document.querySelector('[data-testid="hover-preview-image"]') as HTMLImageElement
+    const island = document.querySelector('.island') as HTMLElement
+    const previewRect = preview.getBoundingClientRect()
+    const imageRect = image.getBoundingClientRect()
+    const islandRect = island.getBoundingClientRect()
+
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      preview: {
+        left: previewRect.left,
+        right: previewRect.right,
+        top: previewRect.top,
+        bottom: previewRect.bottom,
+        overflow: getComputedStyle(preview).overflow,
+      },
+      image: {
+        width: imageRect.width,
+        height: imageRect.height,
+        top: imageRect.top,
+        bottom: imageRect.bottom,
+        objectFit: getComputedStyle(image).objectFit,
+      },
+      island: {
+        top: islandRect.top,
+        overflow: getComputedStyle(island).overflow,
+      },
+    }
+  })
+
+  expect(geometry.island.overflow).toBe('visible')
+  expect(geometry.preview.left).toBeGreaterThanOrEqual(-0.5)
+  expect(geometry.preview.right).toBeLessThanOrEqual(geometry.viewport.width + 0.5)
+  expect(geometry.preview.bottom).toBeLessThanOrEqual(geometry.island.top)
+  expect(geometry.image.width / geometry.image.height).toBeCloseTo(16 / 9, 2)
+  expect(geometry.image.top).toBeGreaterThanOrEqual(geometry.preview.top)
+  expect(geometry.image.bottom).toBeLessThanOrEqual(geometry.preview.bottom)
+  expect(geometry.image.objectFit).toBe('contain')
+
+  await page.screenshot({ path: 'test-results/shots/hover-preview.png' })
+})
+
 test('日光主题播放页不会再用卡片底色遮住视频', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
@@ -789,7 +873,7 @@ for (const viewport of [
   { width: 560, height: 315 },
   { width: 640, height: 400 },
 ]) {
-  test(`窄窗口 ${viewport.width}×${viewport.height}：灵动岛与 ⋮ 面板都不出界`, async ({
+  test(`窄窗口 ${viewport.width}×${viewport.height}：悬停预览、灵动岛与 ⋮ 面板都不出界`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport)
@@ -818,6 +902,23 @@ for (const viewport of [
     const islandOverflow = await island.evaluate((node) => node.scrollWidth - node.clientWidth)
 
     expect(islandOverflow).toBeLessThanOrEqual(1)
+
+    const slider = page.getByRole('slider', { name: '播放进度' })
+    const sliderBox = await slider.boundingBox()
+    expect(sliderBox).not.toBeNull()
+    await page.mouse.move(
+      sliderBox!.x + sliderBox!.width * 0.08,
+      sliderBox!.y + sliderBox!.height / 2,
+    )
+
+    const preview = page.getByTestId('hover-preview')
+    await expect(preview).toBeVisible()
+    const previewBox = await preview.boundingBox()
+    expect(previewBox).not.toBeNull()
+    expect(previewBox!.x).toBeGreaterThanOrEqual(-0.5)
+    expect(previewBox!.x + previewBox!.width).toBeLessThanOrEqual(viewport.width + 0.5)
+    expect(previewBox!.y).toBeGreaterThanOrEqual(-0.5)
+    expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(islandBox!.y)
 
     await expandAppSidebar(page)
     await page.getByRole('button', { name: '播放工具' }).click()

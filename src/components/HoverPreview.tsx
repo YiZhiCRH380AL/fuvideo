@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react'
+
 import { formatDuration } from '../lib/time'
 
 export interface HoverPreviewProps {
@@ -10,14 +12,15 @@ export interface HoverPreviewProps {
 
 /** 鼠标停在进度条上时浮出的小画面。 */
 export default function HoverPreview({ image, seconds, fraction }: HoverPreviewProps) {
-  // 贴边时把预览往中间推一点，免得超出窗口
-  const clamped = Math.min(0.92, Math.max(0.08, fraction))
+  const position = {
+    '--preview-left': `${Math.min(1, Math.max(0, fraction)) * 100}%`,
+  } as CSSProperties
 
   return (
     <div
       className="preview"
       data-testid="hover-preview"
-      style={{ left: `${clamped * 100}%` }}
+      style={position}
       aria-hidden="true"
     >
       {image === null ? (

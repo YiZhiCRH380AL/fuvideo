@@ -2879,6 +2879,33 @@ mod tests {
     }
   }
 
+  /// 等属性真正追上目标值；属性在命令刚发出时可能还是旧的合法读数。
+  fn wait_for_number_near(
+    client: &ipc::MpvIpc,
+    name: &str,
+    target: f64,
+    tolerance: f64,
+    timeout: Duration,
+  ) -> Option<f64> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+      if let Ok(Some(value)) = client.get_number(name) {
+        if (value - target).abs() <= tolerance {
+          return Some(value);
+        }
+
+        if Instant::now() >= deadline {
+          return Some(value);
+        }
+      } else if Instant::now() >= deadline {
+        return None;
+      }
+
+      thread::sleep(Duration::from_millis(100));
+    }
+  }
+
   /// 无界面地跑一遍真实 mpv，验证 IPC 能读状态、能暂停、能跳转。
   /// 这条链路是界面控件的地基，坏了必须立刻发现。
   #[test]
@@ -2924,7 +2951,14 @@ mod tests {
     // 暂停状态下跳转，读数才是确定的。目标取时长的一半，避免依赖具体素材长度。
     let target = (duration / 2.0).max(0.1);
     client.seek_absolute(target).expect("跳转");
-    let position = wait_for_number(&client, "time-pos", Duration::from_secs(10)).expect("应能读到播放位置");
+    let position = wait_for_number_near(
+      &client,
+      "time-pos",
+      target,
+      0.3,
+      Duration::from_secs(10),
+    )
+    .expect("应能读到播放位置");
     assert!(
       (position - target).abs() < 0.3,
       "跳转后位置应约为 {target} 秒，实际 {position}"
