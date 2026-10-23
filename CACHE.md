@@ -2,7 +2,35 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
-## 当前阶段：首页滚动条与侧栏排版微调（已完成，待真机确认）
+## 当前阶段：0.3.0-Alpha 发布包与视频介绍（进行中）
+
+### 已完成
+
+- `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
+  统一改为 **0.3.0-Alpha**；Cargo.lock 由离线 `cargo check` 更新。
+- `RELEASE_NOTES.md` 改为 0.3.0-Alpha 当前发布说明，并保留 0.2.0 历史内容。
+- 新增 [VIDEO_INTRODUCTION.md](VIDEO_INTRODUCTION.md)：
+  - 90 秒逐镜头主脚本、口播与屏幕字幕；
+  - 30 秒短视频分镜；
+  - 封面文案、可引用截图、录制准备和隐私/版权注意事项。
+
+### 验证与产物
+
+- 前端单测 **280** 条、Playwright e2e **33** 条、Rust **154** 条全部通过。
+- typecheck、lint、前端生产构建和离线 NSIS 打包通过。
+- 主程序与安装包 FileVersion / ProductVersion 均为 **0.3.0-Alpha**。
+- 主程序：`src-tauri/target/release/fuvideo.exe`，11,144,192 bytes
+  SHA256 `22575D811E1D7742A343A6C820AEB908CA2DAB88C5D10D9829E2F2F6EB7C024E`。
+- 安装包：`src-tauri/target/release/bundle/nsis/fuvideo_0.3.0-Alpha_x64-setup.exe`，
+  55,858,060 bytes（约 53.27 MiB） SHA256
+  `83FD67C7C579B64E832CDD4BB72B12C52FD6136F5D465DA013B9C87EB7F568C4`。
+
+### 下一步
+
+- 用户审阅 [VIDEO_INTRODUCTION.md](VIDEO_INTRODUCTION.md) 的口播和分镜；
+- 需要公开发布时再创建 GitHub Release，本轮只打包，不自动建 Release。
+
+## 上一阶段：首页滚动条与侧栏排版微调（已完成，待真机确认）
 
 ### 已完成
 
@@ -1684,9 +1712,9 @@ P1 加的东西教程里没讲，这次补上：
 验证：`npm run typecheck`、`npm run lint`、`npm run test:run`（108 个）、
 `npm run test:e2e`（7 个）、`npm run build`、`cd src-tauri && cargo test`（23 个）全绿。
 
-## 当前产物（0.2.0-Alpha）
+## 当前产物（0.3.0-Alpha）
 
-> **版本号与发布方式都由用户拍板**。0.2.0-Alpha 是用户要求的（2026-10-18）；
+> **版本号与发布方式都由用户拍板**。0.3.0-Alpha 是用户要求的（2026-10-24）；
 > 更新文案见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。以后不要自己升号，也不要在
 > GitHub 上建 Release——用户说发才发。
 
@@ -1699,7 +1727,7 @@ npm run tauri build -- --bundles nsis
 | 产物 | 位置 |
 | --- | --- |
 | 主程序 | `src-tauri/target/release/fuvideo.exe` |
-| 安装包 | `src-tauri/target/release/bundle/nsis/fuvideo_0.2.0-Alpha_x64-setup.exe`（53.2 MB） |
+| 安装包 | `src-tauri/target/release/bundle/nsis/fuvideo_0.3.0-Alpha_x64-setup.exe`（53.27 MiB） |
 
 安装包里带 `mpv.exe` + `d3dcompiler_43.dll` + `yt-dlp.exe`（17.8 MB）。
 `target/` 在 `.gitignore` 里，产物不进仓库。

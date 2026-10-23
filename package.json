@@ -1,7 +1,7 @@
 {
   "name": "fuvideo",
   "private": true,
-  "version": "0.2.0-Alpha",
+  "version": "0.3.0-Alpha",
   "description": "futurevideo (fuvideo) - 界面简洁、动效流畅的桌面视频播放器",
   "type": "module",
   "scripts": {
