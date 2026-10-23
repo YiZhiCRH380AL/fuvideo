@@ -28,6 +28,7 @@ export interface IslandProps {
   scrub: number | null
   preview: { fraction: number; seconds: number } | null
   previewImage: string | null
+  previewApproximate?: boolean
   speedOpen: boolean
   onTogglePause: () => void
   onScrubChange: (event: ChangeEvent<HTMLInputElement>) => void
@@ -76,6 +77,7 @@ export default function Island({
   scrub,
   preview,
   previewImage,
+  previewApproximate = false,
   speedOpen,
   onTogglePause,
   onScrubChange,
@@ -283,7 +285,12 @@ export default function Island({
         ) : null}
 
         {preview && scrub === null ? (
-          <HoverPreview image={previewImage} seconds={preview.seconds} fraction={preview.fraction} />
+          <HoverPreview
+            image={previewImage}
+            seconds={preview.seconds}
+            fraction={preview.fraction}
+            approximate={previewApproximate}
+          />
         ) : null}
       </div>
     </div>

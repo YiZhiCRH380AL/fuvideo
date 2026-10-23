@@ -176,6 +176,33 @@ function stripTimesFor(duration: number): number[] {
   return Array.from({ length: count }, (_, index) => (duration * (index + 0.5)) / count)
 }
 
+/** 从已经预抓好的缩略图带里找离当前秒数最近的一帧。 */
+function nearestCachedPreview(
+  cache: Map<string, string>,
+  source: string,
+  seconds: number,
+): { image: string; seconds: number } | null {
+  const prefix = `${source}::`
+  let nearest: { image: string; seconds: number } | null = null
+
+  for (const [key, image] of cache) {
+    if (!key.startsWith(prefix)) {
+      continue
+    }
+
+    const captured = Number(key.slice(prefix.length))
+
+    if (
+      Number.isFinite(captured) &&
+      (nearest === null || Math.abs(captured - seconds) < Math.abs(nearest.seconds - seconds))
+    ) {
+      nearest = { image, seconds: captured }
+    }
+  }
+
+  return nearest
+}
+
 export default function App() {
   const [status, setStatus] = useState<BackendStatus | null>(null)
 
@@ -192,6 +219,7 @@ export default function App() {
   const [capturedPreview, setCapturedPreview] = useState<{
     image: string
     seconds: number
+    approximate: boolean
   } | null>(null)
   const [flash, setFlash] = useState<GridFlash | null>(null)
   const [curtain, setCurtain] = useState<{ x: number; y: number; width: number; height: number } | null>(
@@ -1488,7 +1516,7 @@ export default function App() {
             desired?.source === task.source &&
             Math.abs(desired.seconds - task.seconds) < 0.75
           ) {
-            setCapturedPreview({ image, seconds: task.seconds })
+            setCapturedPreview({ image, seconds: task.seconds, approximate: false })
           }
         } catch {
           // 预览拿不到就只是不显示画面，不打断播放
@@ -1533,7 +1561,7 @@ export default function App() {
       const exact = previewCache.current.get(`${currentFile}::${Math.round(seconds)}`)
 
       if (exact !== undefined) {
-        setCapturedPreview({ image: exact, seconds })
+        setCapturedPreview({ image: exact, seconds, approximate: false })
 
         if (previewTimer.current !== null) {
           window.clearTimeout(previewTimer.current)
@@ -1543,10 +1571,14 @@ export default function App() {
         return
       }
 
-      // 光标已经离开上一张图的时间时立刻撤掉，绝不让旧画面陪着新时间标签。
-      setCapturedPreview((current) =>
-        current !== null && Math.abs(current.seconds - seconds) < 0.75 ? current : null,
-      )
+      // 缩略图带里最近的一帧先顶上来，标签显示它真正所属的时间并标记为近似。
+      const nearest = nearestCachedPreview(previewCache.current, currentFile, seconds)
+
+      if (nearest !== null) {
+        setCapturedPreview({ ...nearest, approximate: true })
+      } else {
+        setCapturedPreview(null)
+      }
 
       // 抓帧比移动慢得多，快速扫过时只处理停下来的那个位置
       if (previewTimer.current !== null) {
@@ -1778,15 +1810,11 @@ export default function App() {
   const shownPreview =
     preview === null
       ? null
-      : capturedPreview !== null && Math.abs(preview.seconds - capturedPreview.seconds) < 0.75
+      : capturedPreview !== null
         ? { ...preview, seconds: capturedPreview.seconds }
         : preview
-  const shownPreviewImage =
-    preview !== null &&
-    capturedPreview !== null &&
-    Math.abs(preview.seconds - capturedPreview.seconds) < 0.75
-      ? capturedPreview.image
-      : null
+  const shownPreviewImage = preview !== null && capturedPreview !== null ? capturedPreview.image : null
+  const shownPreviewApproximate = capturedPreview?.approximate === true
 
   const sidebarActions = (
     <div className="app__tools app__tools--sidebar">
@@ -2305,6 +2333,7 @@ export default function App() {
           scrub={scrub}
           preview={shownPreview}
           previewImage={shownPreviewImage}
+          previewApproximate={shownPreviewApproximate}
           speedOpen={openPanel === 'speed'}
           mediaOpen={openPanel === 'media'}
           mediaPanel={<MediaPanel source={currentFile} onError={reportError} />}

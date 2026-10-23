@@ -8,10 +8,17 @@ export interface HoverPreviewProps {
   seconds: number
   /** 指针在进度条上的位置比例（0-1）。 */
   fraction: number
+  /** 来自预抓缩略图带、尚未替换成当前整秒的图片。 */
+  approximate?: boolean
 }
 
 /** 鼠标停在进度条上时浮出的小画面。 */
-export default function HoverPreview({ image, seconds, fraction }: HoverPreviewProps) {
+export default function HoverPreview({
+  image,
+  seconds,
+  fraction,
+  approximate = false,
+}: HoverPreviewProps) {
   const position = {
     '--preview-left': `${Math.min(1, Math.max(0, fraction)) * 100}%`,
   } as CSSProperties
@@ -28,7 +35,10 @@ export default function HoverPreview({ image, seconds, fraction }: HoverPreviewP
       ) : (
         <img className="preview__image" data-testid="hover-preview-image" src={image} alt="" />
       )}
-      <span className="preview__time">{formatDuration(seconds)}</span>
+      <span className="preview__time">
+        {approximate ? '≈ ' : ''}
+        {formatDuration(seconds)}
+      </span>
     </div>
   )
 }

@@ -118,7 +118,6 @@ impl Worker {
     let mut last_error = String::from("截图命令没有成功");
 
     while Instant::now() < deadline {
-      let previous_frame = self.client.get_number("estimated-frame-number").ok().flatten();
       let duration = self.client.get_number("duration").ok().flatten();
       let previous_output = newest_frame(&self.directory);
       // 片尾直接 seek 到 duration 容易落进 EOF；留 0.1 秒保证还能刷新出一帧。
@@ -135,23 +134,6 @@ impl Worker {
       if !wait_until_position(&self.client, target) {
         last_error = format!("跳转没有落到 {target:.3} 秒");
         continue;
-      }
-
-      // 无论是不是同一条时间轴，都显式推进一帧。换片后 time-pos 可能仍是 0，
-      // 但不能因此复用上一支视频或上一个位置留在输出缓冲里的旧帧。
-      if let Err(error) = self.client.step_frame(true) {
-        last_error = error.to_string();
-        continue;
-      }
-
-      if let Some(frame) = previous_frame {
-        let frame_changed =
-          wait_until_frame_changes(&self.client, frame, Duration::from_millis(1200));
-
-        if !frame_changed {
-          last_error = format!("跳转到 {target:.3} 秒后没有拿到新视频帧");
-          continue;
-        }
       }
 
       std::thread::sleep(SETTLE_DELAY);
@@ -257,22 +239,6 @@ fn wait_until_position(client: &ipc::MpvIpc, seconds: f64) -> bool {
       Ok(Some(position)) if (position - seconds).abs() < 0.15 => return true,
       _ => std::thread::sleep(Duration::from_millis(40)),
     }
-  }
-
-  false
-}
-
-fn wait_until_frame_changes(client: &ipc::MpvIpc, previous: f64, timeout: Duration) -> bool {
-  let deadline = Instant::now() + timeout;
-
-  while Instant::now() < deadline {
-    if let Ok(Some(frame)) = client.get_number("estimated-frame-number") {
-      if (frame - previous).abs() >= 0.5 {
-        return true;
-      }
-    }
-
-    std::thread::sleep(Duration::from_millis(16));
   }
 
   false

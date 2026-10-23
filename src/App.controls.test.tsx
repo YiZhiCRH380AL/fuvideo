@@ -1269,7 +1269,7 @@ describe('进度条悬停预览', () => {
     expect(mocks.thumbnailAt.mock.calls.length).toBe(before + 1)
   })
 
-  it('快速移动后丢弃先返回的旧帧，只显示最新位置对应的画面', async () => {
+  it('快速移动时先显示近似帧，旧请求不覆盖，最终换成最新精确帧', async () => {
     await openPlayingVideo({ position: 0, duration: 100 })
     await waitForStrip()
 
@@ -1296,7 +1296,13 @@ describe('进度条悬停预览', () => {
 
     // 第一帧还没返回，光标已经移到 81 秒。
     hoverAt(slider, 162)
-    await waitFor(() => expect(screen.getByTestId('hover-preview-placeholder')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByTestId('hover-preview-image')).toHaveAttribute(
+        'src',
+        'data:image/jpeg;base64,AAAA',
+      ),
+    )
+    expect(screen.getByTestId('hover-preview')).toHaveTextContent('≈ 1:25')
 
     await act(async () => {
       resolveFirst('data:image/jpeg;base64,NTI=')
