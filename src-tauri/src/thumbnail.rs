@@ -25,7 +25,7 @@ const SETTLE_DELAY: Duration = Duration::from_millis(120);
 struct Worker {
   child: Child,
   client: ipc::MpvIpc,
-  output: PathBuf,
+  directory: PathBuf,
   source: Option<String>,
 }
 
@@ -38,17 +38,17 @@ impl Worker {
     // 上一次留下的编号图没必要积着
     clear_directory(&directory);
 
-    let output = directory.join("frame.jpg");
     let pipe = mpv::next_pipe_name("thumb");
 
     let mut command = Command::new(&executable);
     command.args([
       format!("--input-ipc-server={pipe}"),
       "--no-config".to_string(),
-      "--vo=null".to_string(),
-      "--screenshot-format=jpg".to_string(),
-      "--screenshot-jpeg-quality=80".to_string(),
-      "--screenshot-sw=yes".to_string(),
+      "--vo=image".to_string(),
+      "--vo-image-format=jpg".to_string(),
+      "--vo-image-jpeg-quality=80".to_string(),
+      format!("--vo-image-outdir={}", directory.display()),
+      "--image-display-duration=inf".to_string(),
       "--no-audio".to_string(),
       "--pause=yes".to_string(),
       "--hr-seek=yes".to_string(),
@@ -85,7 +85,7 @@ impl Worker {
     Ok(Self {
       child,
       client,
-      output,
+      directory,
       source: None,
     })
   }
@@ -118,9 +118,9 @@ impl Worker {
     let mut last_error = String::from("截图命令没有成功");
 
     while Instant::now() < deadline {
-      let _ = std::fs::remove_file(&self.output);
       let previous_frame = self.client.get_number("estimated-frame-number").ok().flatten();
       let duration = self.client.get_number("duration").ok().flatten();
+      let previous_output = newest_frame(&self.directory);
       // 片尾直接 seek 到 duration 容易落进 EOF；留 0.1 秒保证还能刷新出一帧。
       let target = duration
         .map(|duration| seconds.min((duration - 0.1).max(0.0)))
@@ -156,19 +156,13 @@ impl Worker {
 
       std::thread::sleep(SETTLE_DELAY);
 
-      match self.client.request(json!([
-        "screenshot-to-file",
-        self.output.to_string_lossy().to_string(),
-        "video"
-      ])) {
-        Ok(_) => {
-          if wait_for_file(&self.output, Duration::from_millis(600)).is_ok() {
-            return Ok(self.output.clone());
-          }
-
-          last_error = "截图文件没有生成".to_string();
-        }
-        Err(error) => last_error = error.to_string(),
+      match wait_for_new_frame(
+        &self.directory,
+        previous_output.as_deref(),
+        Duration::from_millis(1200),
+      ) {
+        Ok(path) => return Ok(path),
+        Err(error) => last_error = error,
       }
     }
 
@@ -284,20 +278,49 @@ fn wait_until_frame_changes(client: &ipc::MpvIpc, previous: f64, timeout: Durati
   false
 }
 
-fn wait_for_file(path: &Path, timeout: Duration) -> Result<(), String> {
+fn newest_frame(directory: &Path) -> Option<PathBuf> {
+  newest_frame_since(directory, None)
+}
+
+fn newest_frame_since(directory: &Path, previous: Option<&Path>) -> Option<PathBuf> {
+  std::fs::read_dir(directory)
+    .ok()?
+    .flatten()
+    .filter_map(|entry| {
+      let path = entry.path();
+      if path.extension().and_then(|extension| extension.to_str()) != Some("jpg") {
+        return None;
+      }
+
+      if previous.is_some_and(|previous| {
+        path.file_name() <= previous.file_name()
+      }) {
+        return None;
+      }
+
+      let metadata = entry.metadata().ok()?;
+      (metadata.is_file() && metadata.len() > 0).then_some((metadata.modified().ok()?, path))
+    })
+    .max_by_key(|(modified, _)| *modified)
+    .map(|(_, path)| path)
+}
+
+fn wait_for_new_frame(
+  directory: &Path,
+  previous: Option<&Path>,
+  timeout: Duration,
+) -> Result<PathBuf, String> {
   let deadline = Instant::now() + timeout;
 
   while Instant::now() < deadline {
-    if let Ok(metadata) = std::fs::metadata(path) {
-      if metadata.len() > 0 {
-        return Ok(());
-      }
+    if let Some(path) = newest_frame_since(directory, previous) {
+      return Ok(path);
     }
 
     std::thread::sleep(Duration::from_millis(40));
   }
 
-  Err("截图文件没有生成".to_string())
+  Err("视频输出没有生成新图片".to_string())
 }
 
 fn encode_data_url(path: &Path) -> Result<String, String> {
@@ -369,6 +392,42 @@ mod tests {
     assert!(second_frame.starts_with("data:image/jpeg;base64,"));
     assert_ne!(frames[0], second_frame, "两个视频的首帧不该完全相同");
 
+    state.shutdown();
+  }
+
+  /// 可选的真实视频回归：设置 FUVIDEO_TEST_VIDEO 后，连续抓三个时间点。
+  /// 不设置环境变量时直接跳过，避免测试依赖开发机上的私人媒体。
+  #[test]
+  fn captures_a_real_video_at_distinct_times() {
+    let Ok(source) = std::env::var("FUVIDEO_TEST_VIDEO") else {
+      return;
+    };
+
+    let state = ThumbnailState::default();
+    let mut frames = Vec::new();
+
+    for seconds in [1.0, 30.0, 60.0] {
+      let data_url = state
+        .capture(&source, seconds)
+        .unwrap_or_else(|error| panic!("抓 {seconds} 秒失败: {error}"));
+      assert!(
+        data_url.starts_with("data:image/jpeg;base64,"),
+        "{seconds} 秒没有返回 JPEG"
+      );
+
+      if let Some(encoded) = data_url.strip_prefix("data:image/jpeg;base64,") {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) {
+          let path = std::env::temp_dir().join(format!("fuvideo-real-{seconds:.0}s.jpg"));
+          let _ = std::fs::write(path, bytes);
+        }
+      }
+
+      frames.push(data_url);
+    }
+
+    assert!(frames[0] != frames[1], "30 秒抓帧重复了 1 秒画面");
+    assert!(frames[1] != frames[2], "60 秒抓帧重复了 30 秒画面");
+    assert!(frames[0] != frames[2], "60 秒抓帧重复了 1 秒画面");
     state.shutdown();
   }
 }
