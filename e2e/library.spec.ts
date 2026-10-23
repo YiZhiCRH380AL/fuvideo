@@ -33,15 +33,8 @@ async function installFakeTauri(
       seedPlaylist: string[]
       lastDirectory: string | null
     }) => {
-    /**
-     * 缩略图用一张 1920×1080 的占位图。
-     *
-     * 尺寸要像真的：之前用 1×1 的图，绕过了一个真实的坑——网格行高按内容算时，
-     * 浏览器会拿图片的原生高度（1080）去撑行，整排方格会变成一屏高的柱子。
-     */
-    const pixel =
-      'data:image/svg+xml;utf8,' +
-      encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"></svg>')
+    const thumbnailRequests: { source: string; position: number }[] = []
+    Object.defineProperty(window, '__thumbnailRequests', { value: thumbnailRequests })
 
     const clips = 'E:\\clips'
 
@@ -119,8 +112,16 @@ async function installFakeTauri(
               return args.directory === clips || args.directory === sample
                 ? listing
                 : { directory: args.directory, parent: null, entries: [] }
-            case 'thumbnail_at':
-              return pixel
+            case 'thumbnail_at': {
+              const position = args.position as number
+              thumbnailRequests.push({ source: args.source as string, position })
+              const frame =
+                'data:image/svg+xml;utf8,' +
+                encodeURIComponent(
+                  `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#182033"/><text x="960" y="540" fill="#ffffff" font-size="240" text-anchor="middle">${Math.round(position)}s</text></svg>`,
+                )
+              return frame
+            }
             case 'play_video':
               playingPath = args.path as string
               return null
@@ -706,6 +707,22 @@ test('进度条悬停缩略图完整浮在灵动岛上方', async ({ page }) => 
   const image = page.getByTestId('hover-preview-image')
   await expect(preview).toBeVisible()
   await expect(image).toBeVisible()
+  await expect(preview.locator('.preview__time')).toHaveText('0:58')
+
+  const request = await page.evaluate(() => {
+    const log = (
+      window as unknown as {
+        __thumbnailRequests: { source: string; position: number }[]
+      }
+    ).__thumbnailRequests
+
+    return log.find((entry) => Math.abs(entry.position - 58) < 0.5) ?? null
+  })
+  expect(request).not.toBeNull()
+
+  const imageSource = await image.getAttribute('src')
+  expect(imageSource).not.toBeNull()
+  expect(decodeURIComponent(imageSource!.split(',')[1] ?? '')).toContain('58s')
 
   const geometry = await page.evaluate(() => {
     const preview = document.querySelector('[data-testid="hover-preview"]') as HTMLElement

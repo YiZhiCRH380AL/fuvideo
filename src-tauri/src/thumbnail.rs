@@ -126,7 +126,11 @@ impl Worker {
         continue;
       }
 
-      wait_until_position(&self.client, seconds);
+      if !wait_until_position(&self.client, seconds) {
+        last_error = format!("跳转没有落到 {seconds:.3} 秒");
+        continue;
+      }
+
       std::thread::sleep(SETTLE_DELAY);
 
       match self.client.request(json!([
@@ -227,16 +231,18 @@ fn wait_for_source(client: &ipc::MpvIpc, source: &str, timeout: Duration) -> boo
   false
 }
 
-/// 等播放位置落到目标附近。超时就放弃，让截图去抓当下这一帧。
-fn wait_until_position(client: &ipc::MpvIpc, seconds: f64) {
+/// 等播放位置落到目标附近。超时必须返回失败，不能把旧位置截成新时间点的画面。
+fn wait_until_position(client: &ipc::MpvIpc, seconds: f64) -> bool {
   let deadline = Instant::now() + CAPTURE_TIMEOUT;
 
   while Instant::now() < deadline {
     match client.get_number("time-pos") {
-      Ok(Some(position)) if (position - seconds).abs() < 0.15 => return,
+      Ok(Some(position)) if (position - seconds).abs() < 0.15 => return true,
       _ => std::thread::sleep(Duration::from_millis(40)),
     }
   }
+
+  false
 }
 
 fn wait_for_file(path: &Path, timeout: Duration) -> Result<(), String> {
@@ -297,6 +303,10 @@ mod tests {
     let first_frame = state.capture(first, 0.0).expect("抓第一个视频的首帧");
     assert!(first_frame.starts_with("data:image/jpeg;base64,"));
     assert!(first_frame.len() > 1000, "首帧内容过小: {} 字节", first_frame.len());
+
+    // 同一来源跳到另一个时间点必须拿到不同的画面，不能把跳转前的旧帧重复返回。
+    let later_frame = state.capture(first, 3.0).expect("抓 3 秒处的画面");
+    assert_ne!(first_frame, later_frame, "不同时间点不应该返回同一张画面");
 
     // 换一个来源：验证 loadfile 切换之后抓到的确实是新文件
     let second_frame = state.capture(second, 0.0).expect("抓第二个视频的首帧");

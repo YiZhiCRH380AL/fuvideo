@@ -1249,22 +1249,69 @@ describe('进度条悬停预览', () => {
     expect(screen.queryByTestId('hover-preview')).not.toBeInTheDocument()
   })
 
-  it('缩略图带铺好后，悬停直接取用不再抓帧', async () => {
+  it('悬停使用当前秒抓帧，不用相邻的预抽帧冒充', async () => {
     await openPlayingVideo({ position: 0, duration: 100 })
     await waitForStrip()
 
     const before = mocks.thumbnailAt.mock.calls.length
+    mocks.thumbnailAt.mockResolvedValue('data:image/jpeg;base64,ZXhhY3Q=')
 
-    // 悬停到 45 秒：带里已有这一帧，不该再发请求
-    hoverAt(screen.getByRole('slider', { name: '播放进度' }), 90)
+    // 悬停到 53 秒：它落在预抽帧 45 与 55 之间，必须以当前秒重新请求，
+    // 不能拿相邻的画面配 53 秒的时间标签。
+    hoverAt(screen.getByRole('slider', { name: '播放进度' }), 106)
 
-    expect(await screen.findByTestId('hover-preview-image')).toBeInTheDocument()
+    await waitFor(() => expect(calledWith(53)).toBe(1), { timeout: 1500 })
+    expect(await screen.findByTestId('hover-preview-image')).toHaveAttribute(
+      'src',
+      'data:image/jpeg;base64,ZXhhY3Q=',
+    )
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(mocks.thumbnailAt.mock.calls.length).toBe(before + 1)
+  })
+
+  it('快速移动后丢弃先返回的旧帧，只显示最新位置对应的画面', async () => {
+    await openPlayingVideo({ position: 0, duration: 100 })
+    await waitForStrip()
+
+    let resolveFirst: (image: string) => void = () => {}
+    mocks.thumbnailAt.mockImplementation(async (_source: string, position: number) => {
+      const second = Math.round(position)
+
+      if (second === 52) {
+        return new Promise<string>((resolve) => {
+          resolveFirst = resolve
+        })
+      }
+
+      if (second === 81) {
+        return 'data:image/jpeg;base64,ODE='
+      }
+
+      return 'data:image/jpeg;base64,b3RoZXI='
     })
 
-    expect(mocks.thumbnailAt.mock.calls.length).toBe(before)
+    const slider = screen.getByRole('slider', { name: '播放进度' })
+    hoverAt(slider, 104)
+    await waitFor(() => expect(calledWith(52)).toBe(1), { timeout: 1500 })
+
+    // 第一帧还没返回，光标已经移到 81 秒。
+    hoverAt(slider, 162)
+    await waitFor(() => expect(screen.getByTestId('hover-preview-placeholder')).toBeInTheDocument())
+
+    await act(async () => {
+      resolveFirst('data:image/jpeg;base64,NTI=')
+      await Promise.resolve()
+    })
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('hover-preview-image')).toHaveAttribute(
+          'src',
+          'data:image/jpeg;base64,ODE=',
+        ),
+      { timeout: 1500 },
+    )
+    expect(screen.getByTestId('hover-preview')).toHaveTextContent('1:21')
   })
 })
 describe('播放列表与收藏夹', () => {

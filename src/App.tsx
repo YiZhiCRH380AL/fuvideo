@@ -162,18 +162,6 @@ interface FavoritePickerState {
   trigger: HTMLElement
 }
 
-function nearestIndex(times: number[], seconds: number): number {
-  let best = 0
-
-  for (let index = 1; index < times.length; index += 1) {
-    if (Math.abs(times[index] - seconds) < Math.abs(times[best] - seconds)) {
-      best = index
-    }
-  }
-
-  return best
-}
-
 /** 缩略图带要抽哪些时间点：整片均匀铺开，两端各留半格。 */
 function stripTimesFor(duration: number): number[] {
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -201,7 +189,10 @@ export default function App() {
   const [scrub, setScrub] = useState<number | null>(null)
   const [pendingSeek, setPendingSeek] = useState<number | null>(null)
   const [preview, setPreview] = useState<{ fraction: number; seconds: number } | null>(null)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [capturedPreview, setCapturedPreview] = useState<{
+    image: string
+    seconds: number
+  } | null>(null)
   const [flash, setFlash] = useState<GridFlash | null>(null)
   const [curtain, setCurtain] = useState<{ x: number; y: number; width: number; height: number } | null>(
     null,
@@ -292,6 +283,7 @@ export default function App() {
   const previewFrame = useRef<number | null>(null)
   const hoveredPoint = useRef<{ fraction: number; seconds: number } | null>(null)
   const previewCache = useRef(new Map<string, string>())
+  const desiredPreview = useRef<{ source: string; seconds: number } | null>(null)
   const curtainRef = useRef<HTMLDivElement>(null)
   const previewBusy = useRef(false)
   const queuedPreview = useRef<{ source: string; seconds: number } | null>(null)
@@ -1490,10 +1482,17 @@ export default function App() {
           const image = cached ?? (await thumbnailAt(task.source, task.seconds))
 
           previewCache.current.set(key, image)
-          setPreviewImage(image)
+          const desired = desiredPreview.current
+
+          if (
+            desired?.source === task.source &&
+            Math.abs(desired.seconds - task.seconds) < 0.75
+          ) {
+            setCapturedPreview({ image, seconds: task.seconds })
+          }
         } catch {
           // 预览拿不到就只是不显示画面，不打断播放
-          setPreviewImage(null)
+          setCapturedPreview(null)
         }
 
         task = queuedPreview.current
@@ -1512,7 +1511,9 @@ export default function App() {
 
       const rect = event.currentTarget.getBoundingClientRect()
       const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-      const seconds = fraction * duration
+      // 抓帧、缓存键和时间标签统一到整秒，避免浮点小数让 58 秒画面配 57 秒标签。
+      const seconds = Math.min(duration, Math.round(fraction * duration))
+      desiredPreview.current = { source: currentFile, seconds }
 
       // 指针事件比屏幕刷新快得多，位置更新按帧来就够了
       hoveredPoint.current = { fraction, seconds }
@@ -1527,22 +1528,25 @@ export default function App() {
         })
       }
 
-      // 缩略图带里已经有最近的那一帧就直接显示，不用等抓取
-      if (stripTimes.length > 0) {
-        const nearest = stripTimes[nearestIndex(stripTimes, seconds)]
-        const fromStrip = previewCache.current.get(`${currentFile}::${Math.round(nearest)}`)
+      // 只复用「当前这一秒」的缓存。预抽取的相邻帧可以继续预取，
+      // 但不能拿来冒充光标所在时间。
+      const exact = previewCache.current.get(`${currentFile}::${Math.round(seconds)}`)
 
-        if (fromStrip !== undefined) {
-          setPreviewImage(fromStrip)
+      if (exact !== undefined) {
+        setCapturedPreview({ image: exact, seconds })
 
-          if (previewTimer.current !== null) {
-            window.clearTimeout(previewTimer.current)
-            previewTimer.current = null
-          }
-
-          return
+        if (previewTimer.current !== null) {
+          window.clearTimeout(previewTimer.current)
+          previewTimer.current = null
         }
+
+        return
       }
+
+      // 光标已经离开上一张图的时间时立刻撤掉，绝不让旧画面陪着新时间标签。
+      setCapturedPreview((current) =>
+        current !== null && Math.abs(current.seconds - seconds) < 0.75 ? current : null,
+      )
 
       // 抓帧比移动慢得多，快速扫过时只处理停下来的那个位置
       if (previewTimer.current !== null) {
@@ -1554,7 +1558,7 @@ export default function App() {
         void fetchPreview(currentFile, seconds)
       }, PREVIEW_DEBOUNCE_MS)
     },
-    [currentFile, duration, fetchPreview, stripTimes],
+    [currentFile, duration, fetchPreview],
   )
 
   const handleProgressLeave = useCallback(() => {
@@ -1569,8 +1573,9 @@ export default function App() {
     }
 
     hoveredPoint.current = null
+    desiredPreview.current = null
     setPreview(null)
-    setPreviewImage(null)
+    setCapturedPreview(null)
   }, [])
 
   // 涟漪与提示放完就收掉
@@ -1770,6 +1775,18 @@ export default function App() {
   const canOpen = isTauri() && status?.mpvAvailable === true
   /** 标题栏面包屑要显示的路径：停在「此电脑」时显示它自己。 */
   const shownPath = atDrives ? DRIVES_ROOT : (listing?.directory ?? null)
+  const shownPreview =
+    preview === null
+      ? null
+      : capturedPreview !== null && Math.abs(preview.seconds - capturedPreview.seconds) < 0.75
+        ? { ...preview, seconds: capturedPreview.seconds }
+        : preview
+  const shownPreviewImage =
+    preview !== null &&
+    capturedPreview !== null &&
+    Math.abs(preview.seconds - capturedPreview.seconds) < 0.75
+      ? capturedPreview.image
+      : null
 
   const sidebarActions = (
     <div className="app__tools app__tools--sidebar">
@@ -2286,8 +2303,8 @@ export default function App() {
           buffering={buffering}
           fullscreen={fullscreen}
           scrub={scrub}
-          preview={preview}
-          previewImage={previewImage}
+          preview={shownPreview}
+          previewImage={shownPreviewImage}
           speedOpen={openPanel === 'speed'}
           mediaOpen={openPanel === 'media'}
           mediaPanel={<MediaPanel source={currentFile} onError={reportError} />}
