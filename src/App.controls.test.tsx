@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => {
       customCollections?: { id: string; name: string; paths: string[] }[]
     },
     getCollections: vi.fn(),
+    getAudioSpectrum: vi.fn(),
     togglePlaylist: vi.fn(),
     shiftInPlaylist: vi.fn(),
     toggleFavorite: vi.fn(),
@@ -207,6 +208,7 @@ vi.mock('./lib/backend', () => ({
   pickDirectory: () => mocks.pickDirectory(),
   prepareSampleFolder: () => mocks.prepareSampleFolder(),
   getCollections: () => mocks.getCollections(),
+  getAudioSpectrum: () => mocks.getAudioSpectrum(),
   togglePlaylist: (path: string) => mocks.togglePlaylist(path),
   shiftInPlaylist: (path: string, delta: number) => mocks.shiftInPlaylist(path, delta),
   toggleFavorite: (path: string) => mocks.toggleFavorite(path),
@@ -395,6 +397,7 @@ beforeEach(() => {
     mocks.thumbnailAt,
     mocks.prepareSampleFolder,
     mocks.getCollections,
+    mocks.getAudioSpectrum,
     mocks.togglePlaylist,
     mocks.shiftInPlaylist,
     mocks.toggleFavorite,
@@ -469,6 +472,10 @@ beforeEach(() => {
   // 列表的 mock 要真的增删改，界面拿返回值更新自己
   mocks.collections = { playlist: [], favorites: [], customCollections: [] }
   mocks.getCollections.mockImplementation(async () => mocks.collections)
+  mocks.getAudioSpectrum.mockResolvedValue({
+    frequencies: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+    levels: Array(10).fill(0.2),
+  })
   mocks.togglePlaylist.mockImplementation(async (path: string) => {
     const contains = mocks.collections.playlist.includes(path)
     const playlist = contains

@@ -4,6 +4,7 @@ import {
   addSubtitleFile,
   describeProbe,
   getAudioOptions,
+  getAudioSpectrum,
   getCollections,
   getAudioDevices,
   getBackendStatus,
@@ -99,6 +100,7 @@ describe('播放控制类命令', () => {
 
   it('音效设置的读写也一样', async () => {
     await expect(getAudioOptions()).rejects.toThrow('桌面应用')
+    await expect(getAudioSpectrum()).rejects.toThrow('桌面应用')
     await expect(setAudioFilterMode('advanced')).rejects.toThrow('桌面应用')
     await expect(setEqualizerPreset('music')).rejects.toThrow('桌面应用')
     await expect(setAudioSpdif(true)).rejects.toThrow('桌面应用')

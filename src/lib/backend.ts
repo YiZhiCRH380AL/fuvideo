@@ -235,6 +235,12 @@ export interface AudioOptions {
   formats: OptionChoice[]
 }
 
+/** 当前播放设备回环的 10 段实时能量，0..1。 */
+export interface AudioSpectrum {
+  frequencies: number[]
+  levels: number[]
+}
+
 /** 简单模式里的三个开关。 */
 export type AudioEffectKind = 'loudness' | 'surround' | 'widening'
 
@@ -553,6 +559,11 @@ export function setAudioExclusive(enabled: boolean): Promise<void> {
 /** 设置页要用的选项表（频点、预设、位深、采样率）。 */
 export function getAudioOptions(): Promise<AudioOptions> {
   return playerCommand<AudioOptions>('audio_options')
+}
+
+/** 读一帧实时音频频谱；首次调用会启动后台 WASAPI 回环。 */
+export function getAudioSpectrum(): Promise<AudioSpectrum> {
+  return playerCommand<AudioSpectrum>('audio_spectrum')
 }
 
 /**

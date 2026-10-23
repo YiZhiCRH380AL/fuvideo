@@ -20,6 +20,7 @@ import {
 import { SPLASH_SPEEDS, speedFor } from '../lib/splash'
 import { normalizeMotion, normalizeTheme, type MotionPreference, type ThemeId } from '../lib/theme'
 import AppearanceSettings from './AppearanceSettings'
+import AudioSpectrum from './AudioSpectrum'
 import VideoSettings from './VideoSettings'
 import ShortcutSettings from './ShortcutSettings'
 import './SettingsPage.css'
@@ -279,6 +280,8 @@ export default function SettingsPage({
                       </button>
                     ))}
                   </div>
+
+                  <AudioSpectrum frequencies={frequencies} active={!passthrough} />
 
                   <div className="settings__bands" data-testid="equalizer-bands">
                     {frequencies.map((hertz, index) => {

@@ -447,6 +447,98 @@
   }
 }
 
+/* ============ 实时音频频谱 ============ */
+
+.spectrum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 11px 12px 9px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(110% 100% at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
+    color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+.spectrum__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.spectrum__head > span {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.spectrum__head > small {
+  color: var(--text-muted);
+  font-size: 8px;
+}
+
+.spectrum__bars {
+  display: grid;
+  height: 94px;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  align-items: end;
+  gap: 5px;
+}
+
+.spectrum__band {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spectrum__bar {
+  width: 100%;
+  height: max(4%, var(--level, 0%));
+  min-height: 4px;
+  border-radius: 5px 5px 2px 2px;
+  background:
+    linear-gradient(180deg, var(--accent-alt), var(--accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 24%, transparent);
+  transform-origin: bottom;
+  transition:
+    height 90ms linear,
+    filter 120ms var(--ease);
+}
+
+.spectrum__band:nth-child(3n + 2) .spectrum__bar {
+  filter: hue-rotate(12deg);
+}
+
+.spectrum__band:nth-child(3n) .spectrum__bar {
+  filter: hue-rotate(24deg);
+}
+
+.spectrum__band small {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .spectrum__bars {
+    height: 76px;
+    gap: 3px;
+  }
+}
+
 /* 新版设置工作台：左侧分区，右侧是一张张可操作的外观/播放设置卡片。 */
 .settings {
   padding: clamp(12px, 2.4vw, 30px);

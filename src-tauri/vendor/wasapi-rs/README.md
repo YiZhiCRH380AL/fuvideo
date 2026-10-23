@@ -1,0 +1,106 @@
+# Wasapi bindings for Rust
+
+The aim of this crate is to provide easy and safe access to the Wasapi API for audio playback and capture. 
+
+The presented API is all safe Rust, but structs and functions closely follow the original Windows API. 
+
+For details on how to use Wasapi, please see [the Windows documentation](https://docs.microsoft.com/en-us/windows/win32/coreaudio/core-audio-interfaces).
+
+## Sponsor: Recall.ai - API for desktop recording
+
+If you’re looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=henquist-wasapi-rs),
+an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
+
+## Supported functionality
+
+The following is a selection of the functionality currently available in the library:
+
+- Audio playback and capture
+- Shared and exclusive modes
+- Event-driven and polled buffering
+- Loopback capture
+- Notifications for volume change, device disconnect etc
+- Notifications when devices are added or removed, or when the default device changes
+- Probing of the sample rates, channel counts and formats a device supports in exclusive mode
+- Reading the capabilities that a driver declares for a device
+- Wrapping an `IAudioClient` that was activated elsewhere, for example through WinRT device
+  enumeration
+- Raw access to the wrapped COM interfaces through `Device::as_immdevice`,
+  `AudioClient::as_iaudioclient` and `Handle::as_handle`, for reaching what the library
+  does not cover
+- …and additional features beyond this list
+
+The sharing modes (shared and exclusive) and timing modes (event-driven and polled) are described in
+the documentation of
+[`AudioClient::initialize_client`](https://docs.rs/wasapi/latest/wasapi/struct.AudioClient.html#method.initialize_client),
+including how to choose between them.
+
+## Interoperability with other Windows APIs
+
+Windows offers many audio APIs, with varying degrees of overlap between them.
+WASAPI, the WinRT classes, DirectSound, the older `waveOut` family and XAudio2 all reach the same
+devices in the end.
+Since Windows Vista the older ones are layered on top of WASAPI instead of reaching the driver
+themselves.
+WinRT is newer and sits on the same stack, with a narrower view of the device.
+This library is built on the MultiMedia API, where a device is an `IMMDevice` endpoint found
+through a `DeviceCollection`.
+It provides no second set of device types for WinRT, on purpose.
+A device found through WinRT has a different id format and carries no `IMMDevice`,
+so the capability probe and the declared data ranges could not work for it.
+
+WinRT is still usable, from the other end.
+The [windows](https://crates.io/crates/windows) crate exposes all of WinRT,
+so enumerate with the `MediaDevice` and `DeviceInformation` classes,
+pass the device path to `ActivateAudioInterfaceAsync`,
+and wrap the interface that comes back with
+[`AudioClient::from_iaudioclient`](https://docs.rs/wasapi/latest/wasapi/struct.AudioClient.html#method.from_iaudioclient).
+The device tests in `tests/device/activation.rs` walk the whole path, completion handler included.
+
+## Tests
+
+The normal test suite needs no audio hardware, and runs with:
+
+```sh
+cargo test
+```
+
+There is also a suite that runs against a real device, in `tests/device/`.
+It plays and records short streams in both sharing modes and both timing modes,
+and checks that the library asks for and delivers data at the rate the format declares.
+It is behind the `device-tests` feature, so a plain `cargo test` neither builds nor runs it:
+
+```sh
+cargo test --features device-tests --test device -- --test-threads=1
+```
+
+A single test thread is required, since a device opened in exclusive mode cannot be shared.
+The tests look for a [VB-Cable](https://vb-audio.com/Cable/) virtual device,
+and print a note and pass if it is not installed.
+Set `WASAPI_REQUIRE_DEVICE` to turn those skips into failures, which is what CI does.
+
+## Minimum supported Rust version
+
+The library requires Rust 1.85, and uses edition 2024.
+
+The `record_application` example needs Rust 1.88, since it depends on `sysinfo`.
+This also applies to `cargo test`, which builds all examples.
+
+## Included examples
+
+| Example                    | Description                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `playsine`                 | Plays a sine wave in shared mode on the default output device.                                         |
+| `playsine_events`          | Similar to `playsine` but also listens to notifications.                                               |
+| `playsine_poll`            | Similar to `playsine` but uses polling instead of event driven timing mode.                            |
+| `playnoise_exclusive`      | Plays white noise in exclusive mode on the default output device. Shows how to handle HRESULT errors.  |
+| `playnoise_exclusive_poll` | Similar to `playnoise_exclusive` but uses polling instead of event driven timing mode.                 |
+| `loopback`                 | Shows how to simultaneously capture and render sound, with separate threads for capture and render.    |
+| `record`                   | Records audio from the default device, and saves the raw samples to a file.                            |
+| `devices`                  | Lists all available audio devices and displays the default devices.                                    |
+| `processes`                | Lists all audio devices and the processes that are using them, with the peak level of each session.    |
+| `record_application`       | Records audio from a single application, and saves the raw samples to a file. Needs Rust 1.88.         |
+| `aec`                      | Captures audio with Acoustic Echo Cancellation (AEC) enabled and saves the raw data to a file.         |
+| `device_notifications`     | Listens for devices being added, removed or changed, and for changes of the default device.            |
+| `capabilities`             | Lists the formats a single output device supports in exclusive mode.                                   |
+| `dataranges`               | Checks the capabilities every driver declares against what its device really accepts.                  |

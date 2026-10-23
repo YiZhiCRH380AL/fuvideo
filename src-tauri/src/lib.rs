@@ -7,6 +7,7 @@ mod mpv;
 mod recent;
 mod sample;
 mod settings;
+mod spectrum;
 mod thumbnail;
 mod video;
 
@@ -40,6 +41,7 @@ fn restore_window(window: &tauri::WebviewWindow, stored: &settings::Settings) {
 pub fn run() {
   let app = tauri::Builder::default()
     .manage(mpv::PlayerState::default())
+    .manage(spectrum::SpectrumState::default())
     .manage(thumbnail::ThumbnailState::default())
     .setup(|app| {
       // 安装包里自带 mpv 的话优先用它，用户不用再单独装
@@ -170,6 +172,7 @@ pub fn run() {
       mpv::set_screenshot_format,
       mpv::set_screenshot_subtitles,
       mpv::take_screenshot,
+      spectrum::audio_spectrum,
       mpv::toggle_fullscreen,
       settings::read_settings,
       settings::write_settings,

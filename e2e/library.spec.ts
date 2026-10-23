@@ -102,6 +102,30 @@ async function installFakeTauri(
               }
             case 'read_settings':
               return { lastDirectory }
+            case 'set_audio_filter_mode':
+              return { lastDirectory, audioFilterMode: args.mode }
+            case 'audio_options':
+              return {
+                frequencies: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+                gainLimit: 12,
+                modes: [
+                  { id: 'simple', label: '简单' },
+                  { id: 'advanced', label: '高级' },
+                ],
+                presets: [
+                  { id: 'off', label: '关闭' },
+                  { id: 'flat', label: '平坦' },
+                  { id: 'music', label: '音乐' },
+                ],
+                samplerates: [
+                  { id: 'source', label: '跟随源' },
+                  { id: '48000', label: '48000 Hz' },
+                ],
+                formats: [
+                  { id: 'source', label: '跟随源' },
+                  { id: 'float', label: '32 位浮点' },
+                ],
+              }
             case 'pick_directory':
               return clips
             case 'prepare_sample_folder':
@@ -138,6 +162,11 @@ async function installFakeTauri(
                 speed: 1,
                 buffering: false,
                 idleActive: playingPath === null,
+              }
+            case 'audio_spectrum':
+              return {
+                frequencies: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+                levels: [0.2, 0.35, 0.5, 0.75, 0.65, 0.9, 0.55, 0.4, 0.3, 0.18],
               }
             case 'read_collections':
               return copyCollections()
@@ -378,6 +407,66 @@ test('记住上次目录时也先显示首页封面，品牌字标可以随时�
   await expect(page.getByTestId('video-grid')).toHaveCount(0)
 })
 
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 760, height: 600 },
+  { width: 560, height: 500 },
+]) {
+  test(`首页海报舞台随 ${viewport.width}px 视口自适应且不跳位`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await installFakeTauri(page)
+    await page.goto('/')
+    await waitForBoot(page)
+
+    const stage = page.locator('.library__hero-stage')
+    const front = page.locator('.library__poster--front')
+    await expect(stage).toBeVisible()
+
+    const first = await front.boundingBox()
+    await page.waitForTimeout(500)
+    const second = await front.boundingBox()
+    const geometry = await page.evaluate(() => {
+      const stageNode = document.querySelector('.library__hero-stage') as HTMLElement
+      const frontNode = document.querySelector('.library__poster--front') as HTMLElement
+      const orbit = document.querySelector('.library__orbit') as HTMLElement
+      const headline = document.querySelector('.library__headline') as HTMLElement
+      const bar = document.querySelector('.app__bar') as HTMLElement
+      const stageRect = stageNode.getBoundingClientRect()
+      const frontRect = frontNode.getBoundingClientRect()
+
+      return {
+        stage: {
+          left: stageRect.left,
+          right: stageRect.right,
+          center: stageRect.left + stageRect.width / 2,
+          transform: getComputedStyle(stageNode).transform,
+        },
+        frontCenter: frontRect.left + frontRect.width / 2,
+        orbitWidth: orbit.offsetWidth,
+        headlineTop: headline.getBoundingClientRect().top,
+        lineTops: Array.from(headline.children).map(
+          (line) => line.getBoundingClientRect().top,
+        ),
+        barBottom: bar.getBoundingClientRect().bottom,
+      }
+    })
+
+    expect(first).not.toBeNull()
+    expect(second).not.toBeNull()
+    expect(Math.abs((second!.x + second!.width / 2) - (first!.x + first!.width / 2))).toBeLessThan(2)
+    expect(Math.abs(second!.y - first!.y)).toBeLessThan(22)
+    expect(geometry.stage.left).toBeGreaterThanOrEqual(-0.5)
+    expect(geometry.stage.right).toBeLessThanOrEqual(viewport.width + 0.5)
+    expect(geometry.stage.transform).toBe('none')
+    expect(Math.abs(geometry.frontCenter - geometry.stage.center)).toBeLessThan(8)
+    expect(geometry.orbitWidth).toBeLessThanOrEqual(geometry.stage.right - geometry.stage.left)
+    expect(geometry.headlineTop).toBeGreaterThanOrEqual(-0.5)
+    expect(Math.min(...geometry.lineTops)).toBeGreaterThanOrEqual(geometry.barBottom - 0.5)
+
+    await page.screenshot({ path: `test-results/shots/home-${viewport.width}.png` })
+  })
+}
+
 test('播放页片库抽屉可从缩略图加入播放列表和多个收藏夹', async ({ page }) => {
   await installFakeTauri(page)
   await page.goto('/')
@@ -575,12 +664,16 @@ test('教程能带着用户真的走一遍：看示例 → 点方格播放', asy
   await page.getByRole('button', { name: '看示例视频' }).click()
 
   // 示例目录打开之后自己翻页，方格墙也出来了
+  await expect(tutorial).toContainText('左侧栏是你的控制台')
+  await page.getByRole('button', { name: '下一步' }).click()
   await expect(tutorial).toContainText('点一格，放大播放')
   await expect(page.getByTestId('video-grid')).toBeVisible()
 
   // 第二步：真的点一格，播放起来之后自动进第三步
   await page.locator('.tile').first().click()
 
+  await expect(tutorial).toContainText('右边缘打开播放片库')
+  await page.getByRole('button', { name: '下一步' }).click()
   await expect(tutorial).toContainText('底部的灵动岛')
   await expect(page.getByTestId('island')).toBeVisible()
   // 打光框跟到灵动岛上，而不是留在上一屏的位置
@@ -823,6 +916,14 @@ test('播放工具面板：五块内容都在，且不撑出窗口', async ({ pa
   const panel = page.getByTestId('playback-tools')
   await expect(panel).toBeVisible()
 
+  const toolsLayout = await panel.evaluate((node) => ({
+    columns: getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length,
+    recentWidth: node.querySelector('.tools__block--recent')?.getBoundingClientRect().width ?? 0,
+    totalWidth: node.getBoundingClientRect().width,
+  }))
+  expect(toolsLayout.columns).toBe(2)
+  expect(toolsLayout.recentWidth).toBeGreaterThan(toolsLayout.totalWidth * 0.85)
+
   // 转场幕布 520ms 后自己撤掉；不撤的话整屏看着都是暗的
   await expect(page.getByTestId('curtain')).toHaveCount(0, { timeout: 2000 })
 
@@ -846,6 +947,29 @@ test('播放工具面板：五块内容都在，且不撑出窗口', async ({ pa
   // 等动画都停下来再截图，否则拍到的是半透明的一帧
   await page.waitForTimeout(600)
   await page.screenshot({ path: 'test-results/shots/playback-tools.png' })
+})
+
+test('高级音效显示跟随播放设备的实时频谱', async ({ page }) => {
+  await installFakeTauri(page)
+  await page.goto('/')
+  await waitForBoot(page)
+
+  await expandAppSidebar(page)
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置' })
+  await expect(settings).toBeVisible()
+
+  const modes = settings.getByRole('group', { name: '音效模式' })
+  await modes.getByRole('button', { name: '高级' }).click()
+
+  const spectrum = settings.getByTestId('audio-spectrum')
+  await expect(spectrum).toBeVisible()
+  await expect(spectrum.getByRole('img', { name: '实时音频频谱' })).toBeVisible()
+  await expect(spectrum.locator('.spectrum__bar')).toHaveCount(10)
+  await expect(spectrum).toContainText('跟随播放设备')
+
+  await page.waitForTimeout(260)
+  await page.screenshot({ path: 'test-results/shots/settings-spectrum.png' })
 })
 
 /** 方格墙的搜索与排序：只改怎么摆，不动目录本身。 */

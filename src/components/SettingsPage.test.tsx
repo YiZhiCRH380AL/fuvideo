@@ -73,6 +73,7 @@ const mocks = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   readSettings: vi.fn(),
   getAudioOptions: vi.fn(),
+  getAudioSpectrum: vi.fn(),
   setAudioFilterMode: vi.fn(),
   setAudioEffect: vi.fn(),
   setEqualizerPreset: vi.fn(),
@@ -96,6 +97,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../lib/backend', () => ({
   readSettings: () => mocks.readSettings(),
   getAudioOptions: () => mocks.getAudioOptions(),
+  getAudioSpectrum: () => mocks.getAudioSpectrum(),
   setAudioFilterMode: (mode: string) => mocks.setAudioFilterMode(mode),
   setAudioEffect: (kind: AudioEffectKind, enabled: boolean) => mocks.setAudioEffect(kind, enabled),
   setEqualizerPreset: (preset: string) => mocks.setEqualizerPreset(preset),
@@ -213,6 +215,10 @@ const bandList = () => within(screen.getByTestId('equalizer-bands'))
 beforeEach(() => {
   mocks.settings = baseSettings() as unknown as Record<string, unknown>
   mocks.getAudioOptions.mockResolvedValue(OPTIONS)
+  mocks.getAudioSpectrum.mockResolvedValue({
+    frequencies: OPTIONS.frequencies,
+    levels: OPTIONS.frequencies.map((_, index) => (index + 1) / OPTIONS.frequencies.length),
+  })
   mocks.getVideoOptions.mockResolvedValue(VIDEO_OPTIONS)
   mocks.getPlayerDetails.mockResolvedValue({ hwdecCurrent: 'd3d11va' })
   mocks.takeScreenshot.mockResolvedValue(String.raw`E:\clips\demo 截图.jpg`)
@@ -220,6 +226,7 @@ beforeEach(() => {
   for (const fn of [
     mocks.readSettings,
     mocks.getAudioOptions,
+    mocks.getAudioSpectrum,
     mocks.setAudioFilterMode,
     mocks.setAudioEffect,
     mocks.setEqualizerPreset,
@@ -289,6 +296,10 @@ describe('设置页 · 高级模式', () => {
     renderPage()
 
     expect(await screen.findByTestId('equalizer-bands')).toBeInTheDocument()
+    expect(await screen.findByTestId('audio-spectrum')).toBeInTheDocument()
+    expect(document.querySelectorAll('.spectrum__bar')).toHaveLength(
+      OPTIONS.frequencies.length,
+    )
     expect(bandList().getAllByRole('slider')).toHaveLength(OPTIONS.frequencies.length)
     expect(screen.getByRole('button', { name: '音乐' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /采样率/ })).toBeInTheDocument()

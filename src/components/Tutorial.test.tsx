@@ -88,7 +88,7 @@ describe('交互教程', () => {
 
     view.rerender(<Tutorial onClose={vi.fn()} progress={{ ...NOTHING, hasDirectory: true }} />)
 
-    await waitFor(() => expect(screen.getByText('点一格，放大播放')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('左侧栏是你的控制台')).toBeInTheDocument())
   })
 
   it('重新打开教程时，已经做到过的步骤不再拦人', async () => {
@@ -119,7 +119,7 @@ describe('交互教程', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '跳过这步' }))
 
-    await waitFor(() => expect(screen.getByText('点一格，放大播放')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('左侧栏是你的控制台')).toBeInTheDocument())
   })
 
   /**
@@ -152,13 +152,15 @@ describe('交互教程', () => {
     view.rerender(
       <Tutorial onClose={vi.fn()} progress={{ ...NOTHING, hasDirectory: true, hasVideos: true }} />,
     )
-    await waitFor(() => expect(screen.getByText('点一格，放大播放')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('左侧栏是你的控制台')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.getByText('点一格，放大播放')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '等你操作' })).toBeDisabled()
 
-    // 视频放起来了 → 第三步不用动手，按钮就能点
+    // 视频放起来了 → 进入片库入口说明，不用动手也能继续
     view.rerender(<Tutorial onClose={vi.fn()} progress={PLAYING} />)
 
-    await waitFor(() => expect(screen.getByText('底部的灵动岛')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('右边缘打开播放片库')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled()
   })
 
@@ -199,11 +201,14 @@ describe('交互教程', () => {
 
     await goToLastStep()
 
-    // 最后一步是快捷键，往前退两步分别是设置页和音轨字幕
+    // 最后一步是快捷键，往前依次是设置、整理入口和音轨字幕
     await userEvent.click(screen.getByRole('button', { name: '上一步' }))
     expect(screen.getByText('左侧栏是设置')).toBeInTheDocument()
     // 正文里也提到了「均衡器」，这里断言只属于功能点那一行的文字
     expect(screen.getByText(/10 段均衡器/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '上一步' }))
+    expect(screen.getByText('整理与播放工具分工')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '上一步' }))
     expect(screen.getByText('音轨、字幕在这里换')).toBeInTheDocument()

@@ -2358,6 +2358,7 @@ export default function App() {
         <button
           className="playback-side-tab"
           type="button"
+          data-tutorial="playback-library"
           onClick={() => {
             setOpenPanel(null)
             setPlaybackLibraryOpen(true)

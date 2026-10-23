@@ -40,14 +40,23 @@ test('首次进入的教程是交互式的，走过一次不再弹', async ({ pa
   await expect(page.getByTestId('tutorial-spotlight')).toBeVisible()
   await page.getByRole('button', { name: '跳过这步' }).click()
 
+  await expect(tutorial).toContainText('左侧栏是你的控制台')
+  await page.getByRole('button', { name: '下一步' }).click()
+
   await expect(tutorial).toContainText('点一格，放大播放')
   await page.getByRole('button', { name: '跳过这步' }).click()
+
+  await expect(tutorial).toContainText('右边缘打开播放片库')
+  await page.getByRole('button', { name: '下一步' }).click()
 
   await expect(tutorial).toContainText('底部的灵动岛')
   await page.getByRole('button', { name: '下一步' }).click()
 
   await expect(tutorial).toContainText('音轨、字幕在这里换')
   await expect(tutorial).toContainText('加载字幕文件')
+  await page.getByRole('button', { name: '下一步' }).click()
+
+  await expect(tutorial).toContainText('整理与播放工具分工')
   await page.getByRole('button', { name: '下一步' }).click()
 
   await expect(tutorial).toContainText('左侧栏是设置')

@@ -282,7 +282,7 @@ export default function PlaybackTools({
 
   return (
     <div className="tools" data-testid="playback-tools">
-      <section className="tools__block">
+      <section className="tools__block tools__block--wide tools__block--recent">
         <div className="tools__head">
           <h4 className="tools__title">最近播放</h4>
 
@@ -328,7 +328,7 @@ export default function PlaybackTools({
         )}
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--chapters">
         <h4 className="tools__title">章节</h4>
 
         {chapters.length === 0 ? (
@@ -355,7 +355,7 @@ export default function PlaybackTools({
         )}
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--bookmarks">
         <div className="tools__head">
           <h4 className="tools__title">书签</h4>
 
@@ -401,7 +401,7 @@ export default function PlaybackTools({
         )}
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--loop">
         <h4 className="tools__title">AB 循环</h4>
         <p className="tools__hint">
           A 点 {loop.a === null ? '未设' : formatDuration(loop.a)} · B 点{' '}
@@ -426,7 +426,7 @@ export default function PlaybackTools({
         </div>
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--timer">
         <h4 className="tools__title">定时</h4>
 
         <div className="tools__row" role="group" aria-label="定时时长">
@@ -475,7 +475,7 @@ export default function PlaybackTools({
         </p>
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--window">
         <h4 className="tools__title">窗口</h4>
 
         <label className="tools__toggle">
@@ -489,7 +489,7 @@ export default function PlaybackTools({
         </label>
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--address">
         <h4 className="tools__title">打开地址</h4>
 
         <form
@@ -524,7 +524,7 @@ export default function PlaybackTools({
         ) : null}
       </section>
 
-      <section className="tools__block">
+      <section className="tools__block tools__block--wide tools__block--devices">
         <div className="tools__head">
           <h4 className="tools__title">输入设备</h4>
 
