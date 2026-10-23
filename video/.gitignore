@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Render output
+out/
+dist/
+build/
+
+# Remotion cache / bundle artifacts
+.remotion/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

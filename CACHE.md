@@ -1857,3 +1857,41 @@ e2e 覆盖「打开面板时界面不会隐去」。
 1. 设置入口形态：以抽屉面板为主，还是以右键菜单为主？这决定信息架构，也决定它像不像 PotPlayer。
 2. 是否引入网络能力（yt-dlp / 在线字幕）：会带来外部依赖与包体增长。
 3. 「输入设备」到底指什么：采集卡当播放源、麦克风监听、还是录屏？三条路径的实现完全不同。
+
+## 当前阶段：FutureVideo 2 分 30 秒介绍视频（已完成，2026-10-24）
+
+先在 GitHub 检索并实装了 MIT 许可的
+`AleBrito124356/remotion-video-templates`，保留原许可证与第三方声明，
+再基于模板新增独立的 `FutureVideoIntro` Remotion 合成：
+
+- 源项目位于 `video/`，入口是 `video/src/intro/FutureVideoIntro.tsx`，
+  时间线与文案在 `video/src/intro/timeline.ts`。
+- 1920x1080、30fps、4500 帧（150 秒），8 个场景，信息只保留片库、播放预览、
+  收藏夹、播放工具、音轨字幕、主题与最终 CTA，避免堆功能。
+- 使用 `test-results/shots/` 里的真实界面截图，不复用模板占位产品。
+- `By IkariShinji` 水印由独立顶层组件持续覆盖全部场景与转场。
+- 配乐由 `video/scripts/generate-soundtrack.mjs` 离线确定性生成，
+  不依赖第三方歌曲；成片含 AAC 立体声音轨。
+- 成片：`video/out/futurevideo-intro.mp4`（25.7 MB，SHA-256
+  `341E25FC098F0121ED06DEB886003B506BC7D4FFEA8D15EE973BAC4C5FEA82A3`）。
+
+相关测试：
+
+- `video/test/timeline.test.mjs`：5 项通过，覆盖 120–180 秒时长、转场帧数、
+  场景 id、真实截图存在性、水印与核心功能文案、150 秒音轨。
+- `video`：`npm run typecheck`、`npm test` 通过；无头 Chrome 抽取 7 个关键帧检查；
+  `ffprobe` 确认 H.264 / 1920x1080 / 30fps / 150.016 秒 / AAC 48kHz 双声道。
+- 主项目：`npm run typecheck`、`npm run lint`、`npm run test:run`（280 项）、
+  `npm run build`、`npm run test:e2e`（33 项）、`cargo test`（154 项）全部通过。
+
+### 请用户验证
+
+- 从 Windows 媒体播放器中从头播放成片，确认环境垫乐音量与画面观感合适。
+- 在目标发布平台预览一次 1080p 压缩效果，确认小字号界面截图仍可辨认。
+- 如需更正式的版本，可再提供真实演示录屏与口播稿音频，替换当前静态截图和无口播版本。
+
+### 下一个阶段
+
+1. 根据用户对成片的反馈调整文案节奏、配乐音量或镜头停留时长。
+2. 若有干净、无版权风险的实机演示录屏，可把片库与播放段落替换为短视频素材。
+3. 用户拍板后再决定是否增加中文口播、字幕与 60fps 版本；默认不自行升版本或发布 Release。

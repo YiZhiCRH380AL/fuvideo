@@ -1,0 +1,37 @@
+{
+  "name": "fuvideo-intro",
+  "version": "0.3.0",
+  "description": "FutureVideo 0.3.0 Alpha two-and-a-half minute introduction video, built with Remotion.",
+  "license": "MIT",
+  "author": "Alejandro Brito",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "soundtrack": "node scripts/generate-soundtrack.mjs",
+    "test": "node --test test/*.test.mjs",
+    "studio": "remotion studio",
+    "render": "remotion render",
+    "render:intro": "remotion render FutureVideoIntro out/futurevideo-intro.mp4",
+    "still": "remotion still",
+    "compositions": "remotion compositions",
+    "upgrade": "remotion upgrade",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.538",
+    "@remotion/media": "^4.0.538",
+    "@remotion/transitions": "^4.0.538",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "^4.0.538",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "typescript": "5.5.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
