@@ -10,9 +10,9 @@
   统一改为 **0.3.0-Alpha**；Cargo.lock 由离线 `cargo check` 更新。
 - `RELEASE_NOTES.md` 改为 0.3.0-Alpha 当前发布说明，并保留 0.2.0 历史内容。
 - 新增 [VIDEO_INTRODUCTION.md](VIDEO_INTRODUCTION.md)：
-  - 90 秒逐镜头主脚本、口播与屏幕字幕；
-  - 30 秒短视频分镜；
-  - 封面文案、可引用截图、录制准备和隐私/版权注意事项。
+  - 按 11 个功能模块概括产品能力；
+  - 只列建议展示页面和操作顺序；
+  - 保留录制素材准备、隐私/版权注意事项和当前限制。
 
 ### 验证与产物
 
@@ -27,7 +27,7 @@
 
 ### 下一步
 
-- 用户审阅 [VIDEO_INTRODUCTION.md](VIDEO_INTRODUCTION.md) 的口播和分镜；
+- 用户审阅 [VIDEO_INTRODUCTION.md](VIDEO_INTRODUCTION.md) 的功能分类和展示顺序；
 - 需要公开发布时再创建 GitHub Release，本轮只打包，不自动建 Release。
 
 ## 上一阶段：首页滚动条与侧栏排版微调（已完成，待真机确认）
