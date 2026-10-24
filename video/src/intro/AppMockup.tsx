@@ -2592,13 +2592,13 @@ const ReleaseVisual: React.FC<{
           opacity: linkIn,
         }}
       >
-        github.com/YiZhiCRH380AL/fuvideo · Windows 10 / 11
+        Windows 10 / 11 · 完全本地
       </div>
     </div>
   );
 };
 
-const VisualContent: React.FC<{
+export const AppVisual: React.FC<{
   visual: IntroVisual;
   accent: string;
   accentAlt: string;
@@ -2642,7 +2642,7 @@ export const AppMockup: React.FC<{
     accent={accent}
     progress={progress}
   >
-    <VisualContent
+    <AppVisual
       visual={visual}
       accent={accent}
       accentAlt={accentAlt}

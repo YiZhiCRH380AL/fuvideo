@@ -2,7 +2,53 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
-## 当前阶段：0.3.0-Alpha 发布包与视频介绍（进行中）
+## 当前阶段：0.3.0-Alpha 84 秒程序化介绍视频（已完成）
+
+### 已完成
+
+- [video/src/intro/timeline.ts](video/src/intro/timeline.ts) 将 8 个场景压缩为
+  **84 秒 / 2520 帧**，每场采用独立布局：英雄页、画布、影院、轨道、马赛克、
+  声波、调色盘与结尾页。
+- [video/src/intro/FutureVideoIntro.tsx](video/src/intro/FutureVideoIntro.tsx)
+  重做分层入场、动态光标、转场与文案排版，使用 blur-slide、cross-zoom、
+  linear-blur、dreamy-zoom 等代码驱动转场；全部动画由 `useCurrentFrame()` 驱动。
+- [video/src/intro/AppMockup.tsx](video/src/intro/AppMockup.tsx) 直接复用代码绘制的
+  应用界面，没有加载或嵌入原始 PNG 截图；结尾不再显示 GitHub 地址。
+- 环境垫乐随 84 秒时间线重新生成，`package.json` / `package-lock.json` 的
+  Node 要求更新为 **22.18+**，避免直接导入 TypeScript 时间线时出现版本歧义。
+- [video/test/timeline.test.mjs](video/test/timeline.test.mjs) 新增包元数据与
+  README 时长一致性断言，防止文档回退到旧的 150 秒版本。
+
+### 验证与产物
+
+- 视频测试 **9/9**、根项目 Vitest **280/280** 全部通过。
+- 根项目与视频目录的 TypeScript 检查、根项目生产构建均通过；lint 退出成功，
+  仍有 9 条与本轮无关的既有 React effect 警告。
+- 成片：[video/out/futurevideo-intro.mp4](video/out/futurevideo-intro.mp4)，
+  18,996,045 bytes，SHA256
+  `AC7FDE8708E5CFF0D26B04DB5DA4853D5095070EE3BEB6AAAE2D5247AEE9FDC7`。
+- 媒体规格：H.264 1920x1080 / 30fps，84.011 秒；AAC 48kHz 双声道，
+  实测音频非静音，峰值约 -12.28 dBTP。
+- 视觉检查只生成一次低分辨率 JPEG 拼图：
+  `video/out/intro-contact-sheet.jpg`（1280x360，8 个场景各取一帧），
+  各场景完整、版式互不重复，未发现明显黑帧或文字越界。
+- 全程使用无界面 Chrome 渲染，没有启动 Remotion Studio 或主程序窗口。
+
+### 请用户验证
+
+- 用实际播放器完整看一遍成片，重点确认 8 个场景的转场节奏、文字可读性与
+  84 秒整体时长是否符合发布/社交平台需要。
+- 在目标扬声器或耳机上确认环境垫乐音量；当前是较低音量的背景氛围，
+  若希望人声/旁白版本可另做混音。
+- 在最终发布尺寸下确认结尾「已发布预览版，详情见视频简介」与实际发布说明一致。
+
+### 下一步
+
+1. 成片体积较大且 `video/out/` 已忽略；如需公开下载，发布时优先作为
+   GitHub Release 附件上传。
+2. 若发布渠道需要高帧率版本，再以 60fps 单独渲染；当前 30fps 已满足信息型介绍视频。
+
+## 上一阶段：0.3.0-Alpha 发布包与视频介绍（已完成）
 
 ### 已完成
 

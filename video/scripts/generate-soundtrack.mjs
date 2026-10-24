@@ -2,8 +2,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { INTRO_DURATION_IN_SECONDS } from "../src/intro/timeline.ts";
+
 const sampleRate = 22050;
-const durationSeconds = 150;
+const durationSeconds = INTRO_DURATION_IN_SECONDS;
 const totalSamples = sampleRate * durationSeconds;
 const samples = new Float32Array(totalSamples);
 

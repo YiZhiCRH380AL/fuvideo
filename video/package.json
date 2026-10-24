@@ -1,7 +1,7 @@
 {
   "name": "fuvideo-intro",
   "version": "0.3.0",
-  "description": "FutureVideo 0.3.0 Alpha two-and-a-half minute introduction video, built with Remotion.",
+  "description": "FutureVideo 0.3.0 Alpha 84-second introduction video, built with Remotion.",
   "license": "MIT",
   "author": "Alejandro Brito",
   "private": true,
@@ -32,6 +32,6 @@
     "typescript": "5.5.4"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.18.0"
   }
 }

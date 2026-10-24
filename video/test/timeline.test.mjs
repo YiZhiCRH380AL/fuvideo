@@ -17,12 +17,24 @@ import {
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("intro runs between two and three minutes", () => {
+test("intro uses a flexible short-form duration", () => {
   assert.equal(INTRO_FPS, 30);
-  assert.equal(INTRO_DURATION_IN_FRAMES, 4500);
-  assert.equal(INTRO_DURATION_IN_SECONDS, 150);
-  assert.ok(INTRO_DURATION_IN_SECONDS >= 120);
-  assert.ok(INTRO_DURATION_IN_SECONDS <= 180);
+  assert.equal(INTRO_DURATION_IN_FRAMES, 2520);
+  assert.equal(INTRO_DURATION_IN_SECONDS, 84);
+  assert.ok(INTRO_DURATION_IN_SECONDS >= 60);
+  assert.ok(INTRO_DURATION_IN_SECONDS <= 120);
+});
+
+test("package metadata and usage notes match the rendered duration", () => {
+  const packageJson = JSON.parse(
+    readFileSync(join(projectRoot, "package.json"), "utf8"),
+  );
+  const readme = readFileSync(join(projectRoot, "README.md"), "utf8");
+
+  assert.match(packageJson.description, /84-second introduction video/);
+  assert.equal(packageJson.engines.node, ">=22.18.0");
+  assert.match(readme, /1920x1080，30fps，84 秒/);
+  assert.doesNotMatch(readme, /150 秒|2 分 30 秒/);
 });
 
 test("spring transitions match the calculated timeline", () => {
@@ -32,7 +44,7 @@ test("spring transitions match the calculated timeline", () => {
   );
 
   assert.equal(INTRO_TRANSITION_COUNT, INTRO_SCENES.length - 1);
-  assert.equal(TRANSITION_DURATION_IN_FRAMES, 18);
+  assert.equal(TRANSITION_DURATION_IN_FRAMES, 24);
   assert.equal(
     sceneFrames - INTRO_TRANSITION_COUNT * TRANSITION_DURATION_IN_FRAMES,
     INTRO_DURATION_IN_FRAMES,
@@ -42,6 +54,7 @@ test("spring transitions match the calculated timeline", () => {
 test("scene identifiers and motion visuals are unique", () => {
   const ids = new Set();
   const visuals = new Set();
+  const layouts = new Set();
 
   for (const scene of INTRO_SCENES) {
     assert.equal(ids.has(scene.id), false, `duplicate scene id: ${scene.id}`);
@@ -52,6 +65,12 @@ test("scene identifiers and motion visuals are unique", () => {
     );
     ids.add(scene.id);
     visuals.add(scene.visual);
+    assert.equal(
+      layouts.has(scene.layout),
+      false,
+      `duplicate layout: ${scene.layout}`,
+    );
+    layouts.add(scene.layout);
     assert.ok(scene.durationInFrames > 0);
     assert.ok(scene.points.length > 0);
   }
@@ -88,6 +107,7 @@ test("watermark and ending release notice are exact", () => {
   const outro = INTRO_SCENES.find((scene) => scene.kind === "outro");
   assert.ok(outro);
   assert.equal(outro.releaseNotice, RELEASE_NOTICE);
+  assert.ok(outro.points.every((point) => !/github|https?:|\.com/i.test(point)));
 });
 
 test("the edit covers the documented product features", () => {

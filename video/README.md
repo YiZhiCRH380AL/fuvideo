@@ -6,7 +6,7 @@
 
 ## 规格
 
-- 1920x1080，30fps，150 秒（2 分 30 秒）
+- 1920x1080，30fps，84 秒
 - 8 个场景，全部为代码绘制的应用界面动效，不使用界面截图
 - 弹簧转场、分层入场、动态光标、进度预览、频谱与主题换色
 - 持续显示 `By IkariShinji` 水印
@@ -16,6 +16,7 @@
 ## 本地命令
 
 ```powershell
+# 需要 Node.js 22.18+（测试与配乐脚本直接读取 TypeScript 时间线）
 npm install
 npm run soundtrack
 npm test
