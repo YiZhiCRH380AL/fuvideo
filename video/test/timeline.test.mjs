@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -10,6 +10,7 @@ import {
   INTRO_FPS,
   INTRO_SCENES,
   INTRO_TRANSITION_COUNT,
+  RELEASE_NOTICE,
   TRANSITION_DURATION_IN_FRAMES,
   WATERMARK_TEXT,
 } from "../src/intro/timeline.ts";
@@ -24,44 +25,72 @@ test("intro runs between two and three minutes", () => {
   assert.ok(INTRO_DURATION_IN_SECONDS <= 180);
 });
 
-test("transition arithmetic matches the calculated timeline", () => {
+test("spring transitions match the calculated timeline", () => {
   const sceneFrames = INTRO_SCENES.reduce(
     (total, scene) => total + scene.durationInFrames,
     0,
   );
 
   assert.equal(INTRO_TRANSITION_COUNT, INTRO_SCENES.length - 1);
+  assert.equal(TRANSITION_DURATION_IN_FRAMES, 18);
   assert.equal(
     sceneFrames - INTRO_TRANSITION_COUNT * TRANSITION_DURATION_IN_FRAMES,
     INTRO_DURATION_IN_FRAMES,
   );
 });
 
-test("scene identifiers and screenshots are present and unique", () => {
+test("scene identifiers and motion visuals are unique", () => {
   const ids = new Set();
+  const visuals = new Set();
 
   for (const scene of INTRO_SCENES) {
     assert.equal(ids.has(scene.id), false, `duplicate scene id: ${scene.id}`);
+    assert.equal(
+      visuals.has(scene.visual),
+      false,
+      `duplicate visual: ${scene.visual}`,
+    );
     ids.add(scene.id);
+    visuals.add(scene.visual);
     assert.ok(scene.durationInFrames > 0);
     assert.ok(scene.points.length > 0);
-    assert.ok(
-      existsSync(join(projectRoot, "public", scene.screenshot)),
-      `missing screenshot: ${scene.screenshot}`,
-    );
-
-    if (scene.secondaryScreenshot !== undefined) {
-      assert.ok(
-        existsSync(join(projectRoot, "public", scene.secondaryScreenshot)),
-        `missing secondary screenshot: ${scene.secondaryScreenshot}`,
-      );
-    }
   }
 });
 
-test("watermark is exact and the edit covers the documented product features", () => {
-  assert.equal(WATERMARK_TEXT, "By IkariShinji");
+test("the video uses code-native UI instead of image screenshots", () => {
+  const publicFiles = readdirSync(join(projectRoot, "public"), {
+    recursive: true,
+  });
+  const images = publicFiles.filter((file) =>
+    [".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"].includes(
+      extname(String(file)).toLowerCase(),
+    ),
+  );
 
+  assert.deepEqual(images, []);
+});
+
+test("all visible motion stays Remotion-frame driven", () => {
+  for (const source of [
+    "src/intro/FutureVideoIntro.tsx",
+    "src/intro/AppMockup.tsx",
+  ]) {
+    const contents = readFileSync(join(projectRoot, source), "utf8");
+    assert.doesNotMatch(contents, /\b(?:animation|transition)\s*:/);
+    assert.match(contents, /useCurrentFrame/);
+  }
+});
+
+test("watermark and ending release notice are exact", () => {
+  assert.equal(WATERMARK_TEXT, "By IkariShinji");
+  assert.equal(RELEASE_NOTICE, "已发布预览版，详情见视频简介");
+
+  const outro = INTRO_SCENES.find((scene) => scene.kind === "outro");
+  assert.ok(outro);
+  assert.equal(outro.releaseNotice, RELEASE_NOTICE);
+});
+
+test("the edit covers the documented product features", () => {
   const copy = INTRO_SCENES.map(
     (scene) => `${scene.title} ${scene.description} ${scene.points.join(" ")}`,
   ).join(" ");
@@ -86,7 +115,6 @@ test("generated ambient soundtrack spans the full video", () => {
     "audio",
     "futurevideo-ambient.wav",
   );
-  assert.ok(existsSync(audioPath), "run `npm run soundtrack` first");
 
   const wav = readFileSync(audioPath);
   const sampleRate = wav.readUInt32LE(24);

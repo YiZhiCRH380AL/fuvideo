@@ -1,7 +1,8 @@
 # FutureVideo 0.3.0-Alpha 视频介绍文档
 
 > **已生成版本（2026-10-24）：** 按用户要求制作了 2 分 30 秒、
-> 1920x1080、30fps 的 Remotion 成片，持续显示 `By IkariShinji` 水印。
+> 1920x1080、30fps 的 Remotion 成片；全部界面由代码绘制并带动画，
+> 不使用界面截图，持续显示 `By IkariShinji` 水印，结尾带有预览版发布提示。
 > 浏览器播放器源码在 [`video/`](video/README.md)，本地输出为
 > `video/out/futurevideo-intro.mp4`。下文保留为录制脚本与素材准备参考。
 

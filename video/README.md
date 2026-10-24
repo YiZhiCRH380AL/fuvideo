@@ -7,7 +7,10 @@
 ## 规格
 
 - 1920x1080，30fps，150 秒（2 分 30 秒）
-- 8 个场景，真实界面截图，持续显示 `By IkariShinji` 水印
+- 8 个场景，全部为代码绘制的应用界面动效，不使用界面截图
+- 弹簧转场、分层入场、动态光标、进度预览、频谱与主题换色
+- 持续显示 `By IkariShinji` 水印
+- 结尾显示「已发布预览版，详情见视频简介」
 - H.264 + AAC 成片，内置离线生成的原创环境垫乐
 
 ## 本地命令
@@ -30,5 +33,6 @@ npx remotion render FutureVideoIntro out/futurevideo-intro.mp4 `
 
 - 文案与镜头时长：`src/intro/timeline.ts`
 - 画面、动画和水印：`src/intro/FutureVideoIntro.tsx`
+- 程序化应用界面：`src/intro/AppMockup.tsx`
 - 配乐生成：`scripts/generate-soundtrack.mjs`
 - 时间线与水印测试：`test/timeline.test.mjs`
