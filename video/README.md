@@ -6,9 +6,11 @@
 
 ## 规格
 
-- 1920x1080，30fps，84 秒
+- 1920x1080，30fps，84 秒，120 BPM 节拍网格
 - 8 个场景，全部为代码绘制的应用界面动效，不使用界面截图
-- 弹簧转场、分层入场、动态光标、进度预览、频谱与主题换色
+- 真实中缝播放三角图标、嵌入式 Noto Sans SC 中文字体子集
+- 全程推镜、过冲入场、快速切场、动态光标、进度预览、频谱与主题换色
+- 原创 120 BPM 电子节拍配乐，场景切点与半拍网格对齐
 - 持续显示 `By IkariShinji` 水印
 - 结尾显示「已发布预览版，详情见视频简介」
 - H.264 + AAC 成片，内置离线生成的原创环境垫乐
@@ -35,5 +37,6 @@ npx remotion render FutureVideoIntro out/futurevideo-intro.mp4 `
 - 文案与镜头时长：`src/intro/timeline.ts`
 - 画面、动画和水印：`src/intro/FutureVideoIntro.tsx`
 - 程序化应用界面：`src/intro/AppMockup.tsx`
+- 品牌图标：`src/intro/BrandMark.tsx`
 - 配乐生成：`scripts/generate-soundtrack.mjs`
 - 时间线与水印测试：`test/timeline.test.mjs`

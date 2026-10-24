@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   AbsoluteFill,
+  continueRender,
+  delayRender,
   Easing,
   interpolate,
   random,
@@ -20,6 +22,7 @@ import { linearBlur } from "@remotion/transitions/linear-blur";
 import { Audio } from "@remotion/media";
 
 import { AppVisual } from "./AppMockup";
+import { BrandMark } from "./BrandMark";
 import type { FutureVideoIntroProps } from "./config";
 import {
   INTRO_SCENES,
@@ -29,9 +32,38 @@ import {
 } from "./timeline";
 
 const SANS =
-  '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif';
+  '"FutureVideo Sans", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif';
 const DISPLAY =
-  '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
+  '"FutureVideo Sans", "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif';
+
+const useEmbeddedFont = () => {
+  const [renderHandle] = useState(() =>
+    delayRender("Waiting for FutureVideo Sans"),
+  );
+
+  useEffect(() => {
+    let alive = true;
+    const font = new FontFace(
+      "FutureVideo Sans",
+      `url("${staticFile("fonts/FutureVideoSans.ttf")}") format("truetype")`,
+      { weight: "400", display: "block" },
+    );
+
+    font
+      .load()
+      .then((loaded) => {
+        if (alive) {
+          document.fonts.add(loaded);
+        }
+      })
+      .catch(() => null)
+      .finally(() => continueRender(renderHandle));
+
+    return () => {
+      alive = false;
+    };
+  }, [renderHandle]);
+};
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -47,42 +79,9 @@ const reveal = (
   spring({
     frame: Math.max(0, frame - delay),
     fps,
-    config: { damping: 200, stiffness: 135, mass: 0.72 },
+    config: { damping: 16, stiffness: 190, mass: 0.72 },
     durationInFrames: duration,
   });
-
-const BrandGlyph: React.FC<{ size: number; accent: string }> = ({
-  size,
-  accent,
-}) => (
-  <div
-    style={{
-      position: "relative",
-      width: size,
-      height: size,
-      flex: `0 0 ${size}px`,
-      borderRadius: size * 0.29,
-      background: `linear-gradient(145deg, ${accent}, #6ce5e8)`,
-      boxShadow: `0 0 40px ${accent}55`,
-      overflow: "hidden",
-    }}
-  >
-    {[0.31, 0.5, 0.69].map((position, index) => (
-      <span
-        key={position}
-        style={{
-          position: "absolute",
-          left: size * position,
-          top: size * (index === 1 ? 0.24 : 0.34),
-          width: size * 0.065,
-          height: size * (index === 1 ? 0.52 : 0.32),
-          borderRadius: 99,
-          background: "rgba(255,255,255,0.94)",
-        }}
-      />
-    ))}
-  </div>
-);
 
 const Particles: React.FC<{ accent: string; accentAlt: string }> = ({
   accent,
@@ -92,31 +91,28 @@ const Particles: React.FC<{ accent: string; accentAlt: string }> = ({
 
   return (
     <AbsoluteFill>
-      {Array.from({ length: 32 }, (_, index) => {
+      {Array.from({ length: 20 }, (_, index) => {
         const baseX = random(`particle-x-${index}`) * 1920;
         const baseY = random(`particle-y-${index}`) * 1080;
-        const speed = 0.2 + random(`particle-speed-${index}`) * 0.7;
-        const size = 1.3 + random(`particle-size-${index}`) * 3.4;
-        const drift =
-          Math.sin(frame / (40 + index * 1.7) + index) * (8 + speed * 10);
-        const lift = ((frame * speed + index * 41) % 180) - 90;
-        const opacity =
-          0.1 +
-          Math.abs(Math.sin(frame / (48 + index * 2) + index * 0.8)) * 0.36;
+        const speed = 4 + random(`particle-speed-${index}`) * 13;
+        const length = 34 + random(`particle-size-${index}`) * 92;
+        const travel = ((frame * speed + index * 71) % 460) - 230;
+        const opacity = 0.08 + (index % 5) * 0.025;
 
         return (
           <span
             key={index}
             style={{
               position: "absolute",
-              left: baseX + drift,
-              top: baseY + lift,
-              width: size,
-              height: size,
-              borderRadius: "50%",
+              left: baseX - travel * 0.38,
+              top: baseY + travel,
+              width: length,
+              height: 1.4,
+              borderRadius: 99,
               background: index % 3 === 0 ? accentAlt : accent,
-              boxShadow: `0 0 ${size * 3.4}px ${index % 3 === 0 ? accentAlt : accent}`,
+              boxShadow: `0 0 12px ${index % 3 === 0 ? accentAlt : accent}`,
               opacity,
+              transform: "rotate(22deg)",
             }}
           />
         );
@@ -204,6 +200,47 @@ const PaletteField: React.FC = () => {
   );
 };
 
+const KineticBeams: React.FC<{
+  accent: string;
+  accentAlt: string;
+}> = ({ accent, accentAlt }) => {
+  const frame = useCurrentFrame();
+
+  return (
+    <AbsoluteFill style={{ overflow: "hidden", pointerEvents: "none" }}>
+      {[0, 1, 2].map((index) => {
+        const left = ((frame * (8 + index * 3) + index * 670) % 2380) - 320;
+        return (
+          <div
+            key={index}
+            style={{
+              position: "absolute",
+              top: -160,
+              left,
+              width: 170 + index * 45,
+              height: 1500,
+              transform: `rotate(${17 + index * 2}deg)`,
+              background: `linear-gradient(to right, transparent, ${index % 2 === 0 ? accent : accentAlt}${index === 1 ? "20" : "13"}, transparent)`,
+              filter: "blur(3px)",
+            }}
+          />
+        );
+      })}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: `${10 + ((frame * 0.55) % 100)}%`,
+          height: 1,
+          background: `linear-gradient(90deg, transparent, ${accentAlt}32, transparent)`,
+          boxShadow: `0 0 20px ${accentAlt}24`,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
 const SceneBackdrop: React.FC<{
   scene: IntroScene;
   progress: number;
@@ -236,6 +273,7 @@ const SceneBackdrop: React.FC<{
           backgroundImage:
             "linear-gradient(rgba(124,156,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(124,156,255,0.1) 1px, transparent 1px)",
           backgroundSize: "74px 74px",
+          backgroundPosition: `${frame * 0.72}px ${frame * 0.36}px`,
           maskImage:
             "linear-gradient(to bottom, transparent 0%, black 23%, black 78%, transparent 100%)",
         }}
@@ -273,6 +311,7 @@ const SceneBackdrop: React.FC<{
       ) : null}
       {scene.layout === "palette" ? <PaletteField /> : null}
 
+      <KineticBeams accent={scene.accent} accentAlt={scene.accentAlt} />
       <Particles accent={scene.accent} accentAlt={scene.accentAlt} />
 
       <div
@@ -291,7 +330,7 @@ const SceneBackdrop: React.FC<{
 
 const HeaderBrand: React.FC<{ accent: string }> = ({ accent }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-    <BrandGlyph size={44} accent={accent} />
+    <BrandMark size={44} accent={accent} />
     <div>
       <div
         style={{
@@ -340,6 +379,7 @@ const AnimatedTitle: React.FC<{
     >
       {title.split("\n").map((line, index) => {
         const entrance = reveal(frame, fps, 7 + index * 5, 30);
+        const side = index % 2 === 0 ? -1 : 1;
         return (
           <div
             key={`${line}-${index}`}
@@ -348,7 +388,9 @@ const AnimatedTitle: React.FC<{
             <div
               style={{
                 opacity: entrance,
-                transform: `translateY(${(1 - entrance) * 112}%)`,
+                filter: `blur(${(1 - entrance) * 8}px)`,
+                transform: `translateX(${(1 - entrance) * side * 54}px) translateY(${(1 - entrance) * 112}%) scale(${1.08 - entrance * 0.08})`,
+                transformOrigin: "left center",
               }}
             >
               {line}
@@ -467,7 +509,8 @@ const Description: React.FC<{
         fontSize: size,
         lineHeight: 1.58,
         opacity: entrance,
-        transform: `translateY(${(1 - entrance) * 14}px)`,
+        filter: `blur(${(1 - entrance) * 3}px)`,
+        transform: `translateY(${(1 - entrance) * 26}px)`,
       }}
     >
       {text}
@@ -502,14 +545,15 @@ const FloatingTag: React.FC<{
 }> = ({ label, value, accent, left, top, delay, align = "left" }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const entrance = reveal(frame, fps, delay, 25);
-  const bob = Math.sin((frame + delay * 5) / 28) * 3;
+  const entrance = reveal(frame, fps, delay, 28);
+  const bob = Math.sin((frame + delay * 5) / 24) * 7;
+  const drift = Math.cos((frame + delay * 4) / 31) * 8;
 
   return (
     <div
       style={{
         position: "absolute",
-        left,
+        left: left + drift,
         top,
         minWidth: 190,
         padding: "13px 15px",
@@ -519,7 +563,7 @@ const FloatingTag: React.FC<{
         boxShadow: `0 18px 48px rgba(0,0,0,0.32), 0 0 30px ${accent}10`,
         backdropFilter: "blur(10px)",
         opacity: entrance,
-        transform: `translateY(${(1 - entrance) * 18 + bob}px)`,
+        transform: `translateY(${(1 - entrance) * 46 + bob}px) translateX(${(1 - entrance) * (align === "right" ? 34 : -34)}px) scale(${0.88 + entrance * 0.12})`,
         textAlign: align,
       }}
     >
@@ -558,6 +602,7 @@ const StageFrame: React.FC<{
   height: number;
   rotateY?: number;
   delay?: number;
+  contentScale?: number;
 }> = ({
   scene,
   progress,
@@ -567,32 +612,39 @@ const StageFrame: React.FC<{
   height,
   rotateY = -1.5,
   delay = 0,
+  contentScale = 1.08,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const entrance = reveal(frame, fps, delay, 30);
-  const float = Math.sin((frame + delay * 2) / 42) * 3;
-  const camera = interpolate(progress, [0, 1], [1.018, 1], {
+  const entrance = reveal(frame, fps, delay, 34);
+  const float = Math.sin((frame + delay * 2) / 38) * 6;
+  const sway = Math.cos((frame + delay * 3) / 46) * 7;
+  const camera = interpolate(progress, [0, 1], [1.13, 1.014], {
     ...clamp,
     easing: Easing.inOut(Easing.cubic),
   });
+  const rotateX = interpolate(progress, [0, 0.35], [9, -0.5], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const sheen = interpolate(frame % 120, [0, 120], [-40, 140]);
+  const pulse = 0.34 + Math.sin((frame + delay) / 14) * 0.08;
 
   return (
     <div
       style={{
         position: "absolute",
-        left,
+        left: left + sway,
         top: top + float,
         width,
         height,
         opacity: entrance,
-        transform: `translateY(${(1 - entrance) * 34}px) perspective(1800px) rotateY(${rotateY}deg) scale(${camera})`,
+        transform: `translateY(${(1 - entrance) * 96}px) perspective(1800px) rotateY(${rotateY}deg) rotateX(${rotateX}deg) scale(${(0.86 + entrance * 0.14) * camera})`,
         transformOrigin: "center",
         borderRadius: 26,
-        border: "1px solid rgba(173,190,255,0.28)",
+        border: `1px solid ${scene.accent}${frame < 24 ? "9a" : "48"}`,
         background: "rgba(7,11,23,0.97)",
-        boxShadow:
-          "0 48px 120px rgba(0,0,0,0.6), 0 0 65px rgba(108,229,232,0.08)",
+        boxShadow: `0 58px 150px rgba(0,0,0,0.7), 0 0 ${100 + pulse * 100}px ${scene.accent}${frame < 24 ? "30" : "16"}`,
         overflow: "hidden",
       }}
     >
@@ -651,12 +703,41 @@ const StageFrame: React.FC<{
           ALPHA
         </span>
       </div>
-      <div style={{ height: "calc(100% - 44px)" }}>
-        <AppVisual
-          visual={scene.visual}
-          accent={scene.accent}
-          accentAlt={scene.accentAlt}
-          releaseNotice={scene.releaseNotice}
+      <div
+        style={{
+          height: "calc(100% - 44px)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            transform: `scale(${contentScale})`,
+            transformOrigin: "center",
+          }}
+        >
+          <AppVisual
+            visual={scene.visual}
+            accent={scene.accent}
+            accentAlt={scene.accentAlt}
+            releaseNotice={scene.releaseNotice}
+          />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: -160,
+            bottom: -160,
+            left: `${sheen}%`,
+            width: 90,
+            transform: "rotate(15deg)",
+            background:
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)",
+            opacity: 0.48,
+            pointerEvents: "none",
+          }}
         />
       </div>
     </div>
@@ -754,6 +835,7 @@ const CanvasLayout: React.FC<{ scene: IntroScene; progress: number }> = ({
         height={760}
         rotateY={-0.8}
         delay={8}
+        contentScale={1.16}
       />
       <FloatingTag
         label="AUTO SCAN"
@@ -875,7 +957,7 @@ const OrbitLayout: React.FC<{ scene: IntroScene; progress: number }> = ({
         delay={5}
       />
       {[
-        ["快速收藏", "★", 0],
+        ["快速收藏", "快", 0],
         ["夜晚", "01", 2.1],
         ["纪录片笔记", "02", 4.2],
       ].map(([label, icon, phase], index) => {
@@ -1109,7 +1191,7 @@ const EndLayout: React.FC<{ scene: IntroScene; progress: number }> = ({
           opacity: logoIn,
         }}
       >
-        <BrandGlyph size={112} accent={scene.accent} />
+        <BrandMark size={112} accent={scene.accent} />
       </div>
       <div
         style={{
@@ -1209,21 +1291,127 @@ const SceneBody: React.FC<{ scene: IntroScene; progress: number }> = ({
   }
 };
 
+const SceneImpact: React.FC<{
+  accent: string;
+  accentAlt: string;
+}> = ({ accent, accentAlt }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const flash = interpolate(frame, [0, 3, 13], [0.72, 0.42, 0], clamp);
+  const slash = interpolate(frame, [0, 18], [-22, 118], {
+    ...clamp,
+    easing: Easing.out(Easing.cubic),
+  });
+  const lock = spring({
+    frame,
+    fps,
+    config: { damping: 16, stiffness: 220, mass: 0.6 },
+    durationInFrames: 18,
+  });
+
+  return (
+    <AbsoluteFill style={{ pointerEvents: "none", overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: flash,
+          background: `radial-gradient(circle at ${30 + slash * 0.4}% 48%, ${accentAlt}70, ${accent}24 24%, transparent 62%)`,
+          mixBlendMode: "screen",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: `${slash}%`,
+          top: -220,
+          width: 120,
+          height: 1520,
+          transform: `rotate(18deg) scaleY(${0.72 + lock * 0.28})`,
+          background: `linear-gradient(90deg, transparent, ${accentAlt}3d, transparent)`,
+          filter: "blur(5px)",
+        }}
+      />
+      {[0, 1].map((index) => (
+        <div
+          key={index}
+          style={{
+            position: "absolute",
+            left: index === 0 ? 0 : "auto",
+            right: index === 0 ? "auto" : 0,
+            top: 38 + index * 18,
+            width: 110 + index * 55,
+            height: 3,
+            background:
+              index === 0
+                ? `linear-gradient(90deg, ${accent}, transparent)`
+                : `linear-gradient(90deg, transparent, ${accentAlt})`,
+            opacity: (1 - flash) * 0.7,
+          }}
+        />
+      ))}
+    </AbsoluteFill>
+  );
+};
+
 const Scene: React.FC<{
   scene: IntroScene;
   index: number;
 }> = ({ scene, index }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, fps } = useVideoConfig();
   const progress = interpolate(frame, [0, durationInFrames], [0, 1], {
     ...clamp,
     easing: Easing.inOut(Easing.cubic),
   });
+  const cameraScale = interpolate(progress, [0, 1], [1.025, 1.075], {
+    ...clamp,
+    easing: Easing.inOut(Easing.sin),
+  });
+  const cameraX = Math.sin(frame / 27 + index) * 9;
+  const cameraY = Math.cos(frame / 35 + index * 0.7) * 7;
+  const rail = spring({
+    frame,
+    fps,
+    config: { damping: 18, stiffness: 170 },
+    durationInFrames: 24,
+  });
 
   return (
     <AbsoluteFill style={{ fontFamily: SANS }}>
-      <SceneBackdrop scene={scene} progress={progress} />
-      <SceneBody scene={scene} progress={progress} />
+      <div
+        style={{
+          position: "absolute",
+          inset: -35,
+          transform: `translate(${cameraX * 0.42}px, ${cameraY * 0.42}px) scale(${cameraScale})`,
+        }}
+      >
+        <SceneBackdrop scene={scene} progress={progress} />
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          transform: `translate(${cameraX}px, ${cameraY}px) scale(${1 + progress * 0.018})`,
+          transformOrigin: "center",
+        }}
+      >
+        <SceneBody scene={scene} progress={progress} />
+      </div>
+      <SceneImpact accent={scene.accent} accentAlt={scene.accentAlt} />
+      <div
+        style={{
+          position: "absolute",
+          right: 70,
+          top: 48,
+          width: 124,
+          height: 3,
+          transformOrigin: "right",
+          transform: `scaleX(${rail})`,
+          background: `linear-gradient(90deg, transparent, ${scene.accentAlt})`,
+          boxShadow: `0 0 18px ${scene.accentAlt}80`,
+        }}
+      />
       <div
         style={{
           position: "absolute",
@@ -1310,34 +1498,36 @@ const Watermark: React.FC<{ text: string }> = ({ text }) => {
 
 const transitionFor = (index: number) => {
   if (index === 1) {
-    return blurSlide({ direction: "from-right", blur: 18 });
+    return blurSlide({ direction: "from-right", blur: 28 });
   }
   if (index === 2) {
-    return crossZoom({ strength: 0.72 });
+    return crossZoom({ strength: 1.08 });
   }
   if (index === 3) {
-    return linearBlur({ intensity: 0.11 });
+    return linearBlur({ intensity: 0.2 });
   }
   if (index === 4) {
-    return blurSlide({ direction: "from-bottom", blur: 14 });
+    return blurSlide({ direction: "from-bottom", blur: 24 });
   }
   if (index === 5) {
-    return crossZoom({ strength: 0.58 });
+    return crossZoom({ strength: 0.94 });
   }
   if (index === 6) {
-    return blurSlide({ direction: "from-left", blur: 20 });
+    return blurSlide({ direction: "from-left", blur: 30 });
   }
-  return dreamyZoom({ rotation: 3, scale: 1.08 });
+  return dreamyZoom({ rotation: 5, scale: 1.16 });
 };
 
 export const FutureVideoIntro: React.FC<FutureVideoIntroProps> = ({
   watermark,
 }) => {
+  useEmbeddedFont();
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#040711" }}>
       <Audio
         src={staticFile("audio/futurevideo-ambient.wav")}
-        volume={0.42}
+        volume={0.9}
       />
 
       <TransitionSeries>
@@ -1350,7 +1540,7 @@ export const FutureVideoIntro: React.FC<FutureVideoIntroProps> = ({
                 key={`transition-${scene.id}`}
                 presentation={transitionFor(index)}
                 timing={springTiming({
-                  config: { damping: 200 },
+                  config: { damping: 15, stiffness: 180 },
                   durationInFrames: TRANSITION_DURATION_IN_FRAMES,
                 })}
               />,

@@ -8,11 +8,13 @@ import {
   useVideoConfig,
 } from "remotion";
 
+import { BrandMark } from "./BrandMark";
 import type { IntroVisual } from "./timeline";
 
 const UI_FONT =
-  '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif';
-const DISPLAY_FONT = '"Segoe UI", "Microsoft YaHei UI", sans-serif';
+  '"FutureVideo Sans", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif';
+const DISPLAY_FONT =
+  '"FutureVideo Sans", "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif';
 
 const clamp = {
   extrapolateLeft: "clamp" as const,
@@ -28,7 +30,7 @@ const reveal = (
   spring({
     frame: Math.max(0, frame - delay),
     fps,
-    config: { damping: 200, stiffness: 130, mass: 0.75 },
+    config: { damping: 18, stiffness: 190, mass: 0.72 },
     durationInFrames: duration,
   });
 
@@ -132,7 +134,7 @@ const Cursor: React.FC<{
             border: "1px solid rgba(255,255,255,0.16)",
             color: "rgba(255,255,255,0.7)",
             fontFamily: UI_FONT,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: 600,
             letterSpacing: 0.4,
           }}
@@ -160,6 +162,63 @@ const StatusDot: React.FC<{ color: string; size?: number }> = ({
     }}
   />
 );
+
+const TransportGlyph: React.FC<{
+  kind: "pause" | "back" | "play" | "volume" | "fullscreen";
+  color: string;
+  size?: number;
+}> = ({ kind, color, size = 15 }) => {
+  if (kind === "pause") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="4" y="3" width="2.4" height="10" rx="1" fill={color} />
+        <rect x="9.6" y="3" width="2.4" height="10" rx="1" fill={color} />
+      </svg>
+    );
+  }
+  if (kind === "play") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M4 3.2v9.6L13 8 4 3.2Z" fill={color} />
+      </svg>
+    );
+  }
+  if (kind === "back") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M7.8 3.4 2.8 8l5 4.6V9.8c2.8 0 4.6.8 5.7 2.4-.2-3.7-2-5.6-5.7-5.6V3.4Z"
+          fill={color}
+        />
+      </svg>
+    );
+  }
+  if (kind === "volume") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2 6h3l3-2.5v9L5 10H2V6Z" fill={color} />
+        <path
+          d="M10 5.4c2.1 1.2 2.1 4 0 5.2M11.8 3.8c3.4 2.2 3.4 6.2 0 8.4"
+          fill="none"
+          stroke={color}
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+};
 
 const FolderIcon: React.FC<{ color: string; active?: boolean }> = ({
   color,
@@ -219,7 +278,7 @@ const Sidebar: React.FC<{
           marginBottom: 16,
         }}
       >
-        <BrandGlyph size={30} accent={accent} />
+        <BrandMark size={30} accent={accent} />
         <div>
           <div
             style={{
@@ -266,7 +325,7 @@ const Sidebar: React.FC<{
               background: selected ? `${accent}1d` : "transparent",
               color: selected ? "#eff3ff" : "rgba(211,220,245,0.48)",
               fontFamily: UI_FONT,
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: selected ? 600 : 500,
               opacity: itemIn,
               transform: `translateX(${(1 - itemIn) * -12}px)`,
@@ -305,7 +364,7 @@ const Sidebar: React.FC<{
               borderRadius: 9,
               color: "rgba(224,231,250,0.62)",
               fontFamily: UI_FONT,
-              fontSize: 10,
+              fontSize: 11,
               opacity: itemIn,
               transform: `translateX(${(1 - itemIn) * -16}px)`,
             }}
@@ -318,39 +377,6 @@ const Sidebar: React.FC<{
     </div>
   );
 };
-
-const BrandGlyph: React.FC<{ size: number; accent: string }> = ({
-  size,
-  accent,
-}) => (
-  <div
-    style={{
-      position: "relative",
-      width: size,
-      height: size,
-      flex: `0 0 ${size}px`,
-      borderRadius: size * 0.28,
-      background: `linear-gradient(145deg, ${accent}, #6ce5e8)`,
-      boxShadow: `0 0 26px ${accent}55`,
-      overflow: "hidden",
-    }}
-  >
-    {[0.31, 0.5, 0.69].map((position, index) => (
-      <span
-        key={position}
-        style={{
-          position: "absolute",
-          left: size * position,
-          top: size * (index === 1 ? 0.25 : 0.34),
-          width: size * 0.07,
-          height: size * (index === 1 ? 0.5 : 0.32),
-          borderRadius: 99,
-          background: "rgba(255,255,255,0.9)",
-        }}
-      />
-    ))}
-  </div>
-);
 
 const WindowChrome: React.FC<{
   accent: string;
@@ -408,7 +434,7 @@ const WindowChrome: React.FC<{
         letterSpacing: 0.7,
       }}
     >
-      <span style={{ fontSize: 8 }}>◇</span>
+      <span style={{ fontSize: 8, opacity: 0.5 }}>+</span>
       {path}
     </div>
     <div
@@ -535,7 +561,7 @@ const VideoCard: React.FC<{
     >
       <div
         style={{
-          height: 126,
+          height: 136,
           borderRadius: 13,
           border: active
             ? `1px solid ${accent}90`
@@ -547,7 +573,7 @@ const VideoCard: React.FC<{
       >
         <div
           style={{
-            height: 96,
+            height: 104,
             position: "relative",
             overflow: "hidden",
             background: `radial-gradient(circle at ${62 + index * 3}% 40%, ${accent}${index % 2 === 0 ? "66" : "45"} 0%, ${accentAlt}22 38%, rgba(7,11,23,0.2) 72%)`,
@@ -600,7 +626,7 @@ const VideoCard: React.FC<{
         </div>
         <div
           style={{
-            height: 30,
+            height: 32,
             padding: "0 10px",
             display: "flex",
             alignItems: "center",
@@ -615,7 +641,7 @@ const VideoCard: React.FC<{
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               fontFamily: UI_FONT,
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 600,
               color: "rgba(235,240,255,0.8)",
             }}
@@ -626,7 +652,7 @@ const VideoCard: React.FC<{
             style={{
               flex: "0 0 auto",
               fontFamily: UI_FONT,
-              fontSize: 7,
+              fontSize: 9,
               color: "rgba(208,220,255,0.35)",
             }}
           >
@@ -724,7 +750,7 @@ const LaunchVisual: React.FC<{ accent: string; accentAlt: string }> = ({
               fontWeight: 700,
             }}
           >
-            选择目录 ↗
+            选择目录
           </div>
           <div
             style={{
@@ -738,6 +764,31 @@ const LaunchVisual: React.FC<{ accent: string; accentAlt: string }> = ({
           >
             查看示例视频
           </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 7,
+            marginTop: 18,
+            opacity: button,
+          }}
+        >
+          {["本地视频", "网络流", "摄像头"].map((source) => (
+            <span
+              key={source}
+              style={{
+                padding: "6px 9px",
+                borderRadius: 7,
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(255,255,255,0.025)",
+                color: "rgba(226,233,250,0.5)",
+                fontFamily: UI_FONT,
+                fontSize: 9,
+              }}
+            >
+              {source}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -814,6 +865,13 @@ const LibraryVisual: React.FC<{ accent: string; accentAlt: string }> = ({
   const { fps } = useVideoConfig();
   const searchIn = reveal(frame, fps, 40, 30);
   const scan = interpolate(frame, [90, 260], [0, 1], clamp);
+  const dropIn = spring({
+    frame,
+    fps,
+    config: { damping: 14, stiffness: 190, mass: 0.7 },
+    durationInFrames: 24,
+  });
+  const dropGone = interpolate(frame, [58, 82], [1, 0], clamp);
   const cursorX = move(frame, [
     { at: 60, value: 440 },
     { at: 160, value: 720 },
@@ -836,7 +894,31 @@ const LibraryVisual: React.FC<{ accent: string; accentAlt: string }> = ({
   return (
     <div style={{ height: "100%", display: "flex" }}>
       <Sidebar frame={frame} fps={fps} accent={accent} />
-      <div style={{ flex: 1, padding: "25px 28px", minWidth: 0 }}>
+      <div style={{ flex: 1, padding: "25px 28px", minWidth: 0, position: "relative" }}>
+        <div
+          style={{
+            position: "absolute",
+            right: 30,
+            top: 74,
+            zIndex: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 11,
+            padding: "12px 16px",
+            borderRadius: 12,
+            border: `1px solid ${accentAlt}66`,
+            background: "rgba(9,16,31,0.94)",
+            boxShadow: `0 20px 45px rgba(0,0,0,0.42), 0 0 30px ${accentAlt}18`,
+            opacity: dropIn * dropGone,
+            transform: `translate(${(1 - dropIn) * 240}px, ${(1 - dropIn) * -55}px) rotate(${(1 - dropIn) * 5}deg) scale(${0.88 + dropIn * 0.12})`,
+            fontFamily: UI_FONT,
+            fontSize: 11,
+            color: "rgba(242,247,255,0.9)",
+          }}
+        >
+          <FolderIcon color={accentAlt} active />
+          拖入 D:\Movies · 已找到 12 个视频
+        </div>
         <div
           style={{
             display: "flex",
@@ -881,11 +963,31 @@ const LibraryVisual: React.FC<{ accent: string; accentAlt: string }> = ({
               ...fadeStyle(searchIn, 8),
             }}
           >
-            <span style={{ color: accentAlt, fontSize: 14 }}>⌕</span>
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <circle
+                cx="6.7"
+                cy="6.7"
+                r="4.5"
+                fill="none"
+                stroke={accentAlt}
+                strokeWidth="1.6"
+              />
+              <path
+                d="m10.2 10.2 3.2 3.2"
+                stroke={accentAlt}
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
             <span
               style={{
                 fontFamily: UI_FONT,
-                fontSize: 9,
+                fontSize: 11,
                 color: "rgba(222,230,250,0.4)",
               }}
             >
@@ -901,7 +1003,7 @@ const LibraryVisual: React.FC<{ accent: string; accentAlt: string }> = ({
             gap: 10,
             marginTop: 19,
             fontFamily: UI_FONT,
-            fontSize: 8,
+            fontSize: 10,
             color: "rgba(209,220,247,0.36)",
           }}
         >
@@ -973,13 +1075,13 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
   const previewIn = spring({
     frame: Math.max(0, frame - 115),
     fps,
-    config: { damping: 200, stiffness: 140 },
+    config: { damping: 14, stiffness: 190, mass: 0.72 },
     durationInFrames: 25,
   });
   const preciseIn = spring({
     frame: Math.max(0, frame - 195),
     fps,
-    config: { damping: 200, stiffness: 150 },
+    config: { damping: 13, stiffness: 210, mass: 0.65 },
     durationInFrames: 24,
   });
   const ripple = interpolate(frame, [236, 250], [0, 1], clamp);
@@ -1093,12 +1195,12 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
           style={{
             position: "absolute",
             left: "50%",
-            bottom: 110,
-            width: 172,
-            height: 102,
-            marginLeft: -86,
+            bottom: 112,
+            width: 280,
+            height: 158,
+            marginLeft: -140,
             opacity: previewIn,
-            transform: `translateY(${(1 - previewIn) * 22}px) scale(${0.92 + previewIn * 0.08})`,
+            transform: `translateY(${(1 - previewIn) * 54}px) scale(${0.78 + previewIn * 0.22}) rotate(${(1 - previewIn) * -4}deg)`,
             borderRadius: 13,
             overflow: "hidden",
             border: preciseIn > 0.65
@@ -1106,7 +1208,7 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
               : "1px solid rgba(255,255,255,0.12)",
             background:
               "linear-gradient(135deg, rgba(124,156,255,0.45), rgba(4,8,18,0.94))",
-            boxShadow: "0 18px 38px rgba(0,0,0,0.5)",
+            boxShadow: `0 22px 52px rgba(0,0,0,0.58), 0 0 ${preciseIn * 42}px ${accentAlt}50`,
           }}
         >
           <div
@@ -1122,7 +1224,7 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
               left: 12,
               bottom: 9,
               fontFamily: UI_FONT,
-              fontSize: 15,
+              fontSize: 20,
               fontWeight: 700,
               color: "#f4f7ff",
             }}
@@ -1138,7 +1240,7 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
               borderRadius: 5,
               background: "rgba(4,8,18,0.62)",
               fontFamily: UI_FONT,
-              fontSize: 7,
+              fontSize: 9,
               color: preciseIn > 0.65 ? accentAlt : "rgba(255,255,255,0.42)",
             }}
           >
@@ -1164,9 +1266,9 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
           boxShadow: "0 18px 40px rgba(0,0,0,0.42)",
         }}
       >
-        <span style={{ color: accentAlt, fontSize: 14 }}>Ⅱ</span>
-        <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>◀◀</span>
-        <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>▶</span>
+        <TransportGlyph kind="pause" color={accentAlt} />
+        <TransportGlyph kind="back" color="rgba(255,255,255,0.55)" />
+        <TransportGlyph kind="play" color="rgba(255,255,255,0.55)" />
         <span
           style={{
             marginLeft: 7,
@@ -1187,7 +1289,7 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
         >
           {Math.floor(progress * 140)}s / 140s
         </span>
-        <span style={{ color: "rgba(235,241,255,0.55)", fontSize: 12 }}>◖</span>
+        <TransportGlyph kind="volume" color="rgba(235,241,255,0.55)" />
         <span
           style={{
             padding: "5px 7px",
@@ -1200,7 +1302,7 @@ const PlaybackVisual: React.FC<{ accent: string; accentAlt: string }> = ({
         >
           1x
         </span>
-        <span style={{ color: "rgba(235,241,255,0.46)", fontSize: 11 }}>⛶</span>
+        <TransportGlyph kind="fullscreen" color="rgba(235,241,255,0.46)" />
       </div>
 
       <div
@@ -1270,6 +1372,13 @@ const CollectionsVisual: React.FC<{
     { at: 190, value: 310 },
   ]);
   const selections = [85, 150, 205];
+  const selectedCount = selections.filter((at) => frame >= at).length;
+  const toastIn = spring({
+    frame: Math.max(0, frame - 220),
+    fps,
+    config: { damping: 14, stiffness: 210 },
+    durationInFrames: 22,
+  });
 
   return (
     <div style={{ height: "100%", display: "flex" }}>
@@ -1364,7 +1473,7 @@ const CollectionsVisual: React.FC<{
             选择一个或多个收藏夹
           </div>
           {[
-            ["快速收藏", "★"],
+            ["快速收藏", "快"],
             ["夜晚", "01"],
             ["纪录片笔记", "02"],
           ].map(([label, icon], index) => {
@@ -1435,11 +1544,28 @@ const CollectionsVisual: React.FC<{
                     opacity: selected,
                   }}
                 >
-                  ✓
+                  OK
                 </span>
               </div>
             );
           })}
+          <div
+            style={{
+              marginTop: 10,
+              padding: "9px 11px",
+              borderRadius: 9,
+              background: `${accentAlt}16`,
+              border: `1px solid ${accentAlt}46`,
+              color: accentAlt,
+              fontFamily: UI_FONT,
+              fontSize: 10,
+              fontWeight: 700,
+              opacity: toastIn,
+              transform: `translateY(${(1 - toastIn) * 12}px)`,
+            }}
+          >
+            已加入 {selectedCount} 个收藏夹
+          </div>
         </div>
       </div>
       <Cursor
@@ -1468,7 +1594,7 @@ const SidebarFrame: React.FC<{
     }}
   >
     <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 20 }}>
-      <BrandGlyph size={29} accent={accent} />
+      <BrandMark size={29} accent={accent} />
       <div
         style={{
           fontFamily: DISPLAY_FONT,
@@ -1870,11 +1996,12 @@ const SpectrumBars: React.FC<{ accent: string; accentAlt: string }> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const bars = Array.from({ length: 20 }, (_, index) => {
+  const bars = Array.from({ length: 24 }, (_, index) => {
     const phase = index * 0.67;
     const energy =
-      0.22 +
-      Math.abs(Math.sin(frame / 18 + phase)) * (0.32 + (index % 7) * 0.06);
+      0.18 +
+      Math.abs(Math.sin(frame / (7 + (index % 3)) + phase)) *
+        (0.38 + (index % 7) * 0.075);
     const entrance = reveal(frame, fps, 55 + index * 2, 22);
     return energy * entrance;
   });
@@ -1920,15 +2047,18 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
     ...clamp,
     easing: Easing.out(Easing.cubic),
   });
+  const activeTab = frame >= 170 ? 1 : 0;
   const cursorX = move(frame, [
     { at: 50, value: 680 },
     { at: 115, value: 310 },
-    { at: 230, value: 720 },
+    { at: 185, value: 760 },
+    { at: 260, value: 720 },
   ]);
   const cursorY = move(frame, [
     { at: 50, value: 400 },
     { at: 115, value: 155 },
-    { at: 230, value: 460 },
+    { at: 185, value: 92 },
+    { at: 260, value: 460 },
   ]);
 
   return (
@@ -1946,7 +2076,7 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
             <div
               style={{
                 fontFamily: DISPLAY_FONT,
-                fontSize: 25,
+                fontSize: 28,
                 fontWeight: 700,
                 color: "#f5f7ff",
               }}
@@ -1980,17 +2110,20 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                   padding: "6px 12px",
                   borderRadius: 7,
                   background:
-                    index === 0 ? `${accent}20` : "transparent",
+                    index === activeTab ? `${accent}28` : "transparent",
                   border:
-                    index === 0
-                      ? `1px solid ${accent}42`
+                    index === activeTab
+                      ? `1px solid ${accent}78`
                       : "1px solid transparent",
                   fontFamily: UI_FONT,
                   fontSize: 9,
                   color:
-                    index === 0
+                    index === activeTab
                       ? "rgba(245,248,255,0.88)"
                       : "rgba(220,228,248,0.4)",
+                  transform: `scale(${index === activeTab ? 1.04 : 1})`,
+                  boxShadow:
+                    index === activeTab ? `0 0 18px ${accent}24` : undefined,
                 }}
               >
                 {tab}
@@ -2033,7 +2166,7 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                       opacity: itemIn,
                       transform: `translateX(${(1 - itemIn) * 12}px)`,
                       fontFamily: UI_FONT,
-                      fontSize: 9,
+                      fontSize: 11,
                       color: selected
                         ? "rgba(245,248,255,0.86)"
                         : "rgba(218,226,247,0.47)",
@@ -2046,7 +2179,15 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                     {track}
                     <span style={{ flex: 1 }} />
                     {selected ? (
-                      <span style={{ color: accentAlt, fontSize: 9 }}>●</span>
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: accentAlt,
+                          boxShadow: `0 0 9px ${accentAlt}`,
+                        }}
+                      />
                     ) : null}
                   </div>
                 );
@@ -2073,7 +2214,7 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                 borderRadius: 9,
                 border: "1px solid rgba(255,255,255,0.08)",
                 fontFamily: UI_FONT,
-                fontSize: 9,
+                fontSize: 10,
                 color: "rgba(231,237,253,0.55)",
               }}
             >
@@ -2106,7 +2247,7 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                   left: 15,
                   bottom: 46,
                   fontFamily: UI_FONT,
-                  fontSize: 15,
+                  fontSize: 18,
                   fontWeight: 600,
                   lineHeight: 1.55,
                   color: "#f7f9ff",
@@ -2123,7 +2264,7 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
                   left: 15,
                   bottom: 18,
                   fontFamily: UI_FONT,
-                  fontSize: 10,
+                  fontSize: 12,
                   color: accentAlt,
                   opacity: subtitleTwo,
                   transform: `translateY(${(1 - subtitleTwo) * 8}px)`,
@@ -2154,8 +2295,8 @@ const AudioVisual: React.FC<{ accent: string; accentAlt: string }> = ({
         x={cursorX}
         y={cursorY}
         opacity={interpolate(frame, [48, 65], [0, 1], clamp)}
-        clickFrame={120}
-        label="切换音轨"
+        clickFrame={175}
+        label={activeTab === 0 ? "切换字幕" : "双语字幕"}
       />
     </div>
   );
@@ -2513,7 +2654,7 @@ const ReleaseVisual: React.FC<{
           transform: `translateY(${(1 - logoIn) * 24}px) scale(${0.9 + logoIn * 0.1})`,
         }}
       >
-        <BrandGlyph size={116} accent={accent} />
+        <BrandMark size={116} accent={accent} />
       </div>
       <div
         style={{

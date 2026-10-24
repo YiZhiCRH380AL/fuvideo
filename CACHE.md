@@ -2,7 +2,70 @@
 
 每次改完代码都更新这里：这一段做完了什么、下一步该做什么。
 
-## 当前阶段：0.3.0-Alpha 84 秒程序化介绍视频（已完成）
+## 当前阶段：介绍视频乱码、图标、节奏与配乐重制（已完成）
+
+### 问题与处理
+
+- 中文并非源码编码损坏；主要问题是小字号 UI 文本、装饰字符缺少可靠字形回退，
+  以及错误地用手绘三竖条代替软件图标。现已内嵌 94,956 bytes 的
+  Noto Sans SC 字符子集，使用 `FontFace` + `delayRender` 等字体就绪后渲染；
+  同时移除 ▲、★、◇、● 等不稳定装饰字符，控制图标全部改为 SVG。
+- [BrandMark.tsx](video/src/intro/BrandMark.tsx) 按
+  [src-tauri/icon.svg](src-tauri/icon.svg) 重建官方“中缝播放三角”，不再使用错误的
+  三竖条品牌图形。
+- 镜头改为 120 BPM 半拍网格，转场统一 15 帧；8 个场景的切点全部落在
+  `0 / 6.5 / 17.5 / 29 / 39.5 / 50 / 62 / 72.5` 秒。
+- 场景全程持续推镜和环境漂移，加入过冲入场、冲击闪光、斜向光带、动态扫描线、
+  镜头视差与更快转场；应用内文字、卡片和操作标签整体放大。
+- 内容按软件真实操作重排：拖入目录自动建库、进度条近似帧到精确帧、
+  一个视频多收藏夹、章节/书签/AB 循环/定时、双字幕与多音轨、
+  10 段实时频谱、六套主题与三档动效。
+- 配乐改为原创 120 BPM 电子节拍：16 分音符琶音、四拍底鼓、贝斯、军鼓、踩镲，
+  并在每次场景切换前加入 riser、切点加入冲击音；最终做软压缩，避免只有低频铺底。
+
+### 参考与许可
+
+- 按 AGENTS 要求搜索并下载 MIT 许可的
+  [`smit-vanani/claude-promo-video`](https://github.com/smit-vanani/claude-promo-video)
+  到忽略目录 `tmp/reference-claude-promo`，参考其连续运动、过冲入场、硬切点和
+  节拍锁定原则；没有复制其源码。
+- Noto Sans SC 字体子集使用 SIL Open Font License 1.1，许可证保存在
+  [FutureVideoSans-OFL.txt](video/public/fonts/FutureVideoSans-OFL.txt)；
+  参考来源和许可说明已写入
+  [THIRD_PARTY_NOTICES.md](video/THIRD_PARTY_NOTICES.md)。
+
+### 验证与产物
+
+- 视频测试 **11/11**、根项目 Vitest **280/280** 全部通过；两个目录的
+  TypeScript 检查与根项目生产构建通过。
+- 最新成片：[video/out/futurevideo-intro.mp4](video/out/futurevideo-intro.mp4)，
+  42,783,267 bytes，SHA256
+  `9E9E167880E9D32BE597536D592A64B376380B37954BB0DF4E54FF357A7884F9`。
+- 媒体规格：H.264 1920x1080 / 30fps，84.011 秒；AAC 48kHz 双声道。
+- 成片音频实测整合响度 **-16.82 LUFS**、真实峰值 **-5.27 dBTP**，
+  比旧版约 -25 LUFS 的铺底明显更明亮且有稳定节拍。
+- 画面检查只生成一张 1280x360 JPEG 拼图：
+  `video/out/futurevideo-intro-v2-contact-sheet.jpg`；中文无缺字、图标一致、
+  8 个场景内容完整，未发现明显遮挡或溢出。
+- 旧版成片保留在 `video/out/futurevideo-intro-v1.mp4`，方便回看对比。
+- 全程无界面 Chrome 渲染，没有启动 Remotion Studio 或主程序窗口。
+
+### 请用户验证
+
+- 完整播放新成片，确认 120 BPM 音乐与更快的镜头节奏是否符合预期；
+  若觉得仍然偏慢，可继续缩短场景而不增加新功能。
+- 正式尺寸下确认品牌图标、正文和应用内小标签均清晰；不要再基于 320px 拼图
+  判断字号。
+- 确认配乐响度是否合适。当前已为峰值留约 5.3 dB 余量，优先通过
+  `FutureVideoIntro.tsx` 的 `volume={0.9}` 微调，不要重新压扁动态。
+
+### 下一步
+
+1. 根据用户对节奏和音乐的实际观感做一轮定向微调，优先改时长、转场与音量，
+   保持已验证的故事结构。
+2. 若需要社媒竖版，再基于同一套组件单独注册 1080x1920 composition 并重新排字。
+
+## 上一阶段：0.3.0-Alpha 84 秒程序化介绍视频（已完成）
 
 ### 已完成
 

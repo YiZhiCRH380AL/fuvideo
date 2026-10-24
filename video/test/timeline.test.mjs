@@ -7,8 +7,10 @@ import test from "node:test";
 import {
   INTRO_DURATION_IN_FRAMES,
   INTRO_DURATION_IN_SECONDS,
+  INTRO_BPM,
   INTRO_FPS,
   INTRO_SCENES,
+  INTRO_SCENE_STARTS_IN_FRAMES,
   INTRO_TRANSITION_COUNT,
   RELEASE_NOTICE,
   TRANSITION_DURATION_IN_FRAMES,
@@ -19,6 +21,7 @@ const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("intro uses a flexible short-form duration", () => {
   assert.equal(INTRO_FPS, 30);
+  assert.equal(INTRO_BPM, 120);
   assert.equal(INTRO_DURATION_IN_FRAMES, 2520);
   assert.equal(INTRO_DURATION_IN_SECONDS, 84);
   assert.ok(INTRO_DURATION_IN_SECONDS >= 60);
@@ -44,11 +47,23 @@ test("spring transitions match the calculated timeline", () => {
   );
 
   assert.equal(INTRO_TRANSITION_COUNT, INTRO_SCENES.length - 1);
-  assert.equal(TRANSITION_DURATION_IN_FRAMES, 24);
+  assert.equal(TRANSITION_DURATION_IN_FRAMES, 15);
   assert.equal(
     sceneFrames - INTRO_TRANSITION_COUNT * TRANSITION_DURATION_IN_FRAMES,
     INTRO_DURATION_IN_FRAMES,
   );
+});
+
+test("all scene starts land on the 120 BPM half-beat grid", () => {
+  assert.equal(INTRO_SCENE_STARTS_IN_FRAMES.length, INTRO_SCENES.length);
+  assert.equal(INTRO_SCENE_STARTS_IN_FRAMES[0], 0);
+
+  for (let index = 1; index < INTRO_SCENE_STARTS_IN_FRAMES.length; index += 1) {
+    const previous = INTRO_SCENE_STARTS_IN_FRAMES[index - 1];
+    const current = INTRO_SCENE_STARTS_IN_FRAMES[index];
+    assert.ok(current > previous);
+    assert.equal(current % 15, 0, `scene ${index} is off the beat grid`);
+  }
 });
 
 test("scene identifiers and motion visuals are unique", () => {
@@ -93,10 +108,37 @@ test("all visible motion stays Remotion-frame driven", () => {
   for (const source of [
     "src/intro/FutureVideoIntro.tsx",
     "src/intro/AppMockup.tsx",
+    "src/intro/BrandMark.tsx",
   ]) {
     const contents = readFileSync(join(projectRoot, source), "utf8");
     assert.doesNotMatch(contents, /\b(?:animation|transition)\s*:/);
     assert.match(contents, /useCurrentFrame/);
+  }
+});
+
+test("video uses the official split-play mark and embedded CJK font", () => {
+  const mark = readFileSync(join(projectRoot, "src/intro/BrandMark.tsx"), "utf8");
+  const intro = readFileSync(
+    join(projectRoot, "src/intro/FutureVideoIntro.tsx"),
+    "utf8",
+  );
+  const appMockup = readFileSync(
+    join(projectRoot, "src/intro/AppMockup.tsx"),
+    "utf8",
+  );
+  const font = readFileSync(
+    join(projectRoot, "public/fonts/FutureVideoSans.ttf"),
+  );
+
+  assert.match(mark, /M 378 296 L 506 399/);
+  assert.match(mark, /M 530 418 L 646 512/);
+  assert.match(intro, /FutureVideoSans\.ttf/);
+  assert.match(intro, /document\.fonts\.add/);
+  assert.equal(font.subarray(0, 4).toString("hex"), "00010000");
+  assert.ok(font.length > 50_000);
+
+  for (const source of [mark, intro, appMockup]) {
+    assert.doesNotMatch(source, /[★⚙◇●▶◀◖⛶Ⅱ↗]/);
   }
 });
 
@@ -147,6 +189,20 @@ test("generated ambient soundtrack spans the full video", () => {
   assert.equal(wav.toString("ascii", 0, 4), "RIFF");
   assert.equal(wav.toString("ascii", 8, 12), "WAVE");
   assert.equal(channels, 1);
-  assert.equal(sampleRate, 22050);
+  assert.equal(sampleRate, 32000);
   assert.equal(duration, INTRO_DURATION_IN_SECONDS);
+
+  let squared = 0;
+  let peak = 0;
+  const sampleCount = dataBytes / 2;
+  for (let offset = 44; offset < wav.length; offset += 4) {
+    const sample = wav.readInt16LE(offset);
+    peak = Math.max(peak, Math.abs(sample));
+    squared += sample * sample;
+  }
+
+  const sampledRms = Math.sqrt(squared / Math.ceil(sampleCount / 2));
+  assert.ok(sampledRms > 2500, `soundtrack RMS too quiet: ${sampledRms}`);
+  // The final bus keeps ~3 dB of inter-sample headroom after soft compression.
+  assert.ok(peak > 17_000, `soundtrack peak too quiet: ${peak}`);
 });

@@ -1,9 +1,10 @@
 export const INTRO_FPS = 30;
+export const INTRO_BPM = 120;
 export const INTRO_WIDTH = 1920;
 export const INTRO_HEIGHT = 1080;
 export const WATERMARK_TEXT = "By IkariShinji";
 export const RELEASE_NOTICE = "已发布预览版，详情见视频简介";
-export const TRANSITION_DURATION_IN_FRAMES = 24;
+export const TRANSITION_DURATION_IN_FRAMES = 15;
 
 export type IntroSceneKind = "opening" | "feature" | "outro";
 
@@ -42,21 +43,23 @@ export type IntroScene = {
   durationInFrames: number;
 };
 
-// Eight short product beats total 84 seconds. Each module gets a distinct
-// composition instead of repeating the same left-copy/right-window layout.
+// The edit is locked to a 120 BPM half-beat grid. Every scene duration and
+// transition is a multiple of 15 frames, so each cut lands on a musical pulse.
+// Eight product beats walk through real actions instead of listing features.
 export const INTRO_SCENES = [
   {
     id: "opening",
     kind: "opening",
     visual: "launch",
     layout: "hero",
-    kicker: "FUTUREVIDEO / 0.3.0 ALPHA",
-    title: "把本地片库\n变成私人影院",
-    description: "没有广告，没有推荐流。只留下你真正想看的每一帧。",
-    points: ["完全本地", "开箱即用", "无推荐流"],
+    kicker: "FUTUREVIDEO 0.3.0 / WINDOWS",
+    title: "拖进来\n就是片库",
+    description:
+      "本地文件、网络直链与摄像头，都收进同一块私人屏幕。",
+    points: ["本地 / 网络 / 摄像头", "内置 mpv", "无广告 · 无推荐"],
     accent: "#7c9cff",
     accentAlt: "#6ce5e8",
-    durationInFrames: 240,
+    durationInFrames: 210,
   },
   {
     id: "library",
@@ -64,13 +67,13 @@ export const INTRO_SCENES = [
     visual: "library",
     layout: "canvas",
     kicker: "01 / LIBRARY",
-    title: "一个目录\n就是一座片库",
+    title: "拖入目录\n自动铺成片库",
     description:
-      "子目录、影片与格式标签自动铺成画廊；侧栏悬停展开，移开自动收起。",
-    points: ["子目录自动成片库", "编号 / 格式 / 时长一目了然", "侧栏悬停展开，移开自动收起"],
+      "视频、子文件夹、封面与格式标签自动整理；搜索、排序和侧栏都在这一屏。",
+    points: ["拖放目录", "三列海报墙", "搜索 / 排序 / 侧栏"],
     accent: "#7c9cff",
     accentAlt: "#6ce5e8",
-    durationInFrames: 348,
+    durationInFrames: 345,
   },
   {
     id: "playback",
@@ -78,13 +81,13 @@ export const INTRO_SCENES = [
     visual: "playback",
     layout: "cinema",
     kicker: "02 / PLAYBACK",
-    title: "点开即播\n每一帧都跟得上",
+    title: "拖动进度\n先有画面，再对准帧",
     description:
-      "点开即播；拖动进度先看近似缩略图，再替换成当前位置的精确帧。",
-    points: ["即时缩略图预览", "精确帧替换", "双击画面跳转 10 秒"],
+      "悬停进度条先看近似缩略图，抓取完成立即换成当前时间点的精确帧。",
+    points: ["≈ 近似缩略图", "精确帧替换", "双击前后跳 10 秒"],
     accent: "#6ce5e8",
     accentAlt: "#7c9cff",
-    durationInFrames: 348,
+    durationInFrames: 360,
   },
   {
     id: "collections",
@@ -92,13 +95,13 @@ export const INTRO_SCENES = [
     visual: "collections",
     layout: "orbit",
     kicker: "03 / COLLECTIONS",
-    title: "收藏不必\n塞进同一个盒子",
+    title: "一个视频\n放进多个收藏夹",
     description:
-      "快速收藏之外，还能建立多个命名收藏夹。一个视频可以同时属于多个收藏。",
-    points: ["快速收藏", "任意命名收藏夹", "一个视频加入多个收藏"],
+      "打开“收藏到”面板，快速收藏与命名收藏夹逐项勾选，彼此不会覆盖。",
+    points: ["快速收藏", "命名收藏夹", "多选归属"],
     accent: "#b79cff",
     accentAlt: "#ff83b7",
-    durationInFrames: 348,
+    durationInFrames: 330,
   },
   {
     id: "tools",
@@ -106,13 +109,13 @@ export const INTRO_SCENES = [
     visual: "tools",
     layout: "mosaic",
     kicker: "04 / CONTROL ROOM",
-    title: "这一轮要用的\n都收在播放工具里",
+    title: "章节、书签、AB 循环\n都在播放工具",
     description:
-      "章节、书签、AB 循环、定时和窗口控制集中在一处，常用操作放在底部灵动岛。",
-    points: ["章节与书签", "AB 循环与定时", "窗口置顶 / 迷你模式"],
+      "设好 A 点与 B 点就能循环同一段；定时、置顶和迷你模式也在旁边。",
+    points: ["章节 / 书签", "A-B 区间循环", "定时 / 置顶 / 迷你"],
     accent: "#7c9cff",
     accentAlt: "#6ce5e8",
-    durationInFrames: 348,
+    durationInFrames: 330,
   },
   {
     id: "audio",
@@ -120,13 +123,13 @@ export const INTRO_SCENES = [
     visual: "audio",
     layout: "wave",
     kicker: "05 / AUDIO & SUBTITLES",
-    title: "多音轨与字幕\n对齐同一帧",
+    title: "双字幕 + 多音轨\n对齐同一帧",
     description:
-      "切换音轨与输出设备；外挂字幕、双语字幕、延迟和字号直接在播放器里调。",
-    points: ["多音轨与输出设备", "外挂字幕 / 双语字幕", "10 段均衡器与实时频谱"],
+      "内封与挂载音轨、双语字幕、延迟和字号在播放器里直接切换。",
+    points: ["内封 / 外挂字幕", "第二字幕双语", "10 段均衡器 / 实时频谱"],
     accent: "#6ce5e8",
     accentAlt: "#7c9cff",
-    durationInFrames: 348,
+    durationInFrames: 375,
   },
   {
     id: "appearance",
@@ -134,13 +137,13 @@ export const INTRO_SCENES = [
     visual: "themes",
     layout: "palette",
     kicker: "06 / MAKE IT YOURS",
-    title: "六套主题\n给你的片库\n换种颜色",
+    title: "六套主题\n三档动效",
     description:
-      "极夜、余烬、苔原、潮汐、莓果、日光。三档动效，窗口变窄时重新排版。",
-    points: ["六套主题", "三档动效", "响应式布局"],
+      "极夜、余烬、苔原、潮汐、莓果、日光；窗口变窄时重新排版。",
+    points: ["极夜 / 余烬 / 苔原", "潮汐 / 莓果 / 日光", "完整 / 轻量 / 关闭"],
     accent: "#ffd166",
     accentAlt: "#ff8a5b",
-    durationInFrames: 348,
+    durationInFrames: 330,
   },
   {
     id: "outro",
@@ -150,16 +153,27 @@ export const INTRO_SCENES = [
     kicker: "FUTUREVIDEO 0.3.0 ALPHA",
     title: "你的片库\n你的颜色",
     description:
-      "Windows 10 / 11 本地视频播放器，完全离线，开箱即用。",
-    points: ["Windows 10 / 11 x64", "完全本地播放", "预览版已发布"],
+      "Windows 10 / 11 本地视频播放器。片库、字幕、音效与收藏都留在本机。",
+    points: ["Windows 10 / 11 x64", "本地片库 / 网络流", "0.3.0 Alpha"],
     releaseNotice: RELEASE_NOTICE,
     accent: "#7c9cff",
     accentAlt: "#6ce5e8",
-    durationInFrames: 360,
+    durationInFrames: 345,
   },
 ] as const satisfies readonly IntroScene[];
 
 export const INTRO_TRANSITION_COUNT = INTRO_SCENES.length - 1;
+
+export const INTRO_SCENE_STARTS_IN_FRAMES = INTRO_SCENES.map((_, index) =>
+  INTRO_SCENES.slice(0, index).reduce(
+    (total, scene) => total + scene.durationInFrames,
+    0,
+  ) -
+  index * TRANSITION_DURATION_IN_FRAMES,
+);
+
+export const INTRO_SCENE_STARTS_IN_SECONDS =
+  INTRO_SCENE_STARTS_IN_FRAMES.map((frame) => frame / INTRO_FPS);
 
 export const INTRO_DURATION_IN_FRAMES =
   INTRO_SCENES.reduce((total, scene) => total + scene.durationInFrames, 0) -
